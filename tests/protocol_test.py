@@ -101,6 +101,23 @@ with Engine() as e:
     e.until('info string ',allow_error=True);e.send('d');assert e.until('r3k2r/')==fen
 
 with Engine() as e:
+    e.send('uci');e.until('uciok');e.send('setoption name OwnBook value false')
+    # The same rook position is winning with counter 0, but draws at counter 99
+    # in this depth-3 search. A retained result must not override the new counter.
+    for board,turn in (('7k/8/8/8/8/8/8/KR6','w'),('kr6/8/8/8/8/8/8/7K','b')):
+        searches=[]
+        for count,clear in ((0,True),(99,False),(99,True),(0,False)):
+            if clear:e.send('setoption name Clear Hash')
+            e.send(f'position fen {board} {turn} - - {count} 1');e.transcript.clear()
+            e.send('go depth 3');move=best(e,5);assert_completed_best(e,move)
+            score=int(search_infos(e.transcript)[-1].split()[5])
+            nodes=int(next(line.split()[2] for line in e.transcript if line.startswith('info nodes ')))
+            searches.append((score,nodes))
+        assert searches[0][0]>400 and searches[3][0]>400,searches
+        assert searches[1][0]==searches[2][0]==0,searches
+        assert searches[1][1]>0 and searches[3][1]>0,searches
+
+with Engine() as e:
     e.send('xboard');e.send('protover 2');assert 'setboard=1' in e.until('feature ')
     e.send('new');e.send('force');e.send('usermove e2e4');e.send('usermove e7e5');e.send('undo')
     e.send('ping 123');assert e.until('pong ')=='pong 123'

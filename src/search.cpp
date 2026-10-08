@@ -115,7 +115,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     }
     hmoves = petir_header::_no_move;
     futflag = false;
-    if ((petir_hashing::searchhash(data.hashkey, alpha, beta, level, giliran, nilai, hmoves, futflag) && (nodetype != petir_search::node_pv))) {
+    if ((petir_hashing::searchhash(data.hashkey, alpha, beta, level, giliran, nilai, hmoves, futflag, data.move50count) && (nodetype != petir_search::node_pv))) {
         return_value = nilai;
         return return_value;
     }
@@ -549,12 +549,12 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     }
     if ((!isscoredraw)) {
         if ((g <= alpha)) {
-            petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::fail_low);
+            petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::fail_low, data.move50count);
         } else {
             if ((g >= beta)) {
-                petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::fail_high);
+                petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::fail_high, data.move50count);
             } else {
-                petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::pv_node);
+                petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::pv_node, data.move50count);
                 sto = (pas::shr(tmoves, 7) & 127);
                 if ((((tmoves != petir_header::_no_move) && (sto != petir_header::_en_passant)) && ((sto > 63) || (data.papan[sto] == 0)))) {
                     if ((giliran == petir_header::_sisiputih)) {
@@ -566,245 +566,6 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             }
         }
     }
-    return return_value;
-}
-
-// search.pas:982
-std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t beta, petir_header::tdata& data, std::int32_t ply, std::int32_t depth, std::int32_t cext, std::int32_t neval, std::int32_t nodetype) {
-    std::int32_t return_value{};
-    petir_header::tdata temp{};
-    petir_header::tmovelist ml;
-    std::uint8_t tstat{};
-    bool incheck{};
-    bool nganu{};
-    std::int32_t v{};
-    std::int32_t tempnm{};
-    std::int32_t sc{};
-    std::int32_t t_alpha{};
-    std::int32_t t_beta{};
-    std::int32_t g{};
-    std::int32_t a{};
-    std::int32_t jml{};
-    std::int32_t nilai{};
-    std::int32_t e{};
-    std::int32_t sto{};
-    std::int32_t sfrom{};
-    bool abcd{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    std::int32_t pas_temp_3{};
-    std::int32_t pas_temp_4{};
-// search.pas:991
-    auto cap_is_danger = [&]() -> bool {
-    bool return_value{};
-    if ((giliran == petir_header::_sisiputih)) {
-        if ((data.papan[sto] == petir_header::_mentrihitam)) {
-            return_value = true;
-            return return_value;
-        }
-        if ((((ml[a].score > 0) && ((petir_bitboard_mask::kingmask[sto] & data.kingblack) != 0)) && (data.queenwhite != 0))) {
-            return_value = true;
-            return return_value;
-        }
-        if (((data.papan[(ml[a].moves & 127)] == 1) && (sto >= petir_header::a7))) {
-            return_value = true;
-            return return_value;
-        }
-        if (((data.papan[sto] == pas::negate(1)) && (sto <= petir_header::h2))) {
-            return_value = true;
-            return return_value;
-        }
-    } else {
-        if ((data.papan[sto] == petir_header::_mentriputih)) {
-            return_value = true;
-            return return_value;
-        }
-        if ((((ml[a].score > 0) && ((petir_bitboard_mask::kingmask[sto] & data.kingwhite) != 0)) && (data.queenblack != 0))) {
-            return_value = true;
-            return return_value;
-        }
-        if (((data.papan[(ml[a].moves & 127)] == pas::negate(1)) && (sto <= petir_header::h2))) {
-            return_value = true;
-            return return_value;
-        }
-        if (((data.papan[sto] == 1) && (sto >= petir_header::a7))) {
-            return_value = true;
-            return return_value;
-        }
-    }
-    return_value = false;
-    return return_value;
-};
-
-    // Portability guards: stop safely and keep the original 64-ply arrays in bounds.
-    if (petir_header::stop_process.load()) return 0;
-    if (depth >= 63) return petir_ueval::eval(data, giliran, alpha, beta);
-    if ((giliran == petir_header::_sisiputih)) {
-        incheck = petir_tools::white_checked(data);
-    } else {
-        incheck = petir_tools::black_checked(data);
-    }
-    if ((!incheck)) {
-        if ((neval == petir_search::noval)) {
-            e = petir_ueval::eval(data, giliran, alpha, beta);
-        } else {
-            e = neval;
-        }
-        if ((e >= beta)) {
-            return_value = e;
-            return return_value;
-        }
-        if ((e > alpha)) {
-            alpha = e;
-        }
-    }
-    if ((giliran == petir_header::_sisiputih)) {
-        if (incheck) {
-            petir_movgen::white_evasion(data, ml, jml, sc);
-            pas_temp_1 = jml;
-            if (((pas_temp_1 == 1))) {
-                (ply = pas::increment(ply, 1));
-            }
-            else if (((pas_temp_1 == 0))) {
-                return_value = pas::add(pas::negate(petir_header::_nilai_raja), depth);
-                return return_value;
-            }
-        } else {
-            if ((ply > 0)) {
-                petir_movgen::q_white_movgen(data, ml, jml);
-            } else {
-                petir_movgen::white_movgen_caps2(data, ml, jml);
-            }
-            if ((jml == 0)) {
-            }
-        }
-    } else {
-        if (incheck) {
-            petir_movgen::black_evasion(data, ml, jml, sc);
-            pas_temp_2 = jml;
-            if (((pas_temp_2 == 1))) {
-                (ply = pas::increment(ply, 1));
-            }
-            else if (((pas_temp_2 == 0))) {
-                return_value = pas::add(pas::negate(petir_header::_nilai_raja), depth);
-                return return_value;
-            }
-        } else {
-            if ((ply > 0)) {
-                petir_movgen::q_black_movgen(data, ml, jml);
-            } else {
-                petir_movgen::black_movgen_caps2(data, ml, jml);
-            }
-            if ((jml == 0)) {
-            }
-        }
-    }
-    temp = data;
-    nganu = false;
-    pas_temp_3 = jml;
-    for (a = 1; a <= pas_temp_3; ++a) {
-        if ((ml[a].score > 0)) {
-            nganu = true;
-            break;
-        }
-    }
-    if ((!nganu && !incheck)) {
-        if ((((ply > 0) && (cext > 0)) && (e < beta))) {
-            nilai = petir_ueval::materialvalue(giliran, data.materialscore);
-            if ((pas::sub(e, nilai) >= 90)) {
-                if ((pas::sub(e, nilai) >= 200)) {
-                    return_value = petir_search::mainsearch(16, giliran, alpha, beta, data, false, depth, 0, false, 0, nodetype);
-                } else {
-                    return_value = petir_search::mainsearch(8, giliran, alpha, beta, data, false, depth, 0, false, 0, nodetype);
-                }
-                return return_value;
-            } else {
-                if ((jml == 0)) {
-                    return_value = e;
-                    return return_value;
-                }
-            }
-        } else {
-            if ((jml == 0)) {
-                return_value = e;
-                return return_value;
-            }
-        }
-    }
-    if ((!incheck)) {
-        g = e;
-    } else {
-        g = pas::sub(pas::negate(petir_header::_infinity), 100);
-    }
-    t_alpha = alpha;
-    t_beta = beta;
-    pas_temp_4 = jml;
-    for (a = 1; a <= pas_temp_4; ++a) {
-        if ((a != jml)) {
-            petir_next::nextbest_max(ml, a, jml);
-        }
-        abcd = false;
-        if ((!incheck)) {
-            if ((ml[a].score < 0)) {
-                break;
-            }
-            sto = (pas::shr(ml[a].moves, 7) & 127);
-            if ((((alpha == pas::sub(beta, 1)) && (sto <= 63)) && (data.papan[sto] != 0))) {
-                v = pas::add(pas::add(e, petir_header::nilai_piece[data.papan[sto]]), 70);
-                if (((((v < t_alpha) && (!petir_tools::menskak2(temp, giliran, ml[a].moves))) && (!petir_tools::pawn_7_rank(giliran, data))) && ((pas::shr(ml[a].moves, 14) & 7) == 0))) {
-                    if ((!cap_is_danger())) {
-                        if ((v > g)) {
-                            g = v;
-                        }
-                        continue;
-                    }
-                }
-            }
-            sfrom = (ml[a].moves & 127);
-            if ((giliran == petir_header::_sisiputih)) {
-                if (((data.papan[sfrom] == petir_header::_rajaputih) && petir_tools::white_attacked(data, sto))) {
-                    continue;
-                } else {
-                    if (petir_tools::white_open_check(data, ml[a].moves)) {
-                        continue;
-                    }
-                }
-            } else {
-                if (((data.papan[sfrom] == petir_header::_rajahitam) && petir_tools::black_attacked(data, sto))) {
-                    continue;
-                } else {
-                    if (petir_tools::black_open_check(data, ml[a].moves)) {
-                        continue;
-                    }
-                }
-            }
-        }
-        if ((giliran == petir_header::_sisiputih)) {
-            petir_makemove::makewhitemove(ml[a].moves, data);
-        } else {
-            petir_makemove::makeblackmove(ml[a].moves, data);
-        }
-        if ((sto == petir_header::_en_passant)) {
-            if ((((giliran == petir_header::_sisiputih) && petir_tools::white_checked(data)) || ((giliran == petir_header::_sisihitam) && petir_tools::black_checked(data)))) {
-                data = temp;
-                continue;
-            }
-        }
-        nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(t_beta), pas::negate(t_alpha), data, pas::sub(ply, 1), pas::add(depth, 1), cext, petir_search::noval, pas::negate(nodetype)));
-        if ((nilai >= beta)) {
-            data = temp;
-            return_value = nilai;
-            return return_value;
-        }
-        if ((nilai > g)) {
-            g = nilai;
-            if ((nilai > t_alpha)) {
-                t_alpha = nilai;
-            }
-        }
-        data = temp;
-    }
-    return_value = g;
     return return_value;
 }
 

@@ -1,6 +1,26 @@
 // Faithful translation of movgen.pas; Delphi source is in original/.
 #include "petir.hpp"
 namespace petir_movgen {
+namespace {
+void append_legal_ep_evasions(petir_header::tdata& data, petir_header::tmovelist& moves, std::int32_t& count, int side) {
+    if(data.ep>7)return;
+    const bool white=side==petir_header::_sisiputih;
+    const int captured=(white?32:24)+data.ep;
+    const int target=captured+(white?8:-8);
+    if(data.papan[captured]!=(white?-1:1) || data.papan[target]!=0)return;
+    for(int offset:{-1,1}) {
+        const int file=data.ep+offset;
+        if(file<0 || file>7 || data.papan[captured+offset]!=(white?1:-1))continue;
+        const int move=(captured+offset)|(petir_header::_en_passant<<7);
+        auto child=data;
+        const auto nodes=petir_header::total_node;
+        if(white)petir_makemove::makewhitemove(move,child);else petir_makemove::makeblackmove(move,child);
+        petir_header::total_node=nodes; // Legality probes are not search nodes.
+        if(white?petir_tools::white_checked(child):petir_tools::black_checked(child))continue;
+        ++count;moves[count].moves=move;moves[count].score=0;
+    }
+}
+}
 // movgen.pas:687
 void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml) {
     std::uint64_t piecepos{};
@@ -1446,19 +1466,10 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             movelist[jml].score = pas::shl(petir_movgen::nilai_piece[data.papan[post]], 14);
         }
     }
+    // Removing both pawns can uncover an attack; making the move also handles
+    // en passant interpositions against a sliding-piece check.
+    append_legal_ep_evasions(data,movelist,jml,petir_header::_sisiputih);
     if ((skakcount == 1)) {
-        if (((data.ep != petir_header::_no_ep) && (data.papan[skakpos] == petir_header::_pionhitam))) {
-            if (((data.papan[pas::sub(skakpos, 1)] == petir_header::_pionputih) && ((skakpos & 7) > 0))) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pas::sub(skakpos, 1), pas::shl(petir_header::_en_passant, 7));
-                movelist[jml].score = 0;
-            }
-            if (((data.papan[pas::add(skakpos, 1)] == petir_header::_pionputih) && ((skakpos & 7) < 7))) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pas::add(skakpos, 1), pas::shl(petir_header::_en_passant, 7));
-                movelist[jml].score = 0;
-            }
-        }
         skak64 = petir_bitboard_mask::bit2nmask[skakpos];
         path = petir_bitboard_mask::pathmask[posraja][skakpos];
         piecepos = data.knightwhite;
@@ -1735,19 +1746,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             movelist[jml].score = pas::shl(petir_movgen::nilai_piece[data.papan[post]], 15);
         }
     }
+    append_legal_ep_evasions(data,movelist,jml,petir_header::_sisihitam);
     if ((skakcount == 1)) {
-        if (((data.ep != petir_header::_no_ep) && (data.papan[skakpos] == petir_header::_pionputih))) {
-            if (((data.papan[pas::sub(skakpos, 1)] == petir_header::_pionhitam) && ((skakpos & 7) > 0))) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pas::sub(skakpos, 1), pas::shl(petir_header::_en_passant, 7));
-                movelist[jml].score = 0;
-            }
-            if (((data.papan[pas::add(skakpos, 1)] == petir_header::_pionhitam) && ((skakpos & 7) < 7))) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pas::add(skakpos, 1), pas::shl(petir_header::_en_passant, 7));
-                movelist[jml].score = 0;
-            }
-        }
         skak64 = petir_bitboard_mask::bit2nmask[skakpos];
         path = petir_bitboard_mask::pathmask[posraja][skakpos];
         piecepos = data.knightblack;

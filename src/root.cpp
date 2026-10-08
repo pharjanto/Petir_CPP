@@ -55,7 +55,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
     pas::fillchar(petir_search::curr_move, sizeof(petir_search::curr_move), 0);
     cnode = petir_header::total_node;
     hmoves = petir_header::_no_move;
-    if (petir_hashing::searchhash(data.hashkey, alpha, beta, level, giliran, nilai, hmoves, mbadcap)) {
+    if (petir_hashing::searchhash(data.hashkey, alpha, beta, level, giliran, nilai, hmoves, mbadcap, data.move50count)) {
         (petir_header::hashco = pas::increment(petir_header::hashco, 1));
         petir_header::mmoves = hmoves;
         petir_root::newpv = false;
@@ -236,15 +236,9 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
                     t_alpha = nilai;
                     if ((g >= beta)) {
                         if ((cp == 0)) {
-                            if ((giliran == petir_header::_sisiputih)) {
-                                (petir_header::historyw[data.papan[(pas::shr(moves, 7) & 127)]][(pas::shr(moves, 7) & 127)] = pas::increment(petir_header::historyw[data.papan[(pas::shr(moves, 7) & 127)]][(pas::shr(moves, 7) & 127)], pas::mul(rlevel, rlevel)));
-                            } else {
-                                (petir_header::historyb[data.papan[(pas::shr(moves, 7) & 127)]][(pas::shr(moves, 7) & 127)] = pas::increment(petir_header::historyb[data.papan[(pas::shr(moves, 7) & 127)]][(pas::shr(moves, 7) & 127)], pas::mul(rlevel, rlevel)));
-                            }
-                            if ((petir_header::killer0[depth] != moves)) {
-                                petir_header::killer1[depth] = petir_header::killer0[depth];
-                                petir_header::killer0[depth] = moves;
-                            }
+                            // Castle codes 65/66 are valid history indices, but
+                            // not board squares. Read the piece from its source.
+                            petir_search::addhistory(rlevel, depth, moves, giliran, temp.papan[moves & 127]);
                         }
                         (petir_header::totalco = pas::increment(petir_header::totalco, 1));
                         if (first) {
@@ -278,12 +272,12 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
         return return_value;
     }
     if ((g <= alpha)) {
-        petir_hashing::addtable(h, giliran, level, petir_header::mmoves, g, petir_header::fail_low);
+        petir_hashing::addtable(h, giliran, level, petir_header::mmoves, g, petir_header::fail_low, data.move50count);
     } else {
         if ((g >= beta)) {
-            petir_hashing::addtable(h, giliran, level, petir_header::mmoves, g, petir_header::fail_high);
+            petir_hashing::addtable(h, giliran, level, petir_header::mmoves, g, petir_header::fail_high, data.move50count);
         } else {
-            petir_hashing::addtable(h, giliran, level, petir_header::mmoves, g, petir_header::pv_node);
+            petir_hashing::addtable(h, giliran, level, petir_header::mmoves, g, petir_header::pv_node, data.move50count);
         }
     }
     return return_value;

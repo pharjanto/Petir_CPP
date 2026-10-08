@@ -3,7 +3,7 @@
 namespace petir_hashing {
 std::int32_t anu = 0;
 // hashing.pas:15
-void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::int32_t moves, std::int32_t nilai, std::int32_t tipe) {
+void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::int32_t moves, std::int32_t nilai, std::int32_t tipe, std::uint8_t move50count) {
     std::int32_t hkey{};
     petir_hashing_header::thashrecord* kk{};
     if ((giliran == petir_header::_sisihitam)) {
@@ -19,10 +19,12 @@ void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::
         (*kk).tipe = tipe;
         (*kk).level = level;
         (*kk).moves = moves;
+        (*kk).move50count = move50count;
         (*kk).flag = ((*kk).flag & (~petir_hashing_header::bit_old));
     } else {
         if (((((*kk).flag & petir_hashing_header::bit_old) != 0) || (level >= (*kk).level))) {
             (*kk).moves = moves;
+            (*kk).move50count = move50count;
             (*kk).key = key;
             (*kk).nilai = nilai;
             (*kk).tipe = tipe;
@@ -33,7 +35,7 @@ void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::
 }
 
 // hashing.pas:52
-bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t level, std::int32_t giliran, std::int32_t& nilai, std::int32_t& moves, bool& avoidnm) {
+bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t level, std::int32_t giliran, std::int32_t& nilai, std::int32_t& moves, bool& avoidnm, std::uint8_t move50count) {
     bool return_value{};
     std::int32_t hkey{};
     petir_hashing_header::thashrecord* temp{};
@@ -47,7 +49,9 @@ bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std:
     if ((((*temp).flag & petir_hashing_header::bit_used) != 0)) {
         if (((*temp).key == key)) {
             moves = (*temp).moves;
-            if (((*temp).level >= pas::shr(level, 1))) {
+            // The board still supplies a move-ordering hint, but scores and
+            // score-dependent pruning require the same halfmove counter.
+            if (((*temp).move50count == move50count) && ((*temp).level >= pas::shr(level, 1))) {
                 pas_temp_1 = (*temp).tipe;
                 if (((pas_temp_1 == petir_header::pv_node))) {
                     nilai = (*temp).nilai;

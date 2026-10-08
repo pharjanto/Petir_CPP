@@ -383,7 +383,7 @@ struct thashrecord {
     std::uint8_t level;
     std::uint16_t moves;
     std::int16_t nilai;
-    bool mte;
+    std::uint8_t move50count; // Uses the former unused byte; entry stays 16 bytes.
 };
 #pragma pack(pop)
 using thashdata = std::vector<petir_hashing_header::thashrecord>;
@@ -740,8 +740,8 @@ void reversetable();
 void coba();
 }
 namespace petir_hashing {
-void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::int32_t moves, std::int32_t nilai, std::int32_t tipe);
-bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t level, std::int32_t giliran, std::int32_t& nilai, std::int32_t& moves, bool& avoidnm);
+void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::int32_t moves, std::int32_t nilai, std::int32_t tipe, std::uint8_t move50count);
+bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t level, std::int32_t giliran, std::int32_t& nilai, std::int32_t& moves, bool& avoidnm, std::uint8_t move50count);
 }
 namespace petir_repetition {
 void initrepdata();

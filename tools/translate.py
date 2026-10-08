@@ -541,9 +541,15 @@ for u in units.values():
 (ROOT/'src/petir.hpp').write_text(''.join(header))
 for u in units.values():
     r=Render(u);parts=['// Faithful translation of '+u.name+'.pas; Delphi source is in original/.\n#include "petir.hpp"\nnamespace '+ns(u.name)+' {\n']
+    quiescence=[]
     for d in u.decls:
         if d.kind=='var':parts.append(r.decl(d))
     for f in u.funcs.values():
-        if f.body is not None:parts.append(r.function(f))
+        if f.body is not None:
+            if u.name=='search' and f.name=='q_search':quiescence.append(r.function(f))
+            else:parts.append(r.function(f))
     parts.append('}\n');(ROOT/'src'/(''+u.name+'.cpp')).write_text(''.join(parts))
+    if quiescence:
+        prelude='// Quiescence search from search.pas; Delphi source is in original/.\n#include "petir.hpp"\nnamespace '+ns(u.name)+' {\n'
+        (ROOT/'src/quiescence.cpp').write_text(prelude+''.join(quiescence)+'}\n')
 print('Translated',len(units),'units,',sum(len(u.funcs) for u in units.values()),'routines')

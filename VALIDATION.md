@@ -116,3 +116,33 @@ On 2026-10-09, iterative deepening was changed to start at depth 1. Search prepa
 The expanded core suite passes **257 checks with zero failures**. It verifies that a previously usable exact hash result survives search preparation and is aged for replacement, that move-ordering history decays and killers reset, that repetition counts are preserved, and that explicit `Clear Hash` removes the retained result. UCI tests cover every depth from 1 to the requested limit with an empty table, then repeat searches without `ucinewgame` or `Clear Hash`: moves and scores match while node counts decrease in both default and MTD(f) modes. WinBoard tests likewise reuse results after undo, with matching moves and scores and fewer nodes. Cached iterations can complete without intermediate PV reports; the final report still honors the requested depth. Core and protocol tests pass in performance, bounds-checked Release, and MSVC AddressSanitizer builds, with the same intentional OOM-test exclusion under AddressSanitizer described above.
 
 The earlier timing measurements used the original depth-4/5 start and do not benchmark this search-control change. No playing-strength improvement is claimed without match testing.
+
+## Castling cutoffs and halfmove-aware hash results
+
+On 2026-10-09, a regression forced a legal castle to be searched first in a root beta cutoff. The previous bounds-checked engine stopped with `Pascal array index 65 outside 0..63`. The root history update now obtains the king from its pre-move source square rather than treating the special destination code as a board square. Forced king- and queen-side castling cutoffs pass for both colors, including history/killer updates and preservation of the input board.
+
+The halfmove issue was reproduced with `7k/8/8/8/8/8/8/KR6 w - - 0 1` at depth 3 with books disabled. Its score was +539 cp. Searching the same board at halfmove counter 99 with the previous hash retained incorrectly returned +539 immediately with zero nodes; clearing the hash produced 0 cp. The corrected engine searches the counter-99 position and returns 0 cp with either retained or cleared hash entries. The mirrored black position and reuse in the reverse direction are covered by protocol regressions.
+
+Each hash entry now stores its halfmove counter in the former unused byte. Tests cover exact, upper-bound, and lower-bound score reuse with matching and differing counters for both sides, counter values 0, 79, 99, and 255, score-dependent null-move restrictions, and PV extraction. Counter mismatches retain only the board's move-ordering hint. The 16-byte entry size, default 64 MiB table, original board hash, book keys, and repetition keys are preserved.
+
+The expanded suite passes **327 core checks with zero failures**, plus the protocol regressions, in the performance Release, bounds-checked Release, and MSVC AddressSanitizer builds. The intentional AddressSanitizer OOM-test exclusion described above still applies. These changes address the castling cutoff access and cached-score counter mismatch; the inherited halfmove-field width and other search-rule limitations remain as documented in `PORTING_NOTES.md`.
+
+## En passant evasions and quiescence stalemate
+
+On 2026-10-09, explicit fixtures reproduced illegal en passant evasions for both colors. In `4r2k/8/8/3pP3/4K3/8/8/8 w - d6 0 1`, capturing the checking pawn with `e5d6` exposes the king to the rook. The original evasion generator admitted the move, and quiescence left its destination variable at zero while in check, bypassing the post-move en passant safety check. The mirrored black fixture reproduced the same defect. Separate fixtures showed that removing the illegal en passant candidate can reveal actual checkmate.
+
+Both evasion generators now verify the en passant pawn and target, make candidates on copies, and check king safety before including them. Tests compare their raw evasion lists with independent full capture/quiet generation followed by king-safety filtering. They cover pinned captures, file-a/file-h boundaries, unrelated en passant markers, legal captures of checking pawns, and legal en passant interpositions against bishop checks, for both colors. Quiescence also decodes the destination on checked nodes. The checkmate fixtures now return -19998 cp at ply 2.
+
+Quiescence now tests for a legal move before stand pat, including cached evaluations and the depth-63 fallback. Eight stalemate fixtures cover kings alone, a pinned bishop with a pseudo-legal capture, blocked pawns, and pinned pawns with empty forward squares. Each returns the draw score with checks enabled, in capture-only quiescence, with a cached evaluation that would otherwise cause a beta cutoff, and at the depth limit. Other fixtures ensure that a legal quiet move, promotion, or en passant capture prevents a false draw. A deterministic audit compares the quiescence probe with independently filtered legal moves in **4,575 nonchecked positions**; probes preserve search node counts. The existing evasion audit still covers 244 checked positions.
+
+The suite passes **440 core checks with zero failures**, plus UCI/WinBoard protocol regressions, in performance Release, bounds-checked Release, and MSVC AddressSanitizer builds. The intentional AddressSanitizer OOM-test exclusion described above still applies.
+
+The additional legality check has a runtime cost. A local fixed-depth-12 comparison used fresh processes, disabled books, 64 MiB Hash, alternating executable order, three runs per executable, and no concurrent build work:
+
+| Position | Before these fixes, median | Corrected, median |
+|---|---:|---:|
+| Start position | 570 ms | 576 ms |
+| Kiwipete | 2,797 ms | 2,909 ms |
+| PGN mate defense | 1,331 ms | 1,440 ms |
+
+Best moves and scores matched in these samples. Node counts matched for the first two positions; the PGN position changed from 7,949,107 to 7,949,444 nodes. The short rook-ending sample (45 versus 46 ms) was excluded from percentage comparisons. These timings describe this machine and sample; they do not establish playing-strength improvement.

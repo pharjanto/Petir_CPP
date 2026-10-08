@@ -16,7 +16,7 @@ pas::String getpv(petir_header::tdata data, std::int32_t giliran, std::int32_t m
     return_value = pas::String("");
     a = pas::add(petir_header::_infinity, 50000);
     b = 0;
-    if ((!petir_hashing::searchhash(data.hashkey, a, b, 0, giliran, nilai, hmoves, found))) {
+    if ((!petir_hashing::searchhash(data.hashkey, a, b, 0, giliran, nilai, hmoves, found, data.move50count))) {
         hmoves = petir_header::_no_move;
     }
     l = 0;
@@ -32,7 +32,7 @@ pas::String getpv(petir_header::tdata data, std::int32_t giliran, std::int32_t m
             petir_makemove::makewhitemove(hmoves, data);
         }
         giliran = pas::sub(3, giliran);
-        if ((!petir_hashing::searchhash(data.hashkey, a, b, 0, giliran, nilai, hmoves, found))) {
+        if ((!petir_hashing::searchhash(data.hashkey, a, b, 0, giliran, nilai, hmoves, found, data.move50count))) {
             hmoves = petir_header::_no_move;
         }
         return_value = (return_value + ' ');

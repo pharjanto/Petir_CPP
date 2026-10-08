@@ -67,6 +67,10 @@ For **WinBoard**, send `xboard` and `protover 2`. Supported commands include `ne
 
 Clock updates, posting controls, and unsupported WinBoard commands leave the search running. `?` returns a move; `force`, `new`, `setboard`, `result`, undo, and replacement moves discard an active search. WinBoard reports checkmate, stalemate, insufficient mating material, threefold repetition, and the 50-move rule. Period timing wraps the move count for each new period without losing the game's fullmove number. Hash resizing retains the previous usable table if allocation fails. The diagnostic `d` command prints all six FEN fields.
 
+Cached hash scores require the same halfmove counter as the current position. A matching board with a different counter can supply a move-ordering hint, but cannot supply a score cutoff or a score-dependent pruning flag. Hash entries remain 16 bytes, so the default table remains 64 MiB.
+
+En passant check evasions must leave the king safe, including when the capture blocks a sliding-piece check. Quiescence recognizes stalemate before returning a static or cached evaluation.
+
 Command-line utilities:
 
 ```text
@@ -84,6 +88,7 @@ The legacy PGN learner is retained as `--learn-pgn FILE`. It keeps the original 
 | Location | Purpose |
 |---|---|
 | `src/search.cpp`, `root.cpp`, `uiterative.cpp`, `next.cpp` | Original search and move ordering |
+| `src/quiescence.cpp` | Quiescence search and its stalemate legality probe |
 | `src/ueval.cpp`, `evalmask.cpp`, `usee.cpp` | Original full evaluation and SEE |
 | `src/movgen.cpp`, `makemove.cpp`, `bitboard*.cpp`, `tools.cpp` | Original board and move routines |
 | `src/hashing*.cpp`, `repetition.cpp`, `opening_book.cpp` | Original hash and book logic |
@@ -94,4 +99,4 @@ The legacy PGN learner is retained as `--learn-pgn FILE`. It keeps the original 
 | `PORTING_NOTES.md` | Exact compatibility changes and retained limitations |
 | `VALIDATION.md` | Tests, results, and what has not been verified |
 
-Builds use the checked-in C++ directly. Do not run the translator for a normal build: it regenerates the 24 translated core files and `petir.hpp`, overwriting edits to those files.
+Builds use the checked-in C++ directly. Do not run the translator for a normal build: it regenerates the translated core source files and `petir.hpp`, overwriting edits to those files.
