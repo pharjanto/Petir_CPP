@@ -1,0 +1,5 @@
+build/
+*.o
+petir_check
+petir_sanitize
+__pycache__/

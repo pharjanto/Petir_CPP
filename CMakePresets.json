@@ -1,0 +1,39 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-x64",
+      "displayName": "Windows x64 — Visual Studio 2022",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/windows-x64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux 64-bit Release",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "linux-debug",
+      "inherits": "linux-release",
+      "displayName": "Linux 64-bit Debug",
+      "binaryDir": "${sourceDir}/build/linux-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-x64", "configurePreset": "windows-x64", "configuration": "Release" },
+    { "name": "linux-release", "configurePreset": "linux-release" },
+    { "name": "linux-debug", "configurePreset": "linux-debug" }
+  ],
+  "testPresets": [
+    { "name": "windows-x64", "configurePreset": "windows-x64", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "linux-release", "configurePreset": "linux-release", "output": { "outputOnFailure": true } },
+    { "name": "linux-debug", "configurePreset": "linux-debug", "output": { "outputOnFailure": true } }
+  ]
+}

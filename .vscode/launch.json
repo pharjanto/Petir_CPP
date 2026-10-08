@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Petir self-test (Windows)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "args": ["--selftest"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "CMake: build",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Petir self-test (Linux / GDB)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "args": ["--selftest"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "CMake: build",
+      "MIMode": "gdb",
+      "externalConsole": false
+    }
+  ]
+}
