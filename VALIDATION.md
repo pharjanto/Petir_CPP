@@ -35,6 +35,47 @@ The Windows binary is a **PE32+ x86-64 console executable**, successfully cross-
 
 A running Delphi executable was not available for side-by-side comparison. There is no verified claim of identical move choice, node count, score, speed, or Elo against the Delphi executable. The port preserves the source algorithms and constants, but deterministic initialization of previously unassigned variables, portability guards, compiler arithmetic/rounding, and changed timing can affect particular searches. See `PORTING_NOTES.md`.
 
+## Windows performance comparison
+
+Local MSVC 19.44 x64 Release measurements on 2026-10-08, with bounds checks disabled, 64 MiB Hash, opening books disabled, fresh processes, and fixed depth 12. Medians of three runs with alternating executable order:
+
+| Position | Legacy bit scan | Native bit scan |
+|---|---:|---:|
+| Start position | 409 ms | 379 ms |
+| Kiwipete | 1,878 ms | 1,762 ms |
+
+Node counts, scores, best moves, and principal variations matched for these positions and the rook ending above. The ending completed too quickly for reliable timing. The native scan passed the core regression suite, including exhaustive 16-bit block comparisons and the empty-board case. These measurements compare C++ builds, not Delphi performance, and do not establish gains for every position.
+
+Link-time optimization was also tested separately at depth 11 and increased search time in the opening and middlegame samples, so it remains disabled by default.
+
+## Windows array-access investigation
+
+The promoted-queen position `kn6/pp1Q4/1Q4Q1/4Q3/Q5Q1/2Q5/1Q3Q2/K2Q4 w - - 0 1` reproduced an access at move-list index 101 (original capacity 100). After enlarging the list, evaluation exposed material-scale index 90 (original maximum 41). Both defects were fixed, and the mirrored black position was added to regression coverage. Move-list checks now remain active even with general bounds checks disabled. Black quiet-move generation no longer writes through an integer pointer across record boundaries. Material-scale and king-pressure lookups saturate at their last defined entries.
+
+The expanded core suite passes with general bounds checks on and off, and with MSVC AddressSanitizer plus bounds checks. A 60-ply self-play comparison at fixed depth 8 with books disabled produced identical node counts, scores, and best moves in checked and unchecked builds without a bounds exception. These tests cover the exercised positions; a user's specific failure still requires its FEN or game to reproduce.
+
+Mate-in-one defense regression tests cover back-rank threats for both colors at fixed depth 6. A deterministic 32-game move-generation audit exercised 244 checked positions; the specialized evasion lists matched full capture/quiet generation followed by making each candidate and verifying king safety. The audit passed with general bounds checks on and off. This checks the evasion generator, not a proof that the search never misses a mate threat.
+
+## PGN missed-mate reproduction and fix
+
+Round 1 of the user's PetirCPP game ended with `68.Qa2 Rxh6#`. The reconstructed position before White's move is `7k/1q5p/5r1P/4Np2/R2p1P2/2bP2PK/1p6/1Q6 w - - 4 68`. The port chose another move permitting the same mate in a fresh depth-6 search, with a score of -97 cp. Its main and quiescence searches incorrectly bound the king value to `usee`'s implementation-private 99; root search similarly used `movgen`'s private 99. Delphi callers must use `header`'s exported 20000. Other foreign references to private piece values in search/tools were corrected as part of the same visibility defect, and the translator now restricts cross-unit lookup to interface exports.
+
+The game-position defense and three terminal mate-score tests failed before the binding correction and pass after it. The rebuilt engine chooses `g3g4` at fixed depth 15 and at a one-second UCI limit, allowing the king to escape after `Rh6+`. The expanded core suite passes in performance, checked Release, and MSVC AddressSanitizer builds. These assertions cover avoiding immediate mate, not saving an already materially losing position.
+
+## NPS after removing search move-list clearing
+
+The corrected engine was copied as a baseline before this optimization. Main search no longer zeroes its two 2 KiB move lists at every call, and quiescence no longer zeroes its 2 KiB move list. Generators populate both fields of each counted entry before the search uses it. Full-buffer capacity checks remain enabled. Additional tests compare generator results with initial buffers filled with different byte patterns, and the suite passes in performance, checked, and MSVC AddressSanitizer builds.
+
+Local fixed-depth-12 comparisons with books disabled, 64 MiB Hash, fresh processes, alternating executable order, and three runs per executable yielded the following median times. The confirmation run took place without concurrent build work:
+
+| Position | Baseline | On-demand move lists | NPS increase |
+|---|---:|---:|---:|
+| Start position | 517 ms | 482 ms | 7.3% |
+| Kiwipete | 3,263 ms | 3,047 ms | 7.1% |
+| PGN mate defense | 964 ms | 888 ms | 8.6% |
+
+Node counts, scores, best moves, and principal variations matched for all compared searches, including the shorter rook-ending sample. The rook-ending timing was excluded from the percentage claims because it completed in tens of milliseconds. A separate trial replacing legacy population counts with `std::popcount` produced no consistent gain on this MSVC build and was reverted.
+
 Re-run locally:
 
 ```sh

@@ -21,6 +21,8 @@ ctest --preset windows-x64
 .\build\windows-x64\Release\petir64.exe --selftest
 ```
 
+Builds disable Pascal array bounds checks by default for performance. To enable them for troubleshooting, configure with `cmake --preset windows-x64 -DPETIR_CHECK_BOUNDS=ON` (or use the equivalent option with your Linux preset). Reconfiguring with the standard preset restores the performance default.
+
 The included debugger configurations run the self-test. Choose a Debug build configuration to step through the engine with useful symbols. You can change the launch arguments to `--perft` or `--eval`.
 
 Official setup references: [VS Code CMake](https://code.visualstudio.com/docs/cpp/cmake-quickstart) and [Microsoft C++ in VS Code](https://code.visualstudio.com/docs/cpp/config-msvc).

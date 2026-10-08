@@ -38,28 +38,10 @@ pas::Array<std::uint64_t, 0, 63> bishop_attack_up_mask{};
 pas::Array<std::uint64_t, 0, 63> bishop_attack_down_mask{};
 // bitboard_mask.pas:139
 std::int32_t firstbitp(petir_bitboard_mask::pword p) {
-    std::int32_t return_value{};
-    if (((*p) != 0)) {
-        return_value = petir_bitboard_mask::firstbitmask[(*p)];
-        return return_value;
-    }
-    (p = pas::increment(p, 1));
-    if (((*p) != 0)) {
-        return_value = pas::add(petir_bitboard_mask::firstbitmask[(*p)], 16);
-        return return_value;
-    }
-    (p = pas::increment(p, 1));
-    if (((*p) != 0)) {
-        return_value = pas::add(petir_bitboard_mask::firstbitmask[(*p)], 32);
-        return return_value;
-    }
-    (p = pas::increment(p, 1));
-    if (((*p) != 0)) {
-        return_value = pas::add(petir_bitboard_mask::firstbitmask[(*p)], 48);
-        return return_value;
-    }
-    return_value = 0;
-    return return_value;
+    std::uint64_t bits;
+    std::memcpy(&bits, p, sizeof(bits));
+    // Preserve the legacy empty-board result; countr_zero(0) returns 64.
+    return bits ? std::countr_zero(bits) : 0;
 }
 
 // bitboard_mask.pas:108

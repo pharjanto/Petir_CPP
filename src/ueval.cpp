@@ -1,5 +1,6 @@
 // Faithful translation of ueval.pas; Delphi source is in original/.
 #include "petir.hpp"
+#include <algorithm>
 namespace petir_ueval {
 // ueval.pas:850
 std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr) {
@@ -670,7 +671,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
                 }
             }
             if ((temp > 0)) {
-                (nilai = pas::decrement(nilai, (pas::mul(temp, petir_ueval::nilai_endgame_scale[data.nilai_perwira_putih]) / 100)));
+                (nilai = pas::decrement(nilai, (pas::mul(temp, petir_ueval::nilai_endgame_scale[std::min<int>(data.nilai_perwira_putih, 41)]) / 100)));
             }
         }
     }
@@ -910,7 +911,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
                 }
             }
             if ((tempi > 0)) {
-                (nilai = pas::increment(nilai, (pas::mul(tempi, petir_ueval::nilai_endgame_scale[data.nilai_perwira_hitam]) / 100)));
+                (nilai = pas::increment(nilai, (pas::mul(tempi, petir_ueval::nilai_endgame_scale[std::min<int>(data.nilai_perwira_hitam, 41)]) / 100)));
             }
         }
     }
@@ -1036,7 +1037,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             }
         }
     }
-    (nilai = pas::increment(nilai, (pas::mul(temp, petir_ueval::nilai_rook_scale[data.nilai_perwira_putih]) / 100)));
+    (nilai = pas::increment(nilai, (pas::mul(temp, petir_ueval::nilai_rook_scale[std::min<int>(data.nilai_perwira_putih, 41)]) / 100)));
     temp = 0;
     piecepos = data.rookblack;
     while ((piecepos != 0)) {
@@ -1127,7 +1128,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             }
         }
     }
-    (nilai = pas::decrement(nilai, (pas::mul(temp, petir_ueval::nilai_rook_scale[data.nilai_perwira_hitam]) / 100)));
+    (nilai = pas::decrement(nilai, (pas::mul(temp, petir_ueval::nilai_rook_scale[std::min<int>(data.nilai_perwira_hitam, 41)]) / 100)));
     if ((((alpha == pas::sub(beta, 1)) && (whitekingpressure <= 1)) && (blackkingpressure <= 1))) {
         if ((giliran == petir_header::_sisiputih)) {
             temp = nilai;
@@ -1377,7 +1378,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             (whitekingpressure = pas::increment(whitekingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
             attack = ((whitekingattack & rookbattack) & bishopbattack);
             (whitekingpressure = pas::increment(whitekingpressure, petir_ueval::ipopcount(attack)));
-            tempi = petir_ueval::nilai_king_pressure[whitekingpressure];
+            tempi = petir_ueval::nilai_king_pressure[std::clamp(whitekingpressure, 0, 63)];
             pas_temp_5 = white_attacker;
             if (((pas_temp_5 == 1))) {
                 tempi = (tempi / 5);
@@ -1415,7 +1416,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             (blackkingpressure = pas::increment(blackkingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
             attack = ((blackkingattack & rookwattack) & bishopwattack);
             (blackkingpressure = pas::increment(blackkingpressure, petir_ueval::ipopcount(attack)));
-            tempi = petir_ueval::nilai_king_pressure[blackkingpressure];
+            tempi = petir_ueval::nilai_king_pressure[std::clamp(blackkingpressure, 0, 63)];
             pas_temp_6 = black_attacker;
             if (((pas_temp_6 == 1))) {
                 tempi = (tempi / 5);

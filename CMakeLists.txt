@@ -6,7 +6,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "Select a 64-bit compiler/kit (x64).")
 endif()
-option(PETIR_CHECK_BOUNDS "Check the original Pascal array bounds" ON)
+option(PETIR_CHECK_BOUNDS "Check the original Pascal array bounds" OFF)
 option(PETIR_SANITIZERS "Enable address and undefined-behavior sanitizers" OFF)
 find_package(Threads REQUIRED)
 add_executable(petir

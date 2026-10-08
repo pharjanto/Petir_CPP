@@ -105,7 +105,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
             petir_next::nextmove(giliran, depth, data, moves, fase, hmoves, curmovecap, curmovenoncap, jmlcap, jmlnoncap, ml, mlcap, goodcap);
         } else {
             if (petir_next::nextevasion(giliran, data, moves, fase, hmoves, curmovecap, jmlcap, sc, mlcap)) {
-                return_value = pas::sub(pas::negate(petir_movgen::_nilai_raja), rlevel);
+                return_value = pas::sub(pas::negate(petir_header::_nilai_raja), rlevel);
                 return return_value;
             }
             if ((cext > 0)) {

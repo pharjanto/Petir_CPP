@@ -478,10 +478,10 @@ bool isextension(petir_header::tdata& data, std::int32_t& newlevel, std::int32_t
 bool winningmaterial(std::int32_t ms, std::uint8_t giliran) {
     bool return_value{};
     return_value = false;
-    if (((giliran == petir_header::_sisihitam) && (petir_header::data.materialscore <= pas::negate(petir_usee::_nilai_benteng)))) {
+    if (((giliran == petir_header::_sisihitam) && (petir_header::data.materialscore <= pas::negate(petir_header::_nilai_benteng)))) {
         return_value = true;
     } else {
-        if (((giliran == petir_header::_sisiputih) && (petir_header::data.materialscore >= petir_usee::_nilai_benteng))) {
+        if (((giliran == petir_header::_sisiputih) && (petir_header::data.materialscore >= petir_header::_nilai_benteng))) {
             return_value = true;
         }
     }
@@ -492,10 +492,10 @@ bool winningmaterial(std::int32_t ms, std::uint8_t giliran) {
 bool losingmaterial(std::int32_t ms, std::uint8_t giliran) {
     bool return_value{};
     return_value = false;
-    if (((giliran == petir_header::_sisihitam) && (petir_header::data.materialscore >= petir_usee::_nilai_benteng))) {
+    if (((giliran == petir_header::_sisihitam) && (petir_header::data.materialscore >= petir_header::_nilai_benteng))) {
         return_value = true;
     } else {
-        if (((giliran == petir_header::_sisiputih) && (petir_header::data.materialscore <= pas::negate(petir_usee::_nilai_benteng)))) {
+        if (((giliran == petir_header::_sisiputih) && (petir_header::data.materialscore <= pas::negate(petir_header::_nilai_benteng)))) {
             return_value = true;
         }
     }
@@ -743,12 +743,12 @@ std::int32_t captured_value(std::int32_t sto, petir_header::tdata& data) {
         return_value = 0;
     } else {
         if ((sto == petir_header::_en_passant)) {
-            return_value = petir_usee::_nilai_pion;
+            return_value = petir_header::_nilai_pion;
         } else {
             if ((sto >= petir_header::_rokadependek)) {
                 return_value = 0;
             } else {
-                return_value = petir_usee::nilai_piece[data.papan[sto]];
+                return_value = petir_header::nilai_piece[data.papan[sto]];
             }
         }
         (return_value = pas::increment(return_value, 50));
@@ -950,19 +950,19 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         return return_value;
     }
     if (((attack & data.queenblack) != 0)) {
-        threatpiece = petir_usee::_nilai_mentri;
+        threatpiece = petir_header::_nilai_mentri;
     } else {
         if (((attack & data.rookblack) != 0)) {
-            threatpiece = petir_usee::_nilai_benteng;
+            threatpiece = petir_header::_nilai_benteng;
         } else {
             if (((attack & data.bishopblack) != 0)) {
-                threatpiece = petir_usee::_nilai_gajah;
+                threatpiece = petir_header::_nilai_gajah;
             } else {
                 if (((attack & data.knightblack) != 0)) {
-                    threatpiece = petir_usee::_nilai_kuda;
+                    threatpiece = petir_header::_nilai_kuda;
                 } else {
                     if (((attack & data.pawnblack) != 0)) {
-                        threatpiece = petir_usee::_nilai_pion;
+                        threatpiece = petir_header::_nilai_pion;
                     }
                 }
             }
@@ -1167,19 +1167,19 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         return return_value;
     }
     if (((attack & data.queenwhite) != 0)) {
-        threatpiece = petir_usee::_nilai_mentri;
+        threatpiece = petir_header::_nilai_mentri;
     } else {
         if (((attack & data.rookwhite) != 0)) {
-            threatpiece = petir_usee::_nilai_benteng;
+            threatpiece = petir_header::_nilai_benteng;
         } else {
             if (((attack & data.bishopwhite) != 0)) {
-                threatpiece = petir_usee::_nilai_gajah;
+                threatpiece = petir_header::_nilai_gajah;
             } else {
                 if (((attack & data.knightwhite) != 0)) {
-                    threatpiece = petir_usee::_nilai_kuda;
+                    threatpiece = petir_header::_nilai_kuda;
                 } else {
                     if (((attack & data.pawnwhite) != 0)) {
-                        threatpiece = petir_usee::_nilai_pion;
+                        threatpiece = petir_header::_nilai_pion;
                     }
                 }
             }

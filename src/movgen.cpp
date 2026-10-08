@@ -7,26 +7,22 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
     std::uint64_t attack{};
     std::int32_t pos{};
     std::int32_t post{};
-    std::int32_t* p{};
+    std::int32_t move_index=0;
     jml = 0;
-    p = pas::address(movelist);
-    (p = pas::decrement(p, 1));
     piecepos = (data.pawnblack & (~petir_bitboard_mask::rank_mask[1]));
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
         piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
-            (p = pas::increment(p, 1));
-            (*p) = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
-            (p = pas::increment(p, 1));
-            (*p) = petir_header::historyb[petir_header::_pionhitam][pas::sub(pos, 8)];
+            auto& entry = movelist[++move_index];
+            entry.moves = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
+            entry.score = petir_header::historyb[petir_header::_pionhitam][pas::sub(pos, 8)];
             if (((pos >= petir_header::a7) && (data.papan[pas::sub(pos, 16)] == 0))) {
                 (jml = pas::increment(jml, 1));
-                (p = pas::increment(p, 1));
-                (*p) = pas::add(pos, pas::shl(pas::sub(pos, 16), 7));
-                (p = pas::increment(p, 1));
-                (*p) = petir_header::historyb[petir_header::_pionhitam][pas::sub(pos, 16)];
+                auto& entry = movelist[++move_index];
+                entry.moves = pas::add(pos, pas::shl(pas::sub(pos, 16), 7));
+                entry.score = petir_header::historyb[petir_header::_pionhitam][pas::sub(pos, 16)];
             }
         }
     }
@@ -39,10 +35,9 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             post = petir_bitboard_mask::lastbitp(pas::address(attack));
             attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
             (jml = pas::increment(jml, 1));
-            (p = pas::increment(p, 1));
-            (*p) = pas::add(pos, pas::shl(post, 7));
-            (p = pas::increment(p, 1));
-            (*p) = petir_header::historyb[petir_header::_kudahitam][post];
+            auto& entry = movelist[++move_index];
+            entry.moves = pas::add(pos, pas::shl(post, 7));
+            entry.score = petir_header::historyb[petir_header::_kudahitam][post];
         }
     }
     piecepos = data.queenblack;
@@ -57,10 +52,9 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         while ((attack != 0)) {
             post = petir_bitboard_mask::lastbitp(pas::address(attack));
             attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
-            (p = pas::increment(p, 1));
-            (*p) = pas::add(pos, pas::shl(post, 7));
-            (p = pas::increment(p, 1));
-            (*p) = petir_header::historyb[petir_header::_mentrihitam][post];
+            auto& entry = movelist[++move_index];
+            entry.moves = pas::add(pos, pas::shl(post, 7));
+            entry.score = petir_header::historyb[petir_header::_mentrihitam][post];
             (jml = pas::increment(jml, 1));
         }
     }
@@ -75,10 +69,9 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             post = petir_bitboard_mask::lastbitp(pas::address(attack));
             attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
             (jml = pas::increment(jml, 1));
-            (p = pas::increment(p, 1));
-            (*p) = pas::add(pos, pas::shl(post, 7));
-            (p = pas::increment(p, 1));
-            (*p) = petir_header::historyb[petir_header::_gajahhitam][post];
+            auto& entry = movelist[++move_index];
+            entry.moves = pas::add(pos, pas::shl(post, 7));
+            entry.score = petir_header::historyb[petir_header::_gajahhitam][post];
         }
     }
     piecepos = data.rookblack;
@@ -92,10 +85,9 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             post = petir_bitboard_mask::lastbitp(pas::address(attack));
             attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
             (jml = pas::increment(jml, 1));
-            (p = pas::increment(p, 1));
-            (*p) = pas::add(pos, pas::shl(post, 7));
-            (p = pas::increment(p, 1));
-            (*p) = petir_header::historyb[petir_header::_bentenghitam][post];
+            auto& entry = movelist[++move_index];
+            entry.moves = pas::add(pos, pas::shl(post, 7));
+            entry.score = petir_header::historyb[petir_header::_bentenghitam][post];
         }
     }
     pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));

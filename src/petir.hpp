@@ -156,7 +156,18 @@ struct tmoverecord {
     std::int32_t score;
 };
 using pmoverecord = petir_header::tmoverecord*;
-using tmovelist = pas::Array<petir_header::tmoverecord, 1, 100>;
+// Move generation can exceed the legacy 100-entry limit after promotions.
+// Keep this capacity guard even when general Pascal bounds checks are off.
+struct tmovelist : pas::Array<petir_header::tmoverecord, 1, 256> {
+    tmoverecord& operator[](std::int64_t i) {
+        if(i<1 || i>256)throw std::out_of_range("Move list index " + std::to_string(i) + " outside 1..256");
+        return values[i-1];
+    }
+    const tmoverecord& operator[](std::int64_t i) const {
+        if(i<1 || i>256)throw std::out_of_range("Move list index " + std::to_string(i) + " outside 1..256");
+        return values[i-1];
+    }
+};
 using tarr = pas::Array<std::int8_t, 0, 63>;
 struct tdata {
     petir_header::tarr papan;

@@ -18,8 +18,10 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     std::int32_t g{};
     std::int32_t fase{};
     petir_header::tdata temp{};
-    petir_header::tmovelist ml{};
-    petir_header::tmovelist mlcap{};
+    // Generators write both fields in entries 1..count before move ordering.
+    // Avoid clearing two 2 KiB buffers on every node; capacity checks remain.
+    petir_header::tmovelist ml;
+    petir_header::tmovelist mlcap;
     std::int32_t curmovecap{};
     std::int32_t curmovenoncap{};
     std::int32_t jmlcap{};
@@ -197,7 +199,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                 return_value = nilai;
                 return return_value;
             }
-            if (((nilai == pas::add(pas::add(pas::negate(petir_usee::_nilai_raja), depth), 2)) && (cext > 0))) {
+            if (((nilai == pas::add(pas::add(pas::negate(petir_header::_nilai_raja), depth), 2)) && (cext > 0))) {
                 petir_search::stack[depth].mte = true;
                 (level = pas::increment(level, 6));
                 (cext = pas::decrement(cext, 6));
@@ -262,7 +264,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             }
         } else {
             if (petir_next::nextevasion(giliran, data, moves, fase, hmoves, curmovecap, jml, jmlcap, ml)) {
-                return_value = pas::add(pas::negate(petir_usee::_nilai_raja), depth);
+                return_value = pas::add(pas::negate(petir_header::_nilai_raja), depth);
                 return return_value;
             }
             if ((moves == petir_header::_no_move)) {
@@ -571,7 +573,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
 std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t beta, petir_header::tdata& data, std::int32_t ply, std::int32_t depth, std::int32_t cext, std::int32_t neval, std::int32_t nodetype) {
     std::int32_t return_value{};
     petir_header::tdata temp{};
-    petir_header::tmovelist ml{};
+    petir_header::tmovelist ml;
     std::uint8_t tstat{};
     bool incheck{};
     bool nganu{};
@@ -664,7 +666,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
                 (ply = pas::increment(ply, 1));
             }
             else if (((pas_temp_1 == 0))) {
-                return_value = pas::add(pas::negate(petir_usee::_nilai_raja), depth);
+                return_value = pas::add(pas::negate(petir_header::_nilai_raja), depth);
                 return return_value;
             }
         } else {
@@ -684,7 +686,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
                 (ply = pas::increment(ply, 1));
             }
             else if (((pas_temp_2 == 0))) {
-                return_value = pas::add(pas::negate(petir_usee::_nilai_raja), depth);
+                return_value = pas::add(pas::negate(petir_header::_nilai_raja), depth);
                 return return_value;
             }
         } else {
@@ -706,7 +708,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
             break;
         }
     }
-    if ((!nganu)) {
+    if ((!nganu && !incheck)) {
         if ((((ply > 0) && (cext > 0)) && (e < beta))) {
             nilai = petir_ueval::materialvalue(giliran, data.materialscore);
             if ((pas::sub(e, nilai) >= 90)) {
@@ -748,7 +750,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
             }
             sto = (pas::shr(ml[a].moves, 7) & 127);
             if ((((alpha == pas::sub(beta, 1)) && (sto <= 63)) && (data.papan[sto] != 0))) {
-                v = pas::add(pas::add(e, petir_usee::nilai_piece[data.papan[sto]]), 70);
+                v = pas::add(pas::add(e, petir_header::nilai_piece[data.papan[sto]]), 70);
                 if (((((v < t_alpha) && (!petir_tools::menskak2(temp, giliran, ml[a].moves))) && (!petir_tools::pawn_7_rank(giliran, data))) && ((pas::shr(ml[a].moves, 14) & 7) == 0))) {
                     if ((!cap_is_danger())) {
                         if ((v > g)) {

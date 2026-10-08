@@ -102,6 +102,7 @@ class Unit:
     uses: list = field(default_factory=list)
     decls: list = field(default_factory=list)
     funcs: dict = field(default_factory=dict)
+    exports: set = field(default_factory=set)
 
 class Parser:
     def __init__(self,name,s): self.t=lex(s);self.i=0;self.unit=Unit(name);self.local=None
@@ -207,8 +208,10 @@ class Parser:
                 else:
                     self.expect(':');typ=self.typ();init=self.init() if self.eat('=') else None
                 self.expect(';');target.extend(Decl(n,typ,init,section,self.unit.name) for n in names)
+                if not self.in_impl:self.unit.exports.update(names)
     def function(self,kind):
         line=self.t[self.i].line;name=self.pop();args=[];short=True
+        if not self.in_impl:self.unit.exports.add(name)
         if self.eat('('):
             short=False
             if not self.eat(')'):
@@ -310,6 +313,10 @@ class Render:
         for uname in [self.u.name]+list(reversed(self.u.uses)):
             if uname not in units:continue
             unit=units[uname]
+            # Delphi implementation declarations are private to their unit.
+            # In particular, movgen/usee's 1/3/5/9/99 piece values must never
+            # shadow header's centipawn values in search or evaluation callers.
+            if uname!=self.u.name and n not in unit.exports:continue
             if n in unit.funcs:return unit.funcs[n],ns(uname)+'::'+ident(n)
             for d in unit.decls:
                 if d.name==n:return d,ns(uname)+'::'+ident(n)
