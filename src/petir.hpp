@@ -583,6 +583,8 @@ extern std::int32_t rtl;
 extern bool newpv;
 }
 namespace petir_uiterative {
+extern std::int32_t completed_move,completed_depth,completed_score;
+extern std::string completed_pv;
 inline pas::Array<std::int32_t, 2, 12> timereducement = {1, 5, 15, 20, 20, 25, 30, 30, 30, 30, 30};
 extern std::int32_t retime;
 }

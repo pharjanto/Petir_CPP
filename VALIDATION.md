@@ -89,3 +89,30 @@ Or on Windows:
 ctest --preset windows-x64
 .\build\windows-x64\Release\petir64.exe --selftest
 ```
+
+## Windows port/interface regressions
+
+The port/interface core suite performed **251 checks with zero failures** on 2026-10-08. Both CTest tests passed in the default MSVC x64 performance Release build, bounds-checked Release, and MSVC AddressSanitizer with bounds checks enabled.
+
+New coverage verifies shallow depth limits, combined depth/clock limits, restoration of the last completed move after interruption, repeated time-control periods, complete FEN output, and strict insufficient-material classification. Protocol tests exercise WinBoard clock/status messages during search, result cancellation without changing the board, a late low-clock update, draw claims, undo after repetition, zero UCI clocks, and transactional position input.
+
+On Windows, a child-process memory limit forces a real hash-allocation failure. The engine subsequently clears the retained table, completes another search, and successfully resizes it. This test passes in performance and bounds-checked builds. Only this deliberately induced allocation failure is omitted under MSVC AddressSanitizer, whose allocator aborts before C++ can catch `std::bad_alloc`; the remaining protocol tests run there.
+
+The supplied game's position before `41.h4` was replayed in four fresh WinBoard searches with books disabled and a three-second limit. One run received no clock messages; the other three received `time` and `otim` immediately after `go`. All four completed depth 19 and chose `g2f3` (`41.Kf3`), with score -106 cp. Previously, those clock messages immediately stopped the search and produced a different move. This demonstrates the corrected interface behavior for this replay; it does not establish the cause of every decision in the recorded game.
+
+An alternating three-run, fixed-depth-12 comparison against the previous performance executable produced matching node counts, scores, and best moves for all four positions below. The completed-iteration PV display can have a different tail from the previous live root report. Median timings show no meaningful performance regression in these samples; concurrent Arena play limits timing precision.
+
+| Position | Previous performance build | Interface fixes |
+|---|---:|---:|
+| Start position | 490 ms | 481 ms |
+| Kiwipete | 3,049 ms | 3,053 ms |
+| Rook ending | 35 ms | 34 ms |
+| PGN mate defense | 907 ms | 900 ms |
+
+## Depth-1 searches with cache reuse
+
+On 2026-10-09, iterative deepening was changed to start at depth 1. Search preparation retains previous transposition-table entries and ages their replacement priority, with the original move-ordering history decay restored. Killers reset between searches, and game repetition history is preserved. Opening-book replies still bypass iterative deepening.
+
+The expanded core suite passes **257 checks with zero failures**. It verifies that a previously usable exact hash result survives search preparation and is aged for replacement, that move-ordering history decays and killers reset, that repetition counts are preserved, and that explicit `Clear Hash` removes the retained result. UCI tests cover every depth from 1 to the requested limit with an empty table, then repeat searches without `ucinewgame` or `Clear Hash`: moves and scores match while node counts decrease in both default and MTD(f) modes. WinBoard tests likewise reuse results after undo, with matching moves and scores and fewer nodes. Cached iterations can complete without intermediate PV reports; the final report still honors the requested depth. Core and protocol tests pass in performance, bounds-checked Release, and MSVC AddressSanitizer builds, with the same intentional OOM-test exclusion under AddressSanitizer described above.
+
+The earlier timing measurements used the original depth-4/5 start and do not benchmark this search-control change. No playing-strength improvement is claimed without match testing.

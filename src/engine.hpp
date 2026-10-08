@@ -7,6 +7,8 @@ inline constexpr const char* start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQK
 void initialize(const std::filesystem::path& books);
 void new_game();
 Position from_fen(const std::string& fen,int& side,int* fullmove=nullptr);
+std::string to_fen(const Position& position,int side,int fullmove);
+bool insufficient_material(const Position& position);
 std::vector<int> legal_moves(Position position,int side);
 void make_move(Position& position,int side,int move);
 std::string move_text(int move,const Position& position,int side);

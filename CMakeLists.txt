@@ -42,6 +42,11 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
     add_test(NAME protocol-regression COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/protocol_test.py" "$<TARGET_FILE:petir>")
     set_tests_properties(protocol-regression PROPERTIES TIMEOUT 60)
+    if(MSVC AND (CMAKE_CXX_FLAGS MATCHES "fsanitize=address" OR CMAKE_CXX_FLAGS_RELEASE MATCHES "fsanitize=address"))
+        # MSVC ASan aborts on deliberate OOM before std::bad_alloc can be caught.
+        # The same recovery test runs in normal and bounds-checked Release builds.
+        set_tests_properties(protocol-regression PROPERTIES ENVIRONMENT "PETIR_TEST_SKIP_OOM=1")
+    endif()
 endif()
 install(TARGETS petir RUNTIME DESTINATION bin)
 install(DIRECTORY books DESTINATION bin)

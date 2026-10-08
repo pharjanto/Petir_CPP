@@ -65,6 +65,38 @@ Position from_fen(const std::string& fen,int& stm,int* fullmove) {
     if(fullmove)*fullmove=full;
     return p;
 }
+std::string to_fen(const Position& p,int stm,int fullmove) {
+    std::string result;
+    for(int rank=7;rank>=0;--rank) {
+        int empty=0;
+        for(int file=0;file<8;++file) {
+            const int piece=p.papan[rank*8+file];
+            if(!piece) {++empty;continue;}
+            if(empty) {result+=char('0'+empty);empty=0;}
+            const char name=" PNBRQK"[std::abs(piece)];
+            result+=piece>0?name:static_cast<char>(std::tolower(static_cast<unsigned char>(name)));
+        }
+        if(empty)result+=char('0'+empty);
+        if(rank)result+='/';
+    }
+    result+=stm==1?" w ":" b ";
+    std::string rights;
+    for(int bit=0;bit<4;++bit)if(p.flagrokade&(1<<bit))rights+="KQkq"[bit];
+    result+=rights.empty()?"-":rights;
+    result+=' ';
+    if(p.ep==_no_ep)result+='-';
+    else {result+=char('a'+p.ep);result+=stm==1?'6':'3';}
+    return result+" "+std::to_string(p.move50count)+" "+std::to_string(fullmove);
+}
+bool insufficient_material(const Position& p) {
+    if(p.pawnwhite || p.pawnblack || p.rookwhite || p.rookblack || p.queenwhite || p.queenblack)return false;
+    const auto knights=p.knightwhite|p.knightblack,bishops=p.bishopwhite|p.bishopblack;
+    if(std::popcount(knights|bishops)<=1)return true;
+    if(knights)return false;
+    // Any number of bishops on one square color cannot deliver mate.
+    constexpr std::uint64_t dark=UINT64_C(0xaa55aa55aa55aa55);
+    return !(bishops&dark) || !(bishops&~dark);
+}
 void make_move(Position& p,int stm,int m) {
     if(stm==1)petir_makemove::makewhitemove(m,p);else petir_makemove::makeblackmove(m,p);
 }
@@ -126,12 +158,15 @@ void prepare_search(int stm,bool timed,int ticks) {
     stalemate=false;ai_side=stm;timepassed=0;stop_process=false;
     lazy_margin1a=lazy_margin1;lazy_margin2a=lazy_margin2;lazy_margin3a=lazy_margin3;
     testsolved=false;petir_tools::clearkiller();nerror=0;
+    // Retain usable results between moves and age their replacement priority.
     if(ponder_type==ponder_off)petir_hashing_header::cleartable2();else petir_hashing_header::clearreversetable();
     co_hash=totalco=hashco=lazyexit=fpruning=efpruning=razor=cofirst=0;
     computer_thinking=true;
     for(int piece=-6;piece<=6;++piece)for(int sq=0;sq<=67;++sq) {historyw[piece][sq]/=256;historyb[piece][sq]/=256;}
     startclock=ref2=pas::gettickcount();qnode=0;usetimer=timed;timelimit=timed?ticks:999999999;
     mmoves=0;
+    petir_uiterative::completed_move=petir_uiterative::completed_depth=petir_uiterative::completed_score=0;
+    petir_uiterative::completed_pv.clear();
 }
 int original_time_budget(int stm) {
     const int clock=stm==1?clockwhite:clockblack;
@@ -139,7 +174,11 @@ int original_time_budget(int stm) {
         int result=jumlahlangkah<=80?clock/(60-jumlahlangkah/2)-2:clock/30;
         return result==0?1:result;
     }
-    if(modetime==moves_minutes)return clock/std::max(1,rmoves+2-jumlahlangkah/2);
+    if(modetime==moves_minutes) {
+        const int period=std::max(1,rmoves);
+        const int played=(jumlahlangkah/2)%period;
+        return clock/(period+2-played);
+    }
     if(modetime==seconds_move)return realclock;
     return 999999999;
 }

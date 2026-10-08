@@ -31,6 +31,9 @@ This is a source-level port of the active Petir 1 engine, not a new chess engine
 | Main and quiescence search move lists are filled on demand rather than zeroed at entry | Generators assign both move and score for each counted entry before ordering reads it. Scalar initialization and unconditional move-list capacity guards are retained. Regression tests compare generator output from different initial byte patterns. |
 | Standard-library worker, atomic stop/time counters, monotonic timer | Replaces VCL threads and the 250 ms timer. Search remains single-threaded. Modern thread scheduling and hard `movetime` limits can change the last completed iteration. |
 | Console UCI/WinBoard adapter | Replaces GUI actions. FEN input is validated and restores en passant and counters; legacy `readnotation` remains in the translated core. Protocol move input is checked using the original generators. |
+| Depth-1 start, completed-iteration results, and explicit depth limits | Each search begins at depth 1. Hash entries are retained and aged between moves, with the original history decay and killer reset. Game repetition history is preserved. Depth limits, including limits combined with clocks, are honored. An interrupted iteration cannot replace the last completed move, score, or PV. |
+| WinBoard search lifecycle, period clocks, and game results | Routine clock/status commands leave search running; position changes and `force` discard its result. Move counts wrap for each time-control period. The adapter claims actual-game draws independently of the core's heuristic draw evaluation. |
+| Transactional hash resizing and position input | Allocation or input failure preserves the previous usable table or position. Diagnostic FEN output includes all six fields. |
 | Portable book/PGN file operations and paths | Removes form and Windows-path dependencies; book bytes and learning logic are unchanged. Missing files/paths are reported by the console where appropriate. |
 | Omit GUI-only diagnostics and `TStringList` startup/finalization | Removes desktop captions and the original `C:\anu.txt` write. The translated diagnostic routines remain available but inactive. |
 
@@ -47,7 +50,6 @@ These are future improvement candidates, not changes made in this version:
 - Mate scores retain their original TT encoding and root conventions; no ply normalization was added.
 - The original `IsValid` pawn-file behavior, SEE treatment of pins/kings, check-evasion logic, and search pruning quirks are retained.
 - Book candidates remain limited to 20 entries. Optional bounds checks detect exceeding that capacity. Move lists now have 256 entries and an unconditional capacity check.
-- Iterative search initially runs depth 4 and 5 and retains the original maximum loop bound. Its return-value quirks at those depths remain in the core; protocol scores come from the original PV reports.
 - MTD(f) retains its original byte-sized depth parameter and is off by default.
 - Node counters remain 32-bit, and the halfmove counter remains an 8-bit field.
 - The legacy PGN learner is not a general PGN parser.

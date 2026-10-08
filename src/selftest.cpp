@@ -76,6 +76,31 @@ int self_test() {
     check(generation_defines_entries,"generated move/score entries do not depend on initial buffer contents");
     auto bare=from_fen("7k/8/8/8/8/8/8/K7 w - - 0 1",stm);
     check(petir_ueval::eval(bare,stm,-20500,20500)==0,"bare kings evaluate as draw");
+    check(insufficient_material(bare),"bare kings are insufficient mating material");
+    for(const char* fen:{
+        "7k/8/8/8/8/8/8/KN6 w - - 0 1",
+        "7k/8/8/8/8/8/8/KB6 w - - 0 1",
+        "7k/8/8/4b3/8/8/8/K1B5 w - - 0 1"}) {
+        auto dead=from_fen(fen,stm);
+        check(insufficient_material(dead),"single minor / same-color bishops cannot mate");
+    }
+    for(const char* fen:{
+        "7k/8/8/8/8/8/8/KNN5 w - - 0 1",
+        "6nk/8/8/8/8/8/8/KN6 w - - 0 1",
+        "7k/8/8/3b4/8/8/8/K1B5 w - - 0 1"}) {
+        auto live=from_fen(fen,stm);
+        check(!insufficient_material(live),"do not claim insufficient material when mate is possible");
+    }
+    const std::string fen_state="r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 42 17";
+    int fullmove=0;auto roundtrip=from_fen(fen_state,stm,&fullmove);
+    check(to_fen(roundtrip,stm,fullmove)==fen_state,"FEN output preserves castling, en passant, and counters");
+    const auto old_mode=modetime,old_moves=jumlahlangkah,old_rmoves=rmoves,old_clock=clockwhite;
+    modetime=moves_minutes;rmoves=40;clockwhite=2400;
+    jumlahlangkah=0;const int period_budget=original_time_budget(1);
+    jumlahlangkah=80;check(original_time_budget(1)==period_budget,"clock budget resets at the second time-control period");
+    jumlahlangkah=160;check(original_time_budget(1)==period_budget,"clock budget resets at later time-control periods");
+    jumlahlangkah=78;check(original_time_budget(1)==800,"last move of a time-control period gets the legacy budget");
+    modetime=old_mode;jumlahlangkah=old_moves;rmoves=old_rmoves;clockwhite=old_clock;
     auto ep=from_fen("7k/8/8/3pP3/8/8/8/K7 w - d6 0 1",stm);
     int m=parse_move("e5d6",ep,stm);check(m!=0,"en passant parsed");make_move(ep,stm,m);
     check(ep.papan[35]==0 && ep.papan[43]==1 && consistent(ep),"en passant updates occupancy, material, and hash");
@@ -151,11 +176,42 @@ int self_test() {
     check(petir_repetition::addrephash(start.hashkey,1)==1,"second repetition insertion");
     petir_repetition::delrephash(start.hashkey,1);
     check(petir_repetition::addrephash(start.hashkey,1)==1,"repetition delete and reinsert");
+    // Keep previous results available; new searches age rather than clear them.
+    petir_hashing::addtable(start.hashkey,1,48,parse_move("e2e4",start,1),777,pv_node);
+    const auto cached_start=[&] {
+        int alpha=-20500,beta=20500,score=0,move=0;bool avoid_null=false;
+        return petir_hashing::searchhash(start.hashkey,alpha,beta,8,1,score,move,avoid_null);
+    };
+    check(cached_start(),"previous search result is available before preparing a new search");
+    historyw[1][28]=historyb[-1][36]=1048576;
+    killer0[0]=killer1[63]=1;
     prepare_search(1,false,0);usewinboard=false;
+    check(cached_start(),"new search retains the previous search's hash result");
+    const auto hash_slot=start.hashkey&static_cast<std::uint64_t>(maxhash-1);
+    check((petir_hashing_header::hashtable[hash_slot].flag&petir_hashing_header::bit_old)!=0,"previous search's hash result is aged for replacement");
+    check(historyw[1][28]==4096 && historyb[-1][36]==4096 && killer0[0]==0 && killer1[63]==0,"new search decays move-ordering history and resets killers");
+    check(petir_repetition::addrephash(start.hashkey,1)==2,"search reset preserves game repetition history");
+    petir_repetition::initrepdata();
+    petir_hashing_header::cleartable();
+    check(!cached_start(),"explicit Clear Hash discards the retained result");
     (void)petir_uiterative::iterative(5,1,_nodemax,start);
     auto moves=legal_moves(start,1);
     check(std::find(moves.begin(),moves.end(),mmoves)!=moves.end(),"iterative search returns a legal starting move");
     check(consistent(start),"search does not change the caller's board");
+    for(int requested=1;requested<=4;++requested) {
+        new_game();prepare_search(1,false,0);usewinboard=false;
+        (void)petir_uiterative::iterative(requested,1,_nodemax,start);
+        check(petir_uiterative::completed_depth==requested,"honor shallow depth limit "+std::to_string(requested));
+    }
+    new_game();prepare_search(1,false,0);usewinboard=true;
+    int previous_best=0;
+    pas::output=[&](const pas::String& output) {
+        std::istringstream line(output.value);int reported=0;line>>reported;
+        if(reported==6 && !previous_best) {previous_best=petir_uiterative::completed_move;stop_process=true;}
+    };
+    (void)petir_uiterative::iterative(8,1,_nodemax,start);
+    pas::output={};usewinboard=false;
+    check(previous_best!=0 && mmoves==previous_best && petir_uiterative::completed_depth==5,"interrupted iteration restores the last completed best move");
     // A quiet rook move up the board permits a back-rank mate; search must
     // choose a defense for either color, rather than just a legal move.
     for(const char* fen:{

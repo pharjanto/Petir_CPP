@@ -2,6 +2,8 @@
 #include "petir.hpp"
 namespace petir_uiterative {
 std::int32_t retime{};
+std::int32_t completed_move{},completed_depth{},completed_score{};
+std::string completed_pv;
 // uiterative.pas:145
 std::int32_t iterative(std::int32_t level, std::int32_t giliran, std::int32_t tipe, petir_header::tdata data) {
     std::int32_t return_value{};
@@ -16,7 +18,22 @@ std::int32_t iterative(std::int32_t level, std::int32_t giliran, std::int32_t ti
     bool anu{};
     std::int32_t lastmoves{};
     std::int32_t counter{};
-    l = 5;
+    level=std::clamp(level,1,49);
+    l = 1;
+    completed_move=completed_depth=completed_score=0;completed_pv.clear();
+    const auto interrupted=[] {return petir_header::stop_process.load() || petir_header::timepassed.load()>=petir_header::timelimit;};
+    const auto complete=[&](int d,int score) {
+        completed_move=petir_header::mmoves;completed_depth=d;completed_score=score;
+        const int search_nodes=petir_header::total_node;
+        try {completed_pv=petir_pv::getpv(data,giliran,d+(petir_header::use_mtdf?3:4)).value;}
+        catch(...) {petir_header::total_node=search_nodes;throw;}
+        petir_header::total_node=search_nodes;
+        const auto best=petir_notation::movetonotation(completed_move,data.ep,giliran).value;
+        // The root move is authoritative even if a TT child was replaced.
+        const auto space=completed_pv.find(' ');
+        completed_pv=best+(space==std::string::npos?"":completed_pv.substr(space));
+    };
+    const auto restore=[] {petir_header::mmoves=completed_move;return completed_score;};
     petir_root::rtl = petir_header::timelimit;
     petir_header::maxdepth = pas::round((l * 2.00));
     nilai3 = 0;
@@ -26,25 +43,24 @@ std::int32_t iterative(std::int32_t level, std::int32_t giliran, std::int32_t ti
     petir_root::ntimelimit = (petir_header::timelimit / 3);
     petir_header::maxext = 1.00;
     if (petir_uiterative::timemanage(giliran, data)) {
+        completed_move=petir_header::mmoves;
         return return_value;
     }
     if ((!petir_header::use_mtdf)) {
-        petir_header::toplevel = pas::sub(l, 1);
-        nilai2 = petir_root::searchroot(pas::mul(pas::sub(l, 1), petir_header::fractional_ply), giliran, petir_header::_nodemax, pas::sub(pas::negate(petir_header::_infinity), 500), pas::add(petir_header::_infinity, 500), data, false, 0, pas::round(((petir_header::maxext * petir_header::toplevel) * petir_header::fractional_ply)));
         petir_header::toplevel = l;
         nilai = petir_root::searchroot(pas::mul(l, petir_header::fractional_ply), giliran, petir_header::_nodemax, pas::sub(pas::negate(petir_header::_infinity), 500), pas::add(petir_header::_infinity, 500), data, false, 0, pas::round(((petir_header::maxext * petir_header::toplevel) * petir_header::fractional_ply)));
     } else {
-        petir_header::toplevel = pas::sub(l, 1);
-        nilai2 = petir_uiterative::mtdf(data, pas::mul(pas::sub(l, 1), petir_header::fractional_ply), giliran, 0);
         petir_header::toplevel = l;
         nilai = petir_uiterative::mtdf(data, pas::mul(l, petir_header::fractional_ply), giliran, 0);
     }
+    if(interrupted())return restore();
+    complete(l,nilai);
     if (petir_header::testsolved) {
         return return_value;
     }
     lastmoves = petir_header::mmoves;
     counter = 0;
-    while ((((petir_header::usetimer && (petir_header::timepassed < petir_header::timelimit)) || ((!petir_header::usetimer) && (l < level))) && (l < 50))) {
+    while (l<level && !interrupted()) {
         (l = pas::increment(l, 1));
         petir_header::toplevel = l;
         petir_header::maxdepth = pas::round(pas::mul(l, 2));
@@ -56,9 +72,9 @@ std::int32_t iterative(std::int32_t level, std::int32_t giliran, std::int32_t ti
             nilai3 = petir_uiterative::mtdf(data, pas::mul(l, petir_header::fractional_ply), giliran, nilai2);
         }
         if ((petir_header::stop_process || (petir_header::timepassed >= petir_header::timelimit))) {
-            return_value = nilai;
-            return return_value;
+            return restore();
         }
+        complete(l,nilai3);
         if ((((nilai3 < 0) && (nilai >= 10)) && (!anu))) {
             (petir_header::timelimit = pas::increment(petir_header::timelimit, (petir_root::rtl / 2)));
             anu = true;
@@ -83,7 +99,7 @@ std::int32_t iterative(std::int32_t level, std::int32_t giliran, std::int32_t ti
         nilai = nilai3;
     }
     petir_header::toplevel = level;
-    return_value = nilai3;
+    return_value = nilai;
     return return_value;
 }
 
@@ -112,6 +128,7 @@ std::int32_t mtdf(petir_header::tdata data, std::uint8_t level, std::uint8_t gil
     do {
         oldg = g;
         g = petir_root::searchroot(level, giliran, petir_header::_nodemax, pas::sub(beta, 1), beta, data, false, 0, pas::round((petir_header::maxext * level)));
+        if(petir_header::stop_process || petir_header::timepassed>=petir_header::timelimit)return g;
         if ((g < beta)) {
             globalupper = g;
             beta = g;
@@ -150,6 +167,7 @@ std::int32_t aspiration(std::int32_t level, std::int32_t giliran, std::int32_t t
     d2 = 100;
     z = 80;
     n = petir_root::searchroot(level, giliran, petir_header::_nodemax, pas::sub(nilai, d), pas::add(nilai, d), data, false, 0, z);
+    if(petir_header::stop_process || petir_header::timepassed>=petir_header::timelimit)return n;
     n2 = n;
     if (((n >= pas::add(nilai, d)) && (n < petir_header::_infinity))) {
         n = petir_root::searchroot(level, giliran, petir_header::_nodemax, n2, pas::add(petir_header::_infinity, 500), data, false, 0, z);
