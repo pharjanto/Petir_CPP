@@ -26,7 +26,7 @@ std::int32_t tropismeval{};
 std::int32_t q_margin = 250;
 std::int32_t futil_margin = 200;
 std::int32_t thread_priority = 0;
-std::int32_t maxhash = pas::mul(262144, 2);
+std::int32_t maxhash = 4194304; // 64 MiB / 16 bytes per hash entry.
 std::int32_t resign_value = pas::negate(900);
 std::int32_t resign_count{};
 std::int32_t draw_count{};

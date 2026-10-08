@@ -10,7 +10,7 @@ The source is editable C++, with no Pascal compiler or Python dependency at runt
 2. Install the **C/C++** and **CMake Tools** extensions. The project recommends both.
 3. Install **Visual Studio 2022 Build Tools** with **Desktop development with C++**, the x64 compiler, Windows SDK, and CMake tools. The supplied Windows preset targets that toolchain. If you use another compiler version, create/select its x64 CMake preset instead.
 4. Run **CMake: Select Configure Preset**, select `windows-x64`, then **CMake: Configure** and **CMake: Build**.
-5. The native build is `build/windows-x64/Release/petir.exe`. Run `--selftest`, or load that executable in a chess GUI as a UCI engine.
+5. The native build is `build/windows-x64/Release/petir64.exe`. Run `--selftest`, or load that executable in a chess GUI as a UCI engine.
 
 You can also build from a terminal in the project folder:
 
@@ -18,7 +18,7 @@ You can also build from a terminal in the project folder:
 cmake --preset windows-x64
 cmake --build --preset windows-x64
 ctest --preset windows-x64
-.\build\windows-x64\Release\petir.exe --selftest
+.\build\windows-x64\Release\petir64.exe --selftest
 ```
 
 The included debugger configurations run the self-test. Choose a Debug build configuration to step through the engine with useful symbols. You can change the launch arguments to `--perft` or `--eval`.

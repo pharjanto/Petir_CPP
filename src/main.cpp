@@ -170,7 +170,7 @@ public:
                 const auto& c=w[0];
                 if(c=="quit") {finish();break;}
                 if(c=="xboard") {finish();mode=Mode::WinBoard;continue;}
-                if(c=="uci") {finish();mode=Mode::UCI;emit("id name Petir 1 C++ faithful port");emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 8 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Clear Hash type button");emit("uciok");}
+                if(c=="uci") {finish();mode=Mode::UCI;emit("id name Petir 1 C++ faithful port");emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Clear Hash type button");emit("uciok");}
                 else if(mode==Mode::WinBoard)winboard_command(line,w);
                 else if(c=="isready")emit("readyok");
                 else if(c=="setoption")option(w);

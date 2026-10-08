@@ -46,5 +46,5 @@ Or on Windows:
 
 ```powershell
 ctest --preset windows-x64
-.\build\windows-x64\Release\petir.exe --selftest
+.\build\windows-x64\Release\petir64.exe --selftest
 ```
