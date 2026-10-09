@@ -138,6 +138,21 @@ int self_test() {
     check(generation_defines_entries,"generated move/score entries do not depend on initial buffer contents");
     auto bare=from_fen("7k/8/8/8/8/8/8/K7 w - - 0 1",stm);
     check(petir_ueval::eval(bare,stm,-20500,20500)==0,"bare kings evaluate as draw");
+    // These windows pass stage 1; the removed later lazy checkpoints used to
+    // return before king-danger evaluation or rule-50 scaling completed.
+    struct LazyEvalFixture {const char* name;const char* fen;int alpha,beta,score;};
+    for(const auto& fixture:{
+        LazyEvalFixture{"king danger after former stage 2",
+            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-74,-73,-74},
+        LazyEvalFixture{"rule-50 scaling after former stage 3",
+            "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,100}}) {
+        auto position=from_fen(fixture.fen,stm);
+        check(consistent(position),std::string("lazy evaluation fixture is consistent: ")+fixture.name);
+        const int full=petir_ueval::eval(position,stm,-20500,20500);
+        const int narrow=petir_ueval::eval(position,stm,fixture.alpha,fixture.beta);
+        check(full==fixture.score,std::string("full evaluation reference: ")+fixture.name);
+        check(narrow==full,std::string("narrow evaluation completes remaining terms: ")+fixture.name);
+    }
     check(insufficient_material(bare),"bare kings are insufficient mating material");
     for(const char* fen:{
         "7k/8/8/8/8/8/8/KN6 w - - 0 1",

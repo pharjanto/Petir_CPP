@@ -931,22 +931,6 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             (nilai = pas::decrement(nilai, 35));
         }
     }
-    if ((((alpha == pas::sub(beta, 1)) && (npionputih > 0)) && (npionhitam > 0))) {
-        m = petir_ueval::dynamiclazy2(data);
-        if ((giliran == petir_header::_sisiputih)) {
-            temp = nilai;
-        } else {
-            temp = pas::negate(nilai);
-        }
-        if ((pas::add(pas::add(temp, 250), m) < alpha)) {
-            return_value = temp;
-            return return_value;
-        }
-        if ((pas::sub(temp, pas::add(250, m)) > beta)) {
-            return_value = temp;
-            return return_value;
-        }
-    }
     temp = 0;
     piecepos = data.rookwhite;
     while ((piecepos != 0)) {
@@ -1129,21 +1113,6 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
         }
     }
     (nilai = pas::decrement(nilai, (pas::mul(temp, petir_ueval::nilai_rook_scale[std::min<int>(data.nilai_perwira_hitam, 41)]) / 100)));
-    if ((((alpha == pas::sub(beta, 1)) && (whitekingpressure <= 1)) && (blackkingpressure <= 1))) {
-        if ((giliran == petir_header::_sisiputih)) {
-            temp = nilai;
-        } else {
-            temp = pas::negate(nilai);
-        }
-        if ((pas::add(temp, 170) < alpha)) {
-            return_value = temp;
-            return return_value;
-        }
-        if ((pas::sub(temp, 170) > beta)) {
-            return_value = temp;
-            return return_value;
-        }
-    }
     piecepos = data.knightwhite;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
@@ -1962,22 +1931,6 @@ std::int32_t dynamiclazy(petir_header::tdata& data) {
     }
     if (((data.rookblack == 0) && (data.rookwhite == 0))) {
         (return_value = pas::decrement(return_value, 30));
-    }
-    if (((data.knightblack == 0) && (data.knightwhite == 0))) {
-        (return_value = pas::decrement(return_value, 20));
-    }
-    if (((data.bishopblack == 0) && (data.bishopwhite == 0))) {
-        (return_value = pas::decrement(return_value, 20));
-    }
-    return return_value;
-}
-
-// ueval.pas:841
-std::int32_t dynamiclazy2(petir_header::tdata& data) {
-    std::int32_t return_value{};
-    return_value = 0;
-    if (((data.queenblack == 0) && (data.queenwhite == 0))) {
-        (return_value = pas::decrement(return_value, 50));
     }
     if (((data.knightblack == 0) && (data.knightwhite == 0))) {
         (return_value = pas::decrement(return_value, 20));

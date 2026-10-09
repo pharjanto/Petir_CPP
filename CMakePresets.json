@@ -12,6 +12,16 @@
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
+      "name": "windows-x64-stage1",
+      "inherits": "windows-x64",
+      "displayName": "Windows x64 - Petir Stage1",
+      "binaryDir": "${sourceDir}/build/windows-x64-stage1",
+      "cacheVariables": {
+        "PETIR_OUTPUT_NAME": "petir-stage1",
+        "PETIR_ENGINE_NAME": "Petir Stage1"
+      }
+    },
+    {
       "name": "linux-release",
       "displayName": "Linux 64-bit Release",
       "generator": "Unix Makefiles",
@@ -29,11 +39,13 @@
   ],
   "buildPresets": [
     { "name": "windows-x64", "configurePreset": "windows-x64", "configuration": "Release" },
+    { "name": "windows-x64-stage1", "configurePreset": "windows-x64-stage1", "configuration": "Release" },
     { "name": "linux-release", "configurePreset": "linux-release" },
     { "name": "linux-debug", "configurePreset": "linux-debug" }
   ],
   "testPresets": [
     { "name": "windows-x64", "configurePreset": "windows-x64", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "windows-x64-stage1", "configurePreset": "windows-x64-stage1", "configuration": "Release", "output": { "outputOnFailure": true } },
     { "name": "linux-release", "configurePreset": "linux-release", "output": { "outputOnFailure": true } },
     { "name": "linux-debug", "configurePreset": "linux-debug", "output": { "outputOnFailure": true } }
   ]

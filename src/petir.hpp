@@ -772,7 +772,6 @@ std::int32_t popcount_b(petir_bitboard_mask::pword p);
 std::uint8_t popcount(petir_bitboard_mask::pword p);
 bool onlyone(std::uint64_t p);
 std::int32_t dynamiclazy(petir_header::tdata& data);
-std::int32_t dynamiclazy2(petir_header::tdata& data);
 }
 namespace petir_search {
 void empty_historytable();

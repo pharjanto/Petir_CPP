@@ -77,6 +77,18 @@ The positional quiescence restart is disabled by default (`PETIR_Q_POSITIONAL_EX
 
 The 4.39 history-based quiet-move reduction is always enabled in the C++ engine. The reduction build option and comparison presets have been removed. The standard Windows preset produces `build/windows-x64/Release/petir64.exe`.
 
+Stage-1-only lazy evaluation is the default for all C++ builds, including the standard `windows-x64` and Linux presets. The first lazy checkpoint and its margin are unchanged; stages 2 and 3 have been removed, so evaluation completes all remaining terms whenever stage 1 does not return. Rebuild the standard Windows preset to use this evaluation in `build/windows-x64/Release/petir64.exe`.
+
+The optional `windows-x64-stage1` preset builds the same evaluation under the separately named **Petir Stage1** executable:
+
+```powershell
+cmake --preset windows-x64-stage1
+cmake --build --preset windows-x64-stage1
+ctest --preset windows-x64-stage1
+```
+
+The executable is `build/windows-x64-stage1/Release/petir-stage1.exe`, with its opening books in the adjacent `books` directory.
+
 Command-line utilities:
 
 ```text
