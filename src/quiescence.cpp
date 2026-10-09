@@ -46,7 +46,6 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
     petir_header::tmovelist ml;
     std::uint8_t tstat{};
     bool incheck{};
-    bool nganu{};
     std::int32_t v{};
     std::int32_t tempnm{};
     std::int32_t sc{};
@@ -62,13 +61,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
     bool abcd{};
     std::int32_t pas_temp_1{};
     std::int32_t pas_temp_2{};
-    std::int32_t pas_temp_3{};
     std::int32_t pas_temp_4{};
-#ifdef PETIR_DISABLE_Q_POSITIONAL_EXTENSION
-    constexpr bool positional_extension_enabled = false;
-#else
-    constexpr bool positional_extension_enabled = true;
-#endif
 // search.pas:991
     auto cap_is_danger = [&]() -> bool {
     bool return_value{};
@@ -174,36 +167,8 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
     }
     if(depth>=63)return petir_ueval::eval(data,giliran,alpha,beta);
     temp = data;
-    nganu = false;
-    pas_temp_3 = jml;
-    for (a = 1; a <= pas_temp_3; ++a) {
-        if ((ml[a].score > 0)) {
-            nganu = true;
-            break;
-        }
-    }
-    if ((!nganu && !incheck)) {
-        if ((positional_extension_enabled && (((ply > 0) && (cext > 0)) && (e < beta)))) {
-            nilai = petir_ueval::materialvalue(giliran, data.materialscore);
-            if ((pas::sub(e, nilai) >= 90)) {
-                if ((pas::sub(e, nilai) >= 200)) {
-                    return_value = petir_search::mainsearch(16, giliran, alpha, beta, data, false, depth, 0, false, 0, nodetype);
-                } else {
-                    return_value = petir_search::mainsearch(8, giliran, alpha, beta, data, false, depth, 0, false, 0, nodetype);
-                }
-                return return_value;
-            } else {
-                if ((jml == 0)) {
-                    return_value = e;
-                    return return_value;
-                }
-            }
-        } else {
-            if ((jml == 0)) {
-                return_value = e;
-                return return_value;
-            }
-        }
+    if (!incheck && jml == 0) {
+        return e;
     }
     if ((!incheck)) {
         g = e;

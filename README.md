@@ -73,7 +73,7 @@ Cached hash scores require the same halfmove counter as the current position. A 
 
 En passant check evasions must leave the king safe, including when the capture blocks a sliding-piece check. Quiescence recognizes stalemate before returning a static or cached evaluation.
 
-The positional quiescence restart is disabled by default (`PETIR_Q_POSITIONAL_EXTENSION=OFF`), including in all supplied presets. Check evasions and the other quiescence search behavior remain active. To enable the positional restart for a comparison, configure a separate build directory with `-DPETIR_Q_POSITIONAL_EXTENSION=ON` and optionally choose a distinct executable name with `-DPETIR_OUTPUT_NAME=petir64-qextension`. The supplied presets explicitly set the option to `OFF`, including when reconfiguring an existing build directory.
+The positional quiescence restart has been removed from the C++ engine, along with its build option. Quiescence no longer restarts normal search for a positional bonus. Check evasions and the other quiescence search behavior remain active.
 
 The 4.39 history-based quiet-move reduction is always enabled in the C++ engine. The reduction build option and comparison presets have been removed. The standard Windows preset produces `build/windows-x64/Release/petir64.exe`.
 

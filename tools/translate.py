@@ -515,9 +515,11 @@ class Render:
         if self.u.name=='search' and f.name in ('mainsearch','q_search'):
             guards='    // Portability guards: stop safely and keep the original 64-ply arrays in bounds.\n'
             if f.name=='q_search':
-                locals+='#ifdef PETIR_DISABLE_Q_POSITIONAL_EXTENSION\n    constexpr bool positional_extension_enabled = false;\n#else\n    constexpr bool positional_extension_enabled = true;\n#endif\n'
-                body=body.replace('if ((((ply > 0) && (cext > 0)) && (e < beta))) {',
-                                  'if ((positional_extension_enabled && (((ply > 0) && (cext > 0)) && (e < beta)))) {',1)
+                # The C++ port never restarts main search for a positional bonus.
+                body,count=re.subn(r'    nganu = false;\n.*?(?=    if \(\(!incheck\)\) \{)',
+                                   '    if (!incheck && jml == 0) {\n        return e;\n    }\n',body,count=1,flags=re.S)
+                if count!=1:raise ValueError('quiescence positional extension block not found')
+                locals=locals.replace('    bool nganu{};\n','').replace('    std::int32_t pas_temp_3{};\n','')
                 guards+='    if (petir_header::stop_process.load()) return 0;\n'
             guards+='    if (depth >= 63) return petir_ueval::eval(data, giliran, alpha, beta);\n'
         return ('// '+self.u.name+'.pas:'+str(f.line)+'\n'+sig+' {\n'+locals+nests+guards+body+end+'}'+(';' if nested else '')+'\n\n')
