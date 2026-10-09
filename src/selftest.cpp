@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "kpk.hpp"
 #include <algorithm>
 #include <sstream>
 namespace petir {
@@ -257,6 +258,71 @@ int self_test() {
     }
     auto bare=from_fen("7k/8/8/8/8/8/8/K7 w - - 0 1",stm);
     check(petir_ueval::eval(bare,stm,-20500,20500)==0,"bare kings evaluate as draw");
+    // Independent Syzygy WDL/DTZ fixtures. Mirror each across files and colors;
+    // exercise full/lazy windows and infhr's reversed score perspective.
+    struct KpkFixture { const char* name; const char* fen; int dtz; };
+    for (const auto& fixture : {
+        KpkFixture{"opposition draw", "8/4k3/8/4K3/4P3/8/8/8 w - - 0 1", 0},
+        KpkFixture{"opposition win", "8/4k3/8/4K3/4P3/8/8/8 b - - 0 1", 4},
+        KpkFixture{"sixth-rank king", "4k3/8/4K3/4P3/8/8/8/8 w - - 0 1", 3},
+        KpkFixture{"rook promotion avoids stalemate", "8/k1P5/2K5/8/8/8/8/8 w - - 0 1", 1},
+        KpkFixture{"stalemate", "k7/2K5/1P6/8/8/8/8/8 b - - 0 1", 0},
+        KpkFixture{"pawn can be captured", "8/8/8/4k3/4P3/8/8/K7 b - - 0 1", 0},
+        KpkFixture{"blocked seventh-rank pawn wins", "4k3/4P3/4K3/8/8/8/8/8 w - - 0 1", 5},
+        KpkFixture{"blocked seventh-rank pawn draws", "4k3/4P3/4K3/8/8/8/8/8 b - - 0 1", 0},
+        KpkFixture{"distant king draw", "8/8/8/8/5k2/8/P7/K7 w - - 0 1", 0},
+        KpkFixture{"rook pawn corner draw", "7k/8/6KP/8/8/8/8/8 w - - 0 1", 0},
+        KpkFixture{"seventh-rank rook pawn draw", "k7/P7/1K6/8/8/8/8/8 w - - 0 1", 0},
+        KpkFixture{"initial double push", "8/8/8/8/8/8/2P4k/K7 w - - 0 1", 1},
+        KpkFixture{"defender delays pawn reset", "8/8/8/8/8/2P5/7k/K7 b - - 0 1", 14},
+        KpkFixture{"king must unblock pawn", "7k/8/8/8/8/8/4P3/K7 w - - 0 1", 11}}) {
+        int fixture_side;
+        const auto base = from_fen(fixture.fen,fixture_side);
+        const int pawn_rank = std::countr_zero(base.pawnwhite) / 8;
+        for (bool flip_color : {false,true}) for (bool flip_file : {false,true}) {
+            Position position{};
+            for (int square = 0; square < 64; ++square)
+                position.papan[square ^ (flip_color ? 56 : 0) ^ (flip_file ? 7 : 0)]
+                    = static_cast<std::int8_t>(base.papan[square] * (flip_color ? -1 : 1));
+            petir_customboard::fillbitboard(position);
+            const int actual_side = flip_color ? 3-fixture_side : fixture_side;
+            const std::string tag = std::string("KPK: ") + fixture.name
+                + (flip_color ? " black pawn" : " white pawn") + (flip_file ? " reflected" : "");
+            for (int clock : {0,79,80,96,97,98,99,100,255}) {
+                position.move50count = static_cast<std::uint8_t>(clock);
+                const auto saved = position;
+                const bool drawn = !fixture.dtz || clock >= 100 || clock + fixture.dtz > 100;
+                int expected = drawn ? 0 : 700 + 8*pawn_rank - fixture.dtz;
+                if (fixture_side == _sisihitam) expected = -expected;
+                int raw = 12345;
+                check(petir_kpk::probe(position,actual_side,raw) && raw == expected,tag+" exact outcome and DTZ score");
+                for (const auto& window : {std::array<int,2>{-20500,20500},{0,1},{1000,1001}}) {
+                    check(petir_ueval::eval(position,actual_side,window[0],window[1]) == expected,
+                        tag+" full/lazy score at halfmove "+std::to_string(clock));
+                    check(petir_ueval::eval(position,3-actual_side,window[0],window[1],true) == -expected,
+                        tag+" infhr perspective at halfmove "+std::to_string(clock));
+                }
+                check(std::memcmp(&position,&saved,sizeof(position)) == 0,tag+" leaves position unchanged");
+            }
+        }
+    }
+    // Draw contempt is returned as configured in both perspectives; a winning
+    // score equal to contempt must still reverse sign under infhr.
+    const int saved_contempt = contemp_draw;
+    auto kpk_draw = from_fen("8/4k3/8/4K3/4P3/8/8/8 w - - 0 1",stm);
+    auto kpk_win = from_fen("8/4k3/8/4K3/4P3/8/8/8 b - - 0 1",stm);
+    contemp_draw = -720;
+    check(petir_ueval::eval(kpk_draw,1,0,1) == contemp_draw
+        && petir_ueval::eval(kpk_draw,2,0,1,true) == contemp_draw,"KPK draws preserve contempt");
+    check(petir_ueval::eval(kpk_win,2,0,1) == -720
+        && petir_ueval::eval(kpk_win,1,0,1,true) == 720,"KPK winning score reverses even when equal to contempt");
+    contemp_draw = saved_contempt;
+    int unused_kpk_score;
+    auto not_kpk = from_fen("7k/8/8/8/8/8/4P3/KQ6 w - - 0 1",stm);
+    check(!petir_kpk::probe(bare,1,unused_kpk_score)
+        && !petir_kpk::probe(not_kpk,1,unused_kpk_score),"KPK probe rejects other material");
+    not_kpk = from_fen("7k/8/8/8/8/8/3PP3/K7 w - - 0 1",stm);
+    check(!petir_kpk::probe(not_kpk,1,unused_kpk_score),"KPK probe rejects two pawns");
     auto check_mirrored_table=[&](const char* name,const auto& white,const auto& black) {
         bool matches=true;
         for(int square=0;square<64;++square)

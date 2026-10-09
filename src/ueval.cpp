@@ -1,5 +1,6 @@
 // Faithful translation of ueval.pas; Delphi source is in original/.
 #include "petir.hpp"
+#include "kpk.hpp"
 #include <algorithm>
 #include <bit>
 #include <cstring>
@@ -1608,6 +1609,12 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
 }
 
 std::int32_t eval(const petir_header::tdata& data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr) {
+    int kpk_score;
+    if (petir_kpk::probe(data, infhr ? 3 - giliran : giliran, kpk_score)) {
+        // infhr supplies the opponent's score perspective after a move.
+        if (!kpk_score) return petir_header::contemp_draw;
+        return infhr ? -kpk_score : kpk_score;
+    }
 #if defined(_MSC_VER) && defined(_M_X64)
     // Select once per evaluation instead of dispatching at every bit count.
     if (has_native_popcount) {

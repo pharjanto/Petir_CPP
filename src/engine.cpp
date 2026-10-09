@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "kpk.hpp"
 #include <algorithm>
 #include <sstream>
 
@@ -15,6 +16,7 @@ void initialize(const std::filesystem::path& books) {
     petir_hashing_header::inithashkey();
     petir_hashing_header::inittable();
     petir_evalmask::initevalmask();
+    petir_kpk::initialize();
     pas::form1.defaultdir=books.string();
     petir_opening_book::initbook();
     petir_opening_book::loadbook();
