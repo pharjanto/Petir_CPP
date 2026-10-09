@@ -48,9 +48,64 @@ int self_test() {
     }
     check(scan_matches,"native bit scan matches legacy lookup across all 16-bit blocks");
     check(reverse_scan_matches,"native reverse scan preserves the highest-word/least-bit order for every word");
+    // Compare both count APIs with the old per-bit loop, including dense and
+    // sparse boards whose bits span all four 16-bit words.
+    bool counts_match=true,single_bit_matches=true;
+    auto check_counts=[&](std::uint64_t bits) {
+        int expected=0;
+        for(auto remaining=bits;remaining;remaining&=remaining-1)++expected;
+        if(petir_ueval::ipopcount(bits)!=expected
+            || petir_ueval::popcount(pas::address(bits))!=expected)counts_match=false;
+        if(petir_ueval::onlyone(bits)!=(expected==1))single_bit_matches=false;
+    };
+    check_counts(0);check_counts(UINT64_MAX);
+    for(int bit=0;bit<64;++bit)check_counts(UINT64_C(1)<<bit);
+    for(int block=0;block<4;++block)for(std::uint64_t word=0;word<65536;++word) {
+        check_counts(word<<(block*16));
+        check_counts((word<<(block*16))|(UINT64_C(0xa5c39e714b286df0)&~(UINT64_C(0xffff)<<(block*16))));
+    }
+    check(counts_match,"native bit counts match the legacy loop across all word values and mixed boards");
+    check(single_bit_matches,"single-bit predicate agrees with an exact count, including zero and bit 63");
+    alignas(std::uint64_t) std::uint16_t unaligned_words[5]{};
+    const auto unaligned_bits=UINT64_C(0xfedcba9876543210);
+    std::memcpy(unaligned_words+1,&unaligned_bits,sizeof(unaligned_bits));
+    check(petir_ueval::popcount(unaligned_words+1)==32,"pointer popcount supports a board without 64-bit alignment");
     Position start{};petir_udata::initstate(start);
     check(start.hashkey==3423812783342919194ULL,"Delphi starting hash and Random evaluation order");
     check(consistent(start),"starting board, rotated occupancy, material, and hash agree");
+    // Scores captured before the evaluation scan/count optimizations. Include
+    // promoted black pieces in different 16-bit blocks, and mixed pawn files.
+    struct EvalOptimizationFixture {const char* name;const char* fen;int full[4];int narrow[4];};
+    for(const auto& fixture:{
+        EvalOptimizationFixture{"multiple rooks",
+            "6k1/2r2rr1/1b4n1/3p4/r2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
+            {-243,-263,263,243},{-243,-263,263,243}},
+        EvalOptimizationFixture{"multiple knights",
+            "6k1/2n2n2/1b3b2/3p4/n2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
+            {907,887,-887,-907},{813,793,-793,-813}},
+        EvalOptimizationFixture{"multiple bishops",
+            "6k1/2b5/1b3b2/3p4/b2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
+            {1219,1199,-1199,-1219},{1115,1095,-1095,-1115}},
+        EvalOptimizationFixture{"multiple queens",
+            "6k1/2q5/1q3q2/3p4/q2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
+            {-1540,-1560,1560,1540},{-1513,-1533,1533,1513}},
+        EvalOptimizationFixture{"white pawn files",
+            "7k/8/8/P1PP1P1P/P2P1P2/8/8/KB5r w - - 0 1",
+            {768,748,-748,-768},{768,748,-748,-768}},
+        EvalOptimizationFixture{"black pawn files",
+            "kb5R/8/8/p2p1p2/p1pp1p1p/8/8/7K b - - 0 1",
+            {-748,-768,768,748},{-748,-768,768,748}}}) {
+        int side=1;const auto position=from_fen(fixture.fen,side);const auto saved=position;
+        const auto tag=std::string("evaluation optimization: ")+fixture.name;
+        check(consistent(position),tag+" fixture is consistent");
+        for(int stm:{1,2})for(bool infhr:{false,true}) {
+            const int index=(stm-1)*2+int(infhr);
+            const auto detail=tag+" side="+std::to_string(stm)+" infhr="+std::to_string(infhr);
+            check(petir_ueval::eval(position,stm,-20500,20500,infhr)==fixture.full[index],detail+" full score unchanged");
+            check(petir_ueval::eval(position,stm,0,1,infhr)==fixture.narrow[index],detail+" lazy score unchanged");
+        }
+        check(std::memcmp(&position,&saved,sizeof(position))==0,tag+" leaves the input unchanged");
+    }
     check(sizeof(petir_hashing_header::thashrecord)==16,"halfmove-aware hash entries retain the 16-byte layout");
     // Scores depend on the rule-50 counter even when the board key is identical.
     for(int color=1;color<=2;++color)for(int type:{pv_node,fail_low,fail_high})for(int counter:{0,79,99,255}) {
@@ -136,6 +191,70 @@ int self_test() {
         }
     }
     check(generation_defines_entries,"generated move/score entries do not depend on initial buffer contents");
+    // Freeze first-maximum selection and the swap order used by the old picker.
+    tmovelist ordering;
+    ordering[1]={11,5};ordering[2]={12,8};ordering[3]={13,8};ordering[4]={14,-1};ordering[5]={15,8};
+    const std::array<int,5> selected_moves{12,13,15,11,14};
+    for(int current=1;current<=5;++current) {
+        petir_next::nextbest_max(ordering,current,5);
+        check(ordering[current].moves==selected_moves[current-1],"range-based move picker preserves maximum ties and swap order");
+    }
+    ordering[256]={23,std::numeric_limits<std::int32_t>::min()};
+    petir_next::nextbest_max(ordering,256,256);
+    check(ordering[256].moves==23,"move picker accepts the last capacity slot");
+    bool picker_overflow_rejected=false;
+    try {petir_next::nextbest_max(ordering,1,257);}catch(const std::out_of_range&) {picker_overflow_rejected=true;}
+    check(picker_overflow_rejected,"range-based move picker retains the unconditional capacity guard");
+    // Baseline SEE values include losing quiet moves, recaptures, and an xray
+    // attacker behind the moving rook. Both side conventions are intentional.
+    struct SeeFixture {const char* fen;int from,to;std::array<int,2> expected;};
+    for(const auto& fixture:std::array<SeeFixture,4>{{
+        {"4k3/8/3p4/2p5/3P4/8/8/4K3 w - - 0 1",d4,c5,{0,1}},
+        {"4r2k/8/8/4b3/8/8/4R3/K3Q3 w - - 0 1",e2,e5,{3,3}},
+        {"7k/3p4/4q3/8/5N2/8/8/K7 w - - 0 1",f4,e6,{6,9}},
+        {"7k/8/8/3p4/8/8/4Q3/K7 w - - 0 1",e2,e4,{-9,0}}
+    }}) {
+        auto exchange=from_fen(fixture.fen,stm);const auto unchanged=exchange;
+        for(int side=1;side<=2;++side)
+            check(petir_usee::see(side,exchange,fixture.from,fixture.to)==fixture.expected[side-1]
+                  && std::memcmp(&exchange,&unchanged,sizeof(exchange))==0,
+                  "SEE workspace optimization preserves frozen exchange scores and input");
+    }
+    // Frozen pre-optimization order includes targets in different 16-bit words
+    // and two en passant sources interleaved with ordinary pawn captures.
+    for(const auto& fixture:std::array<std::array<const char*,3>,2>{{
+        {{"4k3/2n5/8/6n1/8/1n6/8/7K b - - 0 1", "",
+          "c7a8 c7b5 c7d5 c7a6 c7e6 g5f7 g5h7 g5e6 g5f3 g5h3 g5e4 b3a5 b3c5 b3d4 b3a1 b3c1 b3d2 e8d7 e8e7 e8f7 e8d8 e8f8 "}},
+        {{"7k/8/8/8/pPp1pPp1/1R1B3R/8/7K b - f3 0 1",
+          "a4b3 c4b3 c4d3 e4d3 e4f3 g4h3 g4f3 ",
+          "a4a3 c4c3 e4e3 g4g3 h8g7 h8h7 h8g8 "}}
+    }}) {
+        auto ordered=from_fen(fixture[0],stm);
+        for(int kind=0;kind<2;++kind) {
+            tmovelist list;int count=0;
+            if(kind==0)petir_movgen::black_movgen_caps(ordered,list,count);
+            else petir_movgen::black_movgen_noncaps(ordered,list,count);
+            std::string sequence;
+            for(int i=1;i<=count;++i)sequence+=move_text(list[i].moves,ordered,stm)+" ";
+            check(sequence==fixture[kind+1],"optimized generator preserves frozen Black move order");
+        }
+    }
+    struct PinFixture {const char* fen;std::uint64_t expected;};
+    for(const auto& fixture:std::array<PinFixture,8>{{
+        {"4r2k/8/8/8/8/8/4R3/4K3 w - - 0 1",UINT64_C(1)<<e2},
+        {"4k3/4r3/8/8/8/8/8/4R2K b - - 0 1",UINT64_C(1)<<e7},
+        {"k6b/8/5B2/8/3K4/8/8/8 w - - 0 1",UINT64_C(1)<<f6},
+        {"4r2k/8/8/8/8/8/1R2p3/4K3 w - - 0 1",0},
+        {"4r2k/8/8/8/8/4P3/4R3/4K3 w - - 0 1",0},
+        {"5r1k/8/8/8/8/8/4R3/4K3 w - - 0 1",0},
+        {"4b2k/8/8/8/8/8/4R3/4K3 w - - 0 1",0},
+        {"4r2k/8/8/8/8/6b1/4RB2/4K3 w - - 0 1",(UINT64_C(1)<<e2)|(UINT64_C(1)<<f2)}
+    }}) {
+        auto pinned=from_fen(fixture.fen,stm);const auto unchanged=pinned;
+        check(petir_tools::pinned_pieces(pinned,stm)==fixture.expected
+              && std::memcmp(&pinned,&unchanged,sizeof(pinned))==0,
+              "cached pin mask finds only single friendly blockers and preserves the position");
+    }
     auto bare=from_fen("7k/8/8/8/8/8/8/K7 w - - 0 1",stm);
     check(petir_ueval::eval(bare,stm,-20500,20500)==0,"bare kings evaluate as draw");
     auto check_mirrored_table=[&](const char* name,const auto& white,const auto& black) {

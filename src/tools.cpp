@@ -2,6 +2,42 @@
 #include "petir.hpp"
 namespace petir_tools {
 std::int32_t anu{};
+namespace {
+// Empty-board geometry identifies potential pinners without occupancy lookups.
+template<bool Diagonal>
+constexpr std::array<std::uint64_t,64> make_slider_rays() {
+    std::array<std::uint64_t,64> rays{};
+    for(int from=0;from<64;++from)for(int to=0;to<64;++to) {
+        const int dx=from%8-to%8,dy=from/8-to/8;
+        if(from!=to && (Diagonal ? dx*dx==dy*dy : dx==0 || dy==0))
+            rays[from]|=UINT64_C(1)<<to;
+    }
+    return rays;
+}
+constexpr auto rook_rays=make_slider_rays<false>();
+constexpr auto bishop_rays=make_slider_rays<true>();
+}
+
+// Used only for nonchecked move filtering. An unpinned nonking piece cannot
+// expose its king by moving; en passant still needs the post-move check.
+std::uint64_t pinned_pieces(const petir_header::tdata& data,int side) {
+    using namespace petir_bitboard_mask;
+    const bool white=side==petir_header::_sisiputih;
+    const auto king=white?data.kingwhite:data.kingblack;
+    const int square=firstbitp(pas::address(king));
+    const auto queens=white?data.queenblack:data.queenwhite;
+    auto pinners=((queens|(white?data.rookblack:data.rookwhite)) & rook_rays[square])
+                |((queens|(white?data.bishopblack:data.bishopwhite)) & bishop_rays[square]);
+    std::uint64_t pins=0;
+    while(pinners) {
+        const int attacker=firstbitp(pas::address(pinners));
+        pinners &= pinners-1;
+        const auto blockers=pathmask[square][attacker] & data.allpieces;
+        if(blockers && !(blockers & (blockers-1)))pins |= blockers;
+    }
+    return pins & (white?data.whitepieces:data.blackpieces);
+}
+
 // tools.pas:1620
 bool white_attacked(petir_header::tdata& data, std::int32_t pos) {
     bool return_value{};

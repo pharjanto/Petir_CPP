@@ -2,9 +2,71 @@
 #include "petir.hpp"
 #include <algorithm>
 #include <bit>
+#include <cstring>
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h>
+#endif
 namespace petir_ueval {
+namespace {
+// These helpers are only used in loops that have already checked bits != 0.
+int pop_lsb(std::uint64_t& bits) {
+#if defined(_MSC_VER) && defined(_M_X64)
+    unsigned long square;
+    _BitScanForward64(&square, bits);
+#else
+    const auto square = std::countr_zero(bits);
+#endif
+    bits &= bits - 1;
+    return static_cast<int>(square);
+}
+
+int pop_msb(std::uint64_t& bits) {
+#if defined(_MSC_VER) && defined(_M_X64)
+    unsigned long square;
+    _BitScanReverse64(&square, bits);
+#else
+    const auto square = 63 - std::countl_zero(bits);
+#endif
+    bits ^= UINT64_C(1) << square;
+    return static_cast<int>(square);
+}
+
+std::uint8_t pawn_files(std::uint64_t pawns) {
+    pawns |= pawns >> 32;
+    pawns |= pawns >> 16;
+    pawns |= pawns >> 8;
+    return static_cast<std::uint8_t>(pawns);
+}
+
+#if defined(_MSC_VER) && defined(_M_X64)
+const bool has_native_popcount = [] {
+    int cpu_info[4];
+    __cpuid(cpu_info, 1);
+    return (cpu_info[2] & (1 << 23)) != 0;
+}();
+#endif
+
+template<bool NativePopcount>
+std::uint8_t count_bits(std::uint64_t bits) {
+#if defined(_MSC_VER) && defined(_M_X64)
+    if constexpr (NativePopcount) {
+        return static_cast<std::uint8_t>(__popcnt64(bits));
+    } else {
+        // Keep a hardware-independent path for CPUs without POPCNT.
+        return static_cast<std::uint8_t>(
+            petir_evalmask::mobmask[bits & 0xffff]
+            + petir_evalmask::mobmask[(bits >> 16) & 0xffff]
+            + petir_evalmask::mobmask[(bits >> 32) & 0xffff]
+            + petir_evalmask::mobmask[bits >> 48]);
+    }
+#else
+    return static_cast<std::uint8_t>(std::popcount(bits));
+#endif
+}
+
 // ueval.pas:850
-std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr) {
+template<bool NativePopcount>
+std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr) {
     std::int32_t return_value{};
     bool kingotherside{};
     bool draw2{};
@@ -132,11 +194,11 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
         real_endgame = ((data.nilai_perwira_putih <= 10) && (data.nilai_perwira_hitam <= 10));
         endgame = ((data.nilai_perwira_putih <= 12) && (data.nilai_perwira_hitam <= 12));
         if (real_endgame) {
-            (nilai = pas::increment(nilai, pas::shl(petir_ueval::ipopcount(data.pawnwhite), 3)));
-            (nilai = pas::decrement(nilai, pas::shl(petir_ueval::ipopcount(data.pawnblack), 3)));
+            (nilai = pas::increment(nilai, pas::shl(count_bits<NativePopcount>(data.pawnwhite), 3)));
+            (nilai = pas::decrement(nilai, pas::shl(count_bits<NativePopcount>(data.pawnblack), 3)));
         } else {
-            (nilai = pas::increment(nilai, pas::shl(petir_ueval::ipopcount(data.pawnwhite), 2)));
-            (nilai = pas::decrement(nilai, pas::shl(petir_ueval::ipopcount(data.pawnblack), 2)));
+            (nilai = pas::increment(nilai, pas::shl(count_bits<NativePopcount>(data.pawnwhite), 2)));
+            (nilai = pas::decrement(nilai, pas::shl(count_bits<NativePopcount>(data.pawnblack), 2)));
         }
         if (((((data.nilai_perwira_putih == 12) && (data.nilai_perwira_hitam == 12)) && (data.queenblack != 0)) && (data.queenwhite != 0))) {
             if ((data.knightwhite != 0)) {
@@ -465,7 +527,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     else if (((pas_temp_1 == 2))) {
         posgajah = 64;
         if ((data.ngajahputih == 0)) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_pair0[pas::shr(petir_ueval::ipopcount((data.pawnblack | data.pawnwhite)), 1)]));
+            (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_pair0[pas::shr(count_bits<NativePopcount>((data.pawnblack | data.pawnwhite)), 1)]));
         }
         if ((endgame && (data.ngajahputih == 1))) {
             temp64 = (data.pawnblack | data.pawnwhite);
@@ -481,28 +543,25 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     else {
         posgajah = 64;
     }
-    temp2 = 0;
-    temp3 = 0;
+    const auto black_pawn_files = pawn_files(data.pawnblack);
+    const auto black_isolated_files = black_pawn_files & ~((black_pawn_files << 1) | (black_pawn_files >> 1));
+    npionhitam = count_bits<NativePopcount>(data.pawnblack);
+    temp2 = posgajah < 64 ? count_bits<NativePopcount>(data.pawnblack & UINT64_C(0x0000ffffffffffff)
+        & (petir_ueval::color[posgajah] == 0 ? UINT64_C(0xaa55aa55aa55aa55) : UINT64_C(0x55aa55aa55aa55aa))) : 0;
+    // Each occupied file has exactly one foremost pawn; all others are doubled.
+    temp3 = npionhitam - count_bits<NativePopcount>(std::uint64_t(black_pawn_files));
     temp4 = 0;
     piecepos = data.pawnblack;
     while ((piecepos != 0)) {
-        (npionhitam = pas::increment(npionhitam, 1));
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        pos = pop_lsb(piecepos);
         (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_pion_b[pos]));
-        if (((petir_ueval::color[pos] == petir_ueval::color[posgajah]) && (pos <= petir_header::h6))) {
-            (temp2 = pas::increment(temp2, 1));
-        }
         if ((kingotherside && (petir_evalmask::onside[pos] == petir_evalmask::onside[posrajaputih]))) {
             (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_pion_b[pos]));
         }
         if (((pos >= petir_header::a7) && (data.papan[pas::sub(pos, 8)] == petir_header::_pionputih))) {
             (nilai = pas::increment(nilai, petir_ueval::nilai_blocked_pawn));
         }
-        if (((petir_bitboard_mask::rook_attack_down_mask[pos] & data.pawnblack) != 0)) {
-            (temp3 = pas::increment(temp3, 1));
-        }
-        if (((petir_evalmask::pion_gantung_mask[pos] & data.pawnblack) == 0)) {
+        if ((black_isolated_files & (1 << (pos & 7))) != 0) {
             if ((data.nilai_perwira_putih != 0)) {
                 (temp4 = pas::increment(temp4, 1));
                 (nilai = pas::increment(nilai, pas::shl(petir_ueval::nilai_pion_terisolasi[(pos & 7)], 1)));
@@ -681,11 +740,11 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     pawnbattack = (pawnbattack | pas::shr((data.pawnblack & petir_bitboard_mask::mask_right), 7));
     (nilai = pas::increment(nilai, petir_ueval::nilai_pion_tumpuk[temp3]));
     (nilai = pas::increment(nilai, petir_ueval::nilai_pion_terisolasi_ak[temp4]));
-    if ((petir_ueval::ipopcount(data.bishopblack) == 1)) {
+    if (petir_ueval::onlyone(data.bishopblack)) {
         (nilai = pas::increment(nilai, petir_evalmask::nilai_badbishop[temp2]));
     }
     tempk64 = (pawnbattack & whitekingattack);
-    (whitekingpressure = pas::increment(whitekingpressure, petir_ueval::ipopcount(tempk64)));
+    (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(tempk64)));
     pas_temp_2 = data.ngajahputih;
     if (((pas_temp_2 == 1))) {
         posgajah = petir_bitboard_mask::firstbitp(pas::address(data.bishopwhite));
@@ -703,7 +762,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     else if (((pas_temp_2 == 2))) {
         posgajah = 64;
         if ((data.ngajahhitam == 0)) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_pair0[pas::shr(petir_ueval::ipopcount((data.pawnblack | data.pawnwhite)), 1)]));
+            (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_pair0[pas::shr(count_bits<NativePopcount>((data.pawnblack | data.pawnwhite)), 1)]));
         }
         if ((endgame && (data.ngajahhitam == 1))) {
             temp64 = (data.pawnblack | data.pawnwhite);
@@ -720,18 +779,17 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
         posgajah = 64;
     }
     piecepos = data.pawnwhite;
-    temp2 = 0;
-    temp3 = 0;
+    const auto white_pawn_files = pawn_files(data.pawnwhite);
+    const auto white_isolated_files = white_pawn_files & ~((white_pawn_files << 1) | (white_pawn_files >> 1));
+    npionputih = count_bits<NativePopcount>(data.pawnwhite);
+    temp2 = posgajah < 64 ? count_bits<NativePopcount>(data.pawnwhite & UINT64_C(0xffffffffffff0000)
+        & (petir_ueval::color[posgajah] == 0 ? UINT64_C(0xaa55aa55aa55aa55) : UINT64_C(0x55aa55aa55aa55aa))) : 0;
+    temp3 = npionputih - count_bits<NativePopcount>(std::uint64_t(white_pawn_files));
     temp4 = 0;
     while ((piecepos != 0)) {
-        (npionputih = pas::increment(npionputih, 1));
         // Evaluate the foremost white passer before marking its file handled.
-        pos = 63 - std::countl_zero(piecepos);
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        pos = pop_msb(piecepos);
         (nilai = pas::increment(nilai, petir_ueval::nilai_pos_pion_w[pos]));
-        if (((petir_ueval::color[pos] == petir_ueval::color[posgajah]) && (pos >= petir_header::a3))) {
-            (temp2 = pas::increment(temp2, 1));
-        }
         if ((kingotherside && (petir_evalmask::onside[pos] == petir_evalmask::onside[posrajahitam]))) {
             (nilai = pas::increment(nilai, petir_ueval::nilai_pos_pion_w[pos]));
         }
@@ -740,10 +798,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
                 (nilai = pas::decrement(nilai, petir_ueval::nilai_blocked_pawn));
             }
         }
-        if (((petir_bitboard_mask::rook_attack_up_mask[pos] & data.pawnwhite) != 0)) {
-            (temp3 = pas::increment(temp3, 1));
-        }
-        if (((petir_evalmask::pion_gantung_mask[pos] & data.pawnwhite) == 0)) {
+        if ((white_isolated_files & (1 << (pos & 7))) != 0) {
             if ((data.nilai_perwira_hitam != 0)) {
                 (temp4 = pas::increment(temp4, 1));
                 (nilai = pas::decrement(nilai, pas::shl(petir_ueval::nilai_pion_terisolasi[(pos & 7)], 1)));
@@ -922,11 +977,11 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     pawnwattack = (pawnwattack | pas::shl((data.pawnwhite & petir_bitboard_mask::mask_right), 9));
     (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_tumpuk[temp3]));
     (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_terisolasi_ak[temp4]));
-    if ((petir_ueval::ipopcount(data.bishopwhite) == 1)) {
+    if (petir_ueval::onlyone(data.bishopwhite)) {
         (nilai = pas::decrement(nilai, petir_evalmask::nilai_badbishop[temp2]));
     }
     tempk64 = (pawnwattack & blackkingattack);
-    (blackkingpressure = pas::increment(blackkingpressure, petir_ueval::ipopcount(tempk64)));
+    (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(tempk64)));
     if ((((data.nilai_perwira_putih == pas::add(data.nilai_perwira_hitam, 3)) && (data.queenwhite != 0)) && ((pas::sub(npionhitam, npionputih) >= 2 && pas::sub(npionhitam, npionputih) <= 3)))) {
         (nilai = pas::increment(nilai, 35));
     } else {
@@ -937,18 +992,17 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     temp = 0;
     piecepos = data.rookwhite;
     while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        pos = pop_lsb(piecepos);
         horattack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         verattack = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
         attack = (horattack | verattack);
         temp64 = (attack & (~data.whitepieces));
-        (nilai = pas::increment(nilai, petir_ueval::mobil_rook[petir_ueval::popcount(pas::address(temp64))]));
+        (nilai = pas::increment(nilai, petir_ueval::mobil_rook[count_bits<NativePopcount>(temp64)]));
         rookwattack = (rookwattack | attack);
         if (bevalks) {
             tempk64 = (attack & blackkingattack);
-            (blackkingpressure = pas::increment(blackkingpressure, petir_ueval::ipopcount(tempk64)));
-            if ((petir_ueval::ipopcount(tempk64) > 0)) {
+            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(tempk64)));
+            if (tempk64 != 0) {
                 (black_attacker = pas::increment(black_attacker, 1));
             }
         }
@@ -1028,18 +1082,18 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     temp = 0;
     piecepos = data.rookblack;
     while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        // Rook scores and attack unions are independent of iteration order.
+        pos = pop_lsb(piecepos);
         horattack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         verattack = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
         attack = (horattack | verattack);
         temp64 = (attack & (~data.blackpieces));
-        (nilai = pas::decrement(nilai, petir_ueval::mobil_rook[petir_ueval::popcount(pas::address(temp64))]));
+        (nilai = pas::decrement(nilai, petir_ueval::mobil_rook[count_bits<NativePopcount>(temp64)]));
         rookbattack = (rookbattack | attack);
         if (wevalks) {
             tempk64 = (attack & whitekingattack);
-            (whitekingpressure = pas::increment(whitekingpressure, petir_ueval::ipopcount(tempk64)));
-            if ((petir_ueval::ipopcount(tempk64) > 0)) {
+            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(tempk64)));
+            if (tempk64 != 0) {
                 (white_attacker = pas::increment(white_attacker, 1));
             }
         }
@@ -1118,8 +1172,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     (nilai = pas::decrement(nilai, (pas::mul(temp, petir_ueval::nilai_rook_scale[std::min<int>(data.nilai_perwira_hitam, 41)]) / 100)));
     piecepos = data.knightwhite;
     while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        pos = pop_lsb(piecepos);
         (nilai = pas::increment(nilai, petir_ueval::nilai_pos_kuda_w[pos]));
         if ((!early_endgame)) {
             (nilai = pas::increment(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajahitam], petir_ueval::nilai_tropism_kuda)));
@@ -1127,18 +1180,18 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
         attack = petir_bitboard_mask::knightmask[pos];
         knightwattack = (knightwattack | attack);
         temp64 = (attack & (~data.whitepieces));
-        (nilai = pas::increment(nilai, petir_ueval::mobil_knight[petir_ueval::popcount(pas::address(temp64))]));
+        (nilai = pas::increment(nilai, petir_ueval::mobil_knight[count_bits<NativePopcount>(temp64)]));
         if (bevalks) {
             tempk64 = (attack & blackkingattack);
-            (blackkingpressure = pas::increment(blackkingpressure, petir_ueval::ipopcount(tempk64)));
-            if ((petir_ueval::ipopcount(tempk64) > 0)) {
+            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(tempk64)));
+            if (tempk64 != 0) {
                 (black_attacker = pas::increment(black_attacker, 1));
             }
         }
         if (((petir_ueval::nilai_kuda_outpost_w[pos] > 0) && (!endgame))) {
             if (((petir_evalmask::w_outpost_mask[pos] & data.pawnblack) == 0)) {
                 temp64 = (petir_bitboard_mask::b_pawn_attack[pos] & data.pawnwhite);
-                temp3 = petir_ueval::ipopcount(temp64);
+                temp3 = count_bits<NativePopcount>(temp64);
                 pas_temp_3 = temp3;
                 if (((pas_temp_3 == 1))) {
                     (nilai = pas::increment(nilai, pas::shr(petir_ueval::nilai_kuda_outpost_w[pos], 1)));
@@ -1154,8 +1207,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     }
     piecepos = data.knightblack;
     while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        pos = pop_lsb(piecepos);
         (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_kuda_b[pos]));
         if ((!early_endgame)) {
             (nilai = pas::decrement(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajaputih], petir_ueval::nilai_tropism_kuda)));
@@ -1163,18 +1215,18 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
         attack = petir_bitboard_mask::knightmask[pos];
         knightbattack = (knightbattack | attack);
         temp64 = (attack & (~data.blackpieces));
-        (nilai = pas::decrement(nilai, petir_ueval::mobil_knight[petir_ueval::popcount(pas::address(temp64))]));
+        (nilai = pas::decrement(nilai, petir_ueval::mobil_knight[count_bits<NativePopcount>(temp64)]));
         if (wevalks) {
             tempk64 = (attack & whitekingattack);
-            (whitekingpressure = pas::increment(whitekingpressure, petir_ueval::ipopcount(tempk64)));
-            if ((petir_ueval::ipopcount(tempk64) > 0)) {
+            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(tempk64)));
+            if (tempk64 != 0) {
                 (white_attacker = pas::increment(white_attacker, 1));
             }
         }
         if (((petir_ueval::nilai_kuda_outpost_b[pos] > 0) && (!endgame))) {
             if (((petir_evalmask::b_outpost_mask[pos] & data.pawnwhite) == 0)) {
                 temp64 = (petir_bitboard_mask::w_pawn_attack[pos] & data.pawnblack);
-                temp3 = petir_ueval::ipopcount(temp64);
+                temp3 = count_bits<NativePopcount>(temp64);
                 pas_temp_4 = temp3;
                 if (((pas_temp_4 == 1))) {
                     (nilai = pas::decrement(nilai, pas::shr(petir_ueval::nilai_kuda_outpost_b[pos], 1)));
@@ -1191,19 +1243,18 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     piecepos = data.bishopwhite;
     tempi = 0;
     while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        pos = pop_lsb(piecepos);
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         temp64 = (attack & (~data.whitepieces));
-        (nilai = pas::increment(nilai, petir_ueval::mobil_bishop[petir_ueval::popcount(pas::address(temp64))]));
+        (nilai = pas::increment(nilai, petir_ueval::mobil_bishop[count_bits<NativePopcount>(temp64)]));
         if (((((!endgame) && (petir_ueval::nilai_gajah_outpost_w[pos] > 0)) && ((petir_bitboard_mask::b_pawn_attack[pos] & data.pawnwhite) != 0)) && ((petir_evalmask::w_outpost_mask[pos] & data.pawnblack) == 0))) {
             (nilai = pas::increment(nilai, petir_ueval::nilai_gajah_outpost_w[pos]));
         }
         if (bevalks) {
             tempk64 = (attack & blackkingattack);
-            (blackkingpressure = pas::increment(blackkingpressure, petir_ueval::ipopcount(tempk64)));
-            if ((petir_ueval::ipopcount(tempk64) > 0)) {
+            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(tempk64)));
+            if (tempk64 != 0) {
                 (black_attacker = pas::increment(black_attacker, 1));
             }
         }
@@ -1222,8 +1273,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     piecepos = data.bishopblack;
     tempi = 0;
     while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        pos = pop_lsb(piecepos);
         (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_gajah_b[pos]));
         if ((!early_endgame)) {
             (nilai = pas::decrement(nilai, pas::mul(petir_evalmask::tabel_distance_gajah[pos][posrajaputih], petir_ueval::nilai_tropism_gajah)));
@@ -1234,14 +1284,14 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         temp64 = (attack & (~data.blackpieces));
-        (nilai = pas::decrement(nilai, petir_ueval::mobil_bishop[petir_ueval::popcount(pas::address(temp64))]));
+        (nilai = pas::decrement(nilai, petir_ueval::mobil_bishop[count_bits<NativePopcount>(temp64)]));
         if (((((!endgame) && (petir_ueval::nilai_gajah_outpost_b[pos] > 0)) && ((petir_bitboard_mask::w_pawn_attack[pos] & data.pawnblack) != 0)) && ((petir_evalmask::b_outpost_mask[pos] & data.pawnwhite) == 0))) {
             (nilai = pas::decrement(nilai, petir_ueval::nilai_gajah_outpost_b[pos]));
         }
         if (wevalks) {
             tempk64 = (attack & whitekingattack);
-            (whitekingpressure = pas::increment(whitekingpressure, petir_ueval::ipopcount(tempk64)));
-            if ((petir_ueval::ipopcount(tempk64) > 0)) {
+            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(tempk64)));
+            if (tempk64 != 0) {
                 (white_attacker = pas::increment(white_attacker, 1));
             }
         }
@@ -1252,7 +1302,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     }
     piecepos = data.queenwhite;
     while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
+        pos = pop_lsb(piecepos);
         (nilai = pas::increment(nilai, petir_ueval::nilai_pos_mentri_w[pos]));
         if ((!endgame)) {
             attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
@@ -1263,7 +1313,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             tempk64 = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
             attack = ((attack | tempk64) | temp64);
             temp264 = (attack & (~data.whitepieces));
-            (nilai = pas::increment(nilai, petir_ueval::mobil_queen[petir_ueval::popcount(pas::address(temp264))]));
+            (nilai = pas::increment(nilai, petir_ueval::mobil_queen[count_bits<NativePopcount>(temp264)]));
             if (((temp64 & data.rookwhite) != 0)) {
                 if (((temp64 & blackkingattack) != 0)) {
                     rookwattack = (rookwattack | temp64);
@@ -1275,19 +1325,18 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
                 }
             }
             queenwattack = (queenwattack | attack);
-            (blackkingpressure = pas::increment(blackkingpressure, petir_ueval::ipopcount((attack & blackkingattack))));
-            if ((petir_ueval::ipopcount((attack & blackkingattack)) > 0)) {
+            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>((attack & blackkingattack))));
+            if ((attack & blackkingattack) != 0) {
                 (black_attacker = pas::increment(black_attacker, 1));
             }
         }
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
         if ((!early_endgame)) {
             (nilai = pas::increment(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajahitam], petir_ueval::nilai_tropism_mentri)));
         }
     }
     piecepos = data.queenblack;
     while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
+        pos = pop_lsb(piecepos);
         (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_mentri_b[pos]));
         if ((!endgame)) {
             attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
@@ -1298,7 +1347,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             tempk64 = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
             attack = ((attack | tempk64) | temp64);
             temp264 = (attack & (~data.blackpieces));
-            (nilai = pas::decrement(nilai, petir_ueval::mobil_queen[petir_ueval::popcount(pas::address(temp264))]));
+            (nilai = pas::decrement(nilai, petir_ueval::mobil_queen[count_bits<NativePopcount>(temp264)]));
             queenbattack = (queenbattack | attack);
             if (((temp64 & data.rookblack) != 0)) {
                 if (((temp64 & whitekingattack) != 0)) {
@@ -1310,12 +1359,11 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
                     rookbattack = (rookbattack | tempk64);
                 }
             }
-            (whitekingpressure = pas::increment(whitekingpressure, petir_ueval::ipopcount((attack & whitekingattack))));
-            if ((petir_ueval::ipopcount((attack & whitekingattack)) > 0)) {
+            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>((attack & whitekingattack))));
+            if ((attack & whitekingattack) != 0) {
                 (white_attacker = pas::increment(white_attacker, 1));
             }
         }
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
         if ((!early_endgame)) {
             (nilai = pas::decrement(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajaputih], petir_ueval::nilai_tropism_mentri)));
         }
@@ -1335,21 +1383,21 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             if (((attack != 0) && (temp4 == petir_header::_sisihitam))) {
                 (whitekingpressure = pas::increment(whitekingpressure, 2));
             }
-            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
+            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
             attack = ((temp64 & knightbattack) & (~tempk64));
             if (((attack != 0) && (temp4 == petir_header::_sisihitam))) {
                 (whitekingpressure = pas::increment(whitekingpressure, 2));
             }
-            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
+            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
             attack = ((temp64 & rookbattack) & (~tempk64));
             if (((attack != 0) && (temp4 == petir_header::_sisihitam))) {
                 (whitekingpressure = pas::increment(whitekingpressure, 2));
             }
-            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
+            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
             attack = ((temp64 & pawnbattack) & (~tempk64));
-            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
+            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
             attack = ((whitekingattack & rookbattack) & bishopbattack);
-            (whitekingpressure = pas::increment(whitekingpressure, petir_ueval::ipopcount(attack)));
+            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(attack)));
             tempi = petir_ueval::nilai_king_pressure[std::clamp(whitekingpressure, 0, 63)];
             pas_temp_5 = white_attacker;
             if (((pas_temp_5 == 1))) {
@@ -1370,7 +1418,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             tempk64 = (((((queenbattack | rookbattack) | bishopbattack) | knightbattack) | pawnbattack) & blackkingattack);
             temp64 = ((blackkingattack & queenwattack) & (~tempk64));
             attack = (temp64 & bishopwattack);
-            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
+            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
             if (((attack != 0) && (temp4 == petir_header::_sisiputih))) {
                 (blackkingpressure = pas::increment(blackkingpressure, 2));
             }
@@ -1378,16 +1426,16 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             if (((attack != 0) && (temp4 == petir_header::_sisiputih))) {
                 (blackkingpressure = pas::increment(blackkingpressure, 2));
             }
-            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
+            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
             attack = ((temp64 & rookwattack) & (~tempk64));
             if (((attack != 0) && (temp4 == petir_header::_sisiputih))) {
                 (blackkingpressure = pas::increment(blackkingpressure, 2));
             }
-            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
+            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
             attack = ((temp64 & pawnwattack) & (~tempk64));
-            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(petir_ueval::ipopcount(attack), 2)));
+            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
             attack = ((blackkingattack & rookwattack) & bishopwattack);
-            (blackkingpressure = pas::increment(blackkingpressure, petir_ueval::ipopcount(attack)));
+            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(attack)));
             tempi = petir_ueval::nilai_king_pressure[std::clamp(blackkingpressure, 0, 63)];
             pas_temp_6 = black_attacker;
             if (((pas_temp_6 == 1))) {
@@ -1557,6 +1605,18 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     return return_value;
 }
 
+}
+
+std::int32_t eval(const petir_header::tdata& data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr) {
+#if defined(_MSC_VER) && defined(_M_X64)
+    // Select once per evaluation instead of dispatching at every bit count.
+    if (has_native_popcount) {
+        return eval_impl<true>(data, giliran, alpha, beta, infhr);
+    }
+#endif
+    return eval_impl<false>(data, giliran, alpha, beta, infhr);
+}
+
 // ueval.pas:2920
 std::int32_t materialvalue(std::int32_t giliran, std::int32_t ms) {
     std::int32_t return_value{};
@@ -1569,7 +1629,7 @@ std::int32_t materialvalue(std::int32_t giliran, std::int32_t ms) {
 }
 
 // ueval.pas:494
-bool isdraw(petir_header::tdata& data, bool& draw2) {
+bool isdraw(const petir_header::tdata& data, bool& draw2) {
     bool return_value{};
     return_value = false;
     draw2 = false;
@@ -1621,7 +1681,7 @@ bool isdraw(petir_header::tdata& data, bool& draw2) {
 }
 
 // ueval.pas:595
-bool anotherdraw(petir_header::tdata& data, std::uint8_t giliran) {
+bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
     bool return_value{};
     std::int32_t a{};
     std::int32_t pos{};
@@ -1828,13 +1888,7 @@ bool anotherdraw(petir_header::tdata& data, std::uint8_t giliran) {
 
 // ueval.pas:483
 std::uint8_t ipopcount(std::uint64_t p) {
-    std::uint8_t return_value{};
-    return_value = 0;
-    while ((p != 0)) {
-        p = (p & (p - 1));
-        (return_value = pas::increment(return_value, 1));
-    }
-    return return_value;
+    return static_cast<std::uint8_t>(std::popcount(p));
 }
 
 // ueval.pas:421
@@ -1866,34 +1920,18 @@ std::int32_t popcount_b(petir_bitboard_mask::pword p) {
 
 // ueval.pas:444
 std::uint8_t popcount(petir_bitboard_mask::pword p) {
-    std::uint8_t return_value{};
-    return_value = petir_evalmask::mobmask[(*p)];
-    (p = pas::increment(p, 1));
-    return_value = pas::add(return_value, petir_evalmask::mobmask[(*p)]);
-    (p = pas::increment(p, 1));
-    return_value = pas::add(return_value, petir_evalmask::mobmask[(*p)]);
-    (p = pas::increment(p, 1));
-    return_value = pas::add(return_value, petir_evalmask::mobmask[(*p)]);
-    return return_value;
+    std::uint64_t bits;
+    std::memcpy(&bits, p, sizeof(bits));
+    return petir_ueval::ipopcount(bits);
 }
 
 // ueval.pas:456
 bool onlyone(std::uint64_t p) {
-    bool return_value{};
-    std::int32_t r{};
-    return_value = false;
-    if ((p != 0)) {
-        return_value = true;
-        p = (p & (p - 1));
-        if ((p != 0)) {
-            return_value = false;
-        }
-    }
-    return return_value;
+    return p != 0 && (p & (p - 1)) == 0;
 }
 
 // ueval.pas:832
-std::int32_t dynamiclazy(petir_header::tdata& data) {
+std::int32_t dynamiclazy(const petir_header::tdata& data) {
     std::int32_t return_value{};
     return_value = 0;
     if (((data.queenblack == 0) && (data.queenwhite == 0))) {

@@ -645,9 +645,9 @@ struct tundo {
 namespace petir_header {
 }
 namespace petir_bitboard_mask {
-std::int32_t firstbitp(petir_bitboard_mask::pword p);
-std::int32_t lastbitp(petir_bitboard_mask::pword p);
-std::uint64_t attackbishop(petir_header::tdata& data, std::int32_t pos);
+std::int32_t firstbitp(const std::uint16_t* p);
+std::int32_t lastbitp(const std::uint16_t* p);
+std::uint64_t attackbishop(const petir_header::tdata& data, std::int32_t pos);
 std::uint64_t attackrook(petir_header::tdata& data, std::int32_t pos);
 }
 namespace petir_bitboard {
@@ -690,6 +690,7 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
 void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml, std::int32_t& skakcount);
 }
 namespace petir_tools {
+std::uint64_t pinned_pieces(const petir_header::tdata& data, int side);
 bool white_attacked(petir_header::tdata& data, std::int32_t pos);
 bool black_attacked(petir_header::tdata& data, std::int32_t pos);
 bool white_checked(petir_header::tdata& data);
@@ -727,8 +728,8 @@ bool black_menskak(petir_header::tdata& data, std::uint16_t moves);
 bool black_menskak3(petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece);
 }
 namespace petir_usee {
-std::int32_t see(std::int32_t giliran, petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto);
-void xray(std::uint64_t& attack, std::int32_t square, std::int32_t target, petir_header::tdata& data);
+std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto);
+void xray(std::uint64_t& attack, std::int32_t square, std::int32_t target, const petir_header::tdata& data);
 }
 namespace petir_valid {
 bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran);
@@ -761,16 +762,16 @@ bool nextroot(std::int32_t giliran, std::int32_t& moves, std::int32_t& fase, std
 bool nextq(std::int32_t giliran, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t& curmove, std::int32_t& jml, std::int32_t& score, std::int32_t ply, petir_header::tmovelist& ml);
 }
 namespace petir_ueval {
-std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr = false);
+std::int32_t eval(const petir_header::tdata& data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr = false);
 std::int32_t materialvalue(std::int32_t giliran, std::int32_t ms);
-bool isdraw(petir_header::tdata& data, bool& draw2);
-bool anotherdraw(petir_header::tdata& data, std::uint8_t giliran);
+bool isdraw(const petir_header::tdata& data, bool& draw2);
+bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran);
 std::uint8_t ipopcount(std::uint64_t p);
 std::int32_t popcount_w(petir_bitboard_mask::pword p);
 std::int32_t popcount_b(petir_bitboard_mask::pword p);
 std::uint8_t popcount(petir_bitboard_mask::pword p);
 bool onlyone(std::uint64_t p);
-std::int32_t dynamiclazy(petir_header::tdata& data);
+std::int32_t dynamiclazy(const petir_header::tdata& data);
 }
 namespace petir_search {
 void empty_historytable();

@@ -1,7 +1,38 @@
 // Faithful translation of movgen.pas; Delphi source is in original/.
 #include "petir.hpp"
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h>
+#endif
 namespace petir_movgen {
 namespace {
+// Iteration order affects move ordering. Legacy loops visit the highest
+// occupied 16-bit word first, least bit first within each word.
+template<bool Legacy>
+class move_bits {
+    std::uint64_t bits_;
+public:
+    explicit move_bits(std::uint64_t& bits):bits_(bits) {
+        // Each loop consumes its source mask; its body uses returned squares.
+        bits=0;
+        if constexpr(Legacy) {
+            bits_=std::rotl(bits_,32);
+            bits_=((bits_ & UINT64_C(0x0000ffff0000ffff))<<16)
+                 |((bits_>>16) & UINT64_C(0x0000ffff0000ffff));
+        }
+    }
+    explicit operator bool() const {return bits_!=0;}
+    int pop() {
+        // The surrounding loop guarantees a nonempty bitboard.
+#if defined(_MSC_VER) && defined(_M_X64)
+        unsigned long square;
+        _BitScanForward64(&square,bits_);
+#else
+        const int square=std::countr_zero(bits_);
+#endif
+        bits_ &= bits_-1;
+        return static_cast<int>(square) ^ (Legacy?48:0);
+    }
+};
 void append_legal_ep_evasions(petir_header::tdata& data, petir_header::tmovelist& moves, std::int32_t& count, int side) {
     if(data.ep>7)return;
     const bool white=side==petir_header::_sisiputih;
@@ -30,9 +61,8 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
     std::int32_t move_index=0;
     jml = 0;
     piecepos = (data.pawnblack & (~petir_bitboard_mask::rank_mask[1]));
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             auto& entry = movelist[++move_index];
@@ -47,13 +77,11 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         }
     }
     piecepos = data.knightblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = (petir_bitboard_mask::knightmask[pos] & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             auto& entry = movelist[++move_index];
             entry.moves = pas::add(pos, pas::shl(post, 7));
@@ -61,17 +89,15 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         }
     }
     piecepos = data.queenblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             auto& entry = movelist[++move_index];
             entry.moves = pas::add(pos, pas::shl(post, 7));
             entry.score = petir_header::historyb[petir_header::_mentrihitam][post];
@@ -79,15 +105,13 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         }
     }
     piecepos = data.bishopblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             auto& entry = movelist[++move_index];
             entry.moves = pas::add(pos, pas::shl(post, 7));
@@ -95,15 +119,13 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         }
     }
     piecepos = data.rookblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             auto& entry = movelist[++move_index];
             entry.moves = pas::add(pos, pas::shl(post, 7));
@@ -112,9 +134,8 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
     }
     pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
     attack = (petir_bitboard_mask::kingmask[pos] & (~data.allpieces));
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::lastbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<true> remaining(attack); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_header::historyb[petir_header::_rajahitam][post];
@@ -144,9 +165,8 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
     jml = 0;
     p = pas::address(movelist);
     piecepos = (data.pawnblack & petir_bitboard_mask::rank_mask[1]);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((((pos & 7) > 0) && (data.papan[pas::sub(pos, 9)] > 0))) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
@@ -179,9 +199,8 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = (data.pawnblack & (~petir_bitboard_mask::rank_mask[1]));
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         a = (pos & 7);
         if (((data.papan[pas::sub(pos, 9)] > 0) && (a > 0))) {
             (jml = pas::increment(jml, 1));
@@ -200,13 +219,11 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = data.knightblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = (petir_bitboard_mask::knightmask[pos] & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
@@ -216,15 +233,13 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = data.bishopblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
@@ -234,15 +249,13 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = data.rookblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
@@ -252,17 +265,15 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = data.queenblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
@@ -270,9 +281,8 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
     }
     pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
     attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::lastbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<true> remaining(attack); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
@@ -288,9 +298,8 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
     std::int32_t a{};
     jml = 0;
     piecepos = (data.pawnblack & petir_bitboard_mask::rank_mask[1]);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((((pos & 7) > 0) && (data.papan[pas::sub(pos, 9)] > 0))) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
@@ -323,9 +332,8 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = (data.pawnblack & (petir_bitboard_mask::rank_mask[2] | petir_bitboard_mask::rank_mask[3]));
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
@@ -336,9 +344,8 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = (data.pawnblack & (~petir_bitboard_mask::rank_mask[1]));
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         a = (pos & 7);
         if (((data.papan[pas::sub(pos, 9)] > 0) && (a > 0))) {
             (jml = pas::increment(jml, 1));
@@ -357,13 +364,11 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = data.knightblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = (petir_bitboard_mask::knightmask[pos] & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
@@ -373,15 +378,13 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = data.bishopblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
@@ -391,15 +394,13 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = data.rookblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
@@ -409,17 +410,15 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = data.queenblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
@@ -427,17 +426,15 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
     }
     pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
     attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::lastbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<true> remaining(attack); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
     }
     attack = (petir_bitboard_mask::kingmask[pos] & pas::shl(data.pawnwhite, 8));
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(attack); remaining; ) {
+        post = remaining.pop();
         if (((data.papan[post] == 0) && ((petir_bitboard_mask::w_pion_bebas_mask[pas::sub(post, 8)] & data.pawnblack) == 0))) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -466,9 +463,8 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
     attackr = (attackr | petir_bitboard_mask::vertmask2[posraja][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[posraja]) & 63)]);
     attackn = petir_bitboard_mask::knightmask[posraja];
     piecepos = (pas::shr((data.pawnblack & petir_bitboard_mask::mask_left), 17) & data.kingwhite);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         (pos = pas::increment(pos, 17));
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
@@ -477,9 +473,8 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (pas::shr((data.pawnblack & petir_bitboard_mask::mask_right), 15) & data.kingwhite);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         (pos = pas::increment(pos, 15));
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
@@ -488,9 +483,8 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (pas::shr((data.pawnblack & petir_bitboard_mask::mask_left), 9) & data.whitepieces);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         pos = pas::add(pos, 9);
         if ((pas::shr(pos, 3) == 1)) {
             (jml = pas::increment(jml, 1));
@@ -503,9 +497,8 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (pas::shr((data.pawnblack & petir_bitboard_mask::mask_right), 7) & data.whitepieces);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         pos = pas::add(pos, 7);
         if ((pas::shr(pos, 3) == 1)) {
             (jml = pas::increment(jml, 1));
@@ -518,9 +511,8 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (data.pawnblack & petir_bitboard_mask::rank_mask[1]);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
@@ -531,9 +523,8 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (data.pawnblack & (petir_bitboard_mask::rank_mask[2] | petir_bitboard_mask::rank_mask[3]));
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
@@ -545,9 +536,8 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
     }
     if ((data.ep != petir_header::_no_ep)) {
         piecepos = (data.pawnblack & petir_bitboard_mask::rank_mask[3]);
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             if ((pas::abs(pas::sub((pos & 7), data.ep)) == 1)) {
                 (jml = pas::increment(jml, 1));
                 movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
@@ -556,13 +546,11 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = data.knightblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = (petir_bitboard_mask::knightmask[pos] & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
@@ -571,25 +559,22 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             }
         }
         attack = ((petir_bitboard_mask::knightmask[pos] & attackn) & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
         }
     }
     piecepos = data.bishopblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         t64 = attack;
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
@@ -598,25 +583,22 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             }
         }
         attack = ((t64 & attackb) & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
         }
     }
     piecepos = data.rookblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         t64 = attack;
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
@@ -625,35 +607,31 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             }
         }
         attack = ((t64 & attackr) & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
         }
     }
     piecepos = data.queenblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         t64 = attack;
         attack = (attack & data.whitepieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
         }
         attack = ((t64 & (attackr | attackb)) & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
@@ -661,17 +639,15 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
     }
     pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
     attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::lastbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<true> remaining(attack); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
     }
     attack = (petir_bitboard_mask::kingmask[pos] & pas::shl(data.pawnwhite, 8));
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(attack); remaining; ) {
+        post = remaining.pop();
         if (((data.papan[post] == 0) && ((petir_bitboard_mask::w_pion_bebas_mask[pas::sub(post, 8)] & data.pawnblack) == 0))) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -701,9 +677,8 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
     attackr = (attackr | petir_bitboard_mask::vertmask2[posraja][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[posraja]) & 63)]);
     attackn = petir_bitboard_mask::knightmask[posraja];
     piecepos = (pas::shl((data.pawnwhite & petir_bitboard_mask::mask_left), 15) & data.kingblack);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         (pos = pas::decrement(pos, 15));
         if ((data.papan[pas::add(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
@@ -712,9 +687,8 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (pas::shl((data.pawnwhite & petir_bitboard_mask::mask_right), 17) & data.kingblack);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         (pos = pas::decrement(pos, 17));
         if ((data.papan[pas::add(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
@@ -723,9 +697,8 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (pas::shl((data.pawnwhite & petir_bitboard_mask::mask_left), 7) & data.blackpieces);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         pos = pas::sub(pos, 7);
         if ((pas::shr(pos, 3) == 6)) {
             (jml = pas::increment(jml, 1));
@@ -738,9 +711,8 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (pas::shl((data.pawnwhite & petir_bitboard_mask::mask_right), 9) & data.blackpieces);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         pos = pas::sub(pos, 9);
         if ((pas::shr(pos, 3) == 6)) {
             (jml = pas::increment(jml, 1));
@@ -753,9 +725,8 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[6]);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((data.papan[pas::add(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
@@ -766,9 +737,8 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = (data.pawnwhite & (petir_bitboard_mask::rank_mask[5] | petir_bitboard_mask::rank_mask[4]));
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((data.papan[pas::add(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 8), 7));
@@ -780,9 +750,8 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
     }
     if ((data.ep != petir_header::_no_ep)) {
         piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[4]);
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             if ((pas::abs(pas::sub((pos & 7), data.ep)) == 1)) {
                 (jml = pas::increment(jml, 1));
                 movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
@@ -791,13 +760,11 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
         }
     }
     piecepos = data.knightwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = (petir_bitboard_mask::knightmask[pos] & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<false> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
@@ -806,25 +773,22 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             }
         }
         attack = ((petir_bitboard_mask::knightmask[pos] & attackn) & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<false> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
         }
     }
     piecepos = data.bishopwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         t64 = attack;
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
@@ -833,25 +797,22 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             }
         }
         attack = ((t64 & attackb) & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
         }
     }
     piecepos = data.rookwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         t64 = attack;
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
@@ -860,35 +821,31 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             }
         }
         attack = ((t64 & attackr) & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
         }
     }
     piecepos = data.queenwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         t64 = attack;
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
         }
         attack = ((t64 & (attackb | attackr)) & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
@@ -896,17 +853,15 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
     }
     pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
     attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(attack); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
     }
     attack = (petir_bitboard_mask::kingmask[pos] & pas::shr(data.pawnblack, 8));
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(attack); remaining; ) {
+        post = remaining.pop();
         if (((data.papan[post] == 0) && ((petir_bitboard_mask::b_pion_bebas_mask[pas::add(post, 8)] & data.pawnwhite) == 0))) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -925,9 +880,8 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
     std::int32_t a{};
     jml = 0;
     piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[6]);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((((pos & 7) < 7) && (data.papan[pas::add(pos, 9)] < 0))) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
@@ -961,18 +915,16 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
     }
     temp = (data.pawnwhite & (~petir_bitboard_mask::rank_mask[6]));
     piecepos = (pas::shl((temp & petir_bitboard_mask::mask_left), 7) & data.blackpieces);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         pos = pas::sub(pos, 7);
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 7), 7));
         movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion);
     }
     piecepos = (pas::shl((temp & petir_bitboard_mask::mask_right), 9) & data.blackpieces);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         pos = pas::sub(pos, 9);
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 9), 7));
@@ -980,9 +932,8 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
     }
     if ((data.ep != petir_header::_no_ep)) {
         piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[4]);
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             if ((pas::abs(pas::sub((pos & 7), data.ep)) == 1)) {
                 (jml = pas::increment(jml, 1));
                 movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
@@ -991,9 +942,8 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = data.knightwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = (petir_bitboard_mask::knightmask[pos] & data.blackpieces);
         while ((attack != 0)) {
             post = petir_bitboard_mask::firstbitp(pas::address(attack));
@@ -1007,15 +957,13 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = data.bishopwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
@@ -1025,15 +973,13 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = data.rookwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
@@ -1043,17 +989,15 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         }
     }
     piecepos = data.queenwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
@@ -1061,9 +1005,8 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
     }
     pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
     attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(attack); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
@@ -1080,9 +1023,8 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
     std::int32_t a{};
     jml = 0;
     piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[6]);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((((pos & 7) < 7) && (data.papan[pas::add(pos, 9)] < 0))) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
@@ -1115,9 +1057,8 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = (data.pawnwhite & (petir_bitboard_mask::rank_mask[5] | petir_bitboard_mask::rank_mask[4]));
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((data.papan[pas::add(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 8), 7));
@@ -1129,18 +1070,16 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
     }
     temp = (data.pawnwhite & (~petir_bitboard_mask::rank_mask[6]));
     piecepos = (pas::shl((temp & petir_bitboard_mask::mask_left), 7) & data.blackpieces);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         pos = pas::sub(pos, 7);
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 7), 7));
         movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion);
     }
     piecepos = (pas::shl((temp & petir_bitboard_mask::mask_right), 9) & data.blackpieces);
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         pos = pas::sub(pos, 9);
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 9), 7));
@@ -1148,9 +1087,8 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
     }
     if ((data.ep != petir_header::_no_ep)) {
         piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[4]);
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             if ((pas::abs(pas::sub((pos & 7), data.ep)) == 1)) {
                 (jml = pas::increment(jml, 1));
                 movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
@@ -1159,9 +1097,8 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = data.knightwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = (petir_bitboard_mask::knightmask[pos] & data.blackpieces);
         while ((attack != 0)) {
             post = petir_bitboard_mask::firstbitp(pas::address(attack));
@@ -1175,15 +1112,13 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = data.bishopwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
@@ -1193,15 +1128,13 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = data.rookwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
@@ -1211,17 +1144,15 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         }
     }
     piecepos = data.queenwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::lastbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<true> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
@@ -1229,17 +1160,15 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
     }
     pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
     attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(attack); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
     }
     attack = (petir_bitboard_mask::kingmask[pos] & pas::shr(data.pawnblack, 8));
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(attack); remaining; ) {
+        post = remaining.pop();
         if (((data.papan[post] == 0) && ((petir_bitboard_mask::b_pion_bebas_mask[pas::add(post, 8)] & data.pawnwhite) == 0))) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -1256,9 +1185,8 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
     std::int32_t post{};
     jml = 0;
     piecepos = (data.pawnwhite & (~petir_bitboard_mask::rank_mask[6]));
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         if ((data.papan[pas::add(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 8), 7));
@@ -1271,13 +1199,11 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         }
     }
     piecepos = data.knightwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = (petir_bitboard_mask::knightmask[pos] & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<false> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_kudaputih][post];
@@ -1287,17 +1213,15 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         }
     }
     piecepos = data.queenwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<false> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_mentriputih][post];
@@ -1307,15 +1231,13 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         }
     }
     piecepos = data.bishopwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         attack = (attack & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<false> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_gajahputih][post];
@@ -1325,15 +1247,13 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
         }
     }
     piecepos = data.rookwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack & (~data.allpieces));
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+        for(move_bits<false> remaining(attack); remaining; ) {
+            post = remaining.pop();
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_bentengputih][post];
@@ -1344,9 +1264,8 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
     }
     pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
     attack = (petir_bitboard_mask::kingmask[pos] & (~data.allpieces));
-    while ((attack != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(attack));
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(attack); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_header::historyw[petir_header::_rajaputih][post];
@@ -1390,9 +1309,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     posraja = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
     skakpos = 64;
     piecepos = data.knightblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         battack = (battack | petir_bitboard_mask::knightmask[pos]);
         if (((petir_bitboard_mask::knightmask[pos] & data.kingwhite) != 0)) {
             (skakcount = pas::increment(skakcount, 1));
@@ -1400,9 +1318,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
         }
     }
     piecepos = data.pawnblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::b_pawn_attack[pos];
         battack = (battack | attack);
         if (((attack & data.kingwhite) != 0)) {
@@ -1415,9 +1332,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     allpa8 = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[posraja]));
     allph8 = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[posraja]));
     piecepos = data.bishopblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(allpa8, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(allph8, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         battack = (battack | attack);
@@ -1427,9 +1343,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
         }
     }
     piecepos = data.rookblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(allp, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(allp90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         battack = (battack | attack);
@@ -1439,9 +1354,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
         }
     }
     piecepos = data.queenblack;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(allp, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(allp90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(allpa8, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
@@ -1455,9 +1369,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
     battack = (battack | petir_bitboard_mask::kingmask[pos]);
     piecepos = ((petir_bitboard_mask::kingmask[posraja] & (~battack)) & (~data.whitepieces));
-    while ((piecepos != 0)) {
-        post = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<true> remaining(piecepos); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(posraja, pas::shl(post, 7));
         if ((data.papan[post] == 0)) {
@@ -1474,9 +1387,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
         path = petir_bitboard_mask::pathmask[posraja][skakpos];
         piecepos = data.knightwhite;
         dn = petir_bitboard_mask::direction[posraja][skakpos];
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::knightmask[pos];
             attack2 = (attack & skak64);
             if ((attack2 != 0)) {
@@ -1491,9 +1403,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
                 }
             }
             attack2 = (attack & path);
-            while ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                attack2 = (attack2 & petir_bitboard_mask::bit2nmasknot[post]);
+            for(move_bits<false> remaining(attack2); remaining; ) {
+                post = remaining.pop();
                 if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
                     (jml = pas::increment(jml, 1));
                     movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -1502,9 +1413,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
         piecepos = data.pawnwhite;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::w_pawn_attack[pos];
             attack2 = (attack & skak64);
             if ((attack2 != 0)) {
@@ -1554,9 +1464,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
         piecepos = data.bishopwhite;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
             attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
             attack2 = (attack & skak64);
@@ -1572,9 +1481,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
                 }
             }
             attack2 = (attack & path);
-            while ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                attack2 = (attack2 & petir_bitboard_mask::bit2nmasknot[post]);
+            for(move_bits<false> remaining(attack2); remaining; ) {
+                post = remaining.pop();
                 if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
                     (jml = pas::increment(jml, 1));
                     movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -1583,9 +1491,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
         piecepos = data.rookwhite;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
             attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
             attack2 = (attack & skak64);
@@ -1601,9 +1508,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
                 }
             }
             attack2 = (attack & path);
-            while ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                attack2 = (attack2 & petir_bitboard_mask::bit2nmasknot[post]);
+            for(move_bits<false> remaining(attack2); remaining; ) {
+                post = remaining.pop();
                 if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
                     (jml = pas::increment(jml, 1));
                     movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -1612,9 +1518,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
         piecepos = data.queenwhite;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<false> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
             attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
             attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
@@ -1632,9 +1537,8 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
                 }
             }
             attack2 = (attack & path);
-            while ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                attack2 = (attack2 & petir_bitboard_mask::bit2nmasknot[post]);
+            for(move_bits<false> remaining(attack2); remaining; ) {
+                post = remaining.pop();
                 if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
                     (jml = pas::increment(jml, 1));
                     movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -1670,9 +1574,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     posraja = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
     skakpos = 64;
     piecepos = data.knightwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         battack = (battack | petir_bitboard_mask::knightmask[pos]);
         if (((petir_bitboard_mask::knightmask[pos] & data.kingblack) != 0)) {
             (skakcount = pas::increment(skakcount, 1));
@@ -1680,9 +1583,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
         }
     }
     piecepos = data.pawnwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::w_pawn_attack[pos];
         battack = (battack | attack);
         if (((attack & data.kingblack) != 0)) {
@@ -1695,9 +1597,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     allpa8 = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[posraja]));
     allph8 = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[posraja]));
     piecepos = data.bishopwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(allpa8, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
         attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(allph8, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
         battack = (battack | attack);
@@ -1707,9 +1608,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
         }
     }
     piecepos = data.rookwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(allp, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(allp90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         battack = (battack | attack);
@@ -1719,9 +1619,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
         }
     }
     piecepos = data.queenwhite;
-    while ((piecepos != 0)) {
-        pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        pos = remaining.pop();
         attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(allp, pas::add((pos & 56), 1)) & 63)];
         attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(allp90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
         attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(allpa8, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
@@ -1735,9 +1634,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     pos = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
     battack = (battack | petir_bitboard_mask::kingmask[pos]);
     piecepos = ((petir_bitboard_mask::kingmask[posraja] & (~battack)) & (~data.blackpieces));
-    while ((piecepos != 0)) {
-        post = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[post]);
+    for(move_bits<false> remaining(piecepos); remaining; ) {
+        post = remaining.pop();
         (jml = pas::increment(jml, 1));
         movelist[jml].moves = pas::add(posraja, pas::shl(post, 7));
         if ((data.papan[post] == 0)) {
@@ -1751,9 +1649,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
         skak64 = petir_bitboard_mask::bit2nmask[skakpos];
         path = petir_bitboard_mask::pathmask[posraja][skakpos];
         piecepos = data.knightblack;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<true> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::knightmask[pos];
             attack2 = (attack & skak64);
             if ((attack2 != 0)) {
@@ -1768,9 +1665,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
                 }
             }
             attack2 = (attack & path);
-            while ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                attack2 = (attack2 & petir_bitboard_mask::bit2nmasknot[post]);
+            for(move_bits<true> remaining(attack2); remaining; ) {
+                post = remaining.pop();
                 if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
                     (jml = pas::increment(jml, 1));
                     movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -1779,9 +1675,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
         piecepos = data.pawnblack;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<true> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::b_pawn_attack[pos];
             attack2 = (attack & skak64);
             if ((attack2 != 0)) {
@@ -1831,9 +1726,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
         piecepos = data.bishopblack;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<true> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
             attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
             attack2 = (attack & skak64);
@@ -1849,9 +1743,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
                 }
             }
             attack2 = (attack & path);
-            while ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                attack2 = (attack2 & petir_bitboard_mask::bit2nmasknot[post]);
+            for(move_bits<true> remaining(attack2); remaining; ) {
+                post = remaining.pop();
                 if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
                     (jml = pas::increment(jml, 1));
                     movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -1860,9 +1753,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
         piecepos = data.rookblack;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<true> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
             attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
             attack2 = (attack & skak64);
@@ -1878,9 +1770,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
                 }
             }
             attack2 = (attack & path);
-            while ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                attack2 = (attack2 & petir_bitboard_mask::bit2nmasknot[post]);
+            for(move_bits<true> remaining(attack2); remaining; ) {
+                post = remaining.pop();
                 if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
                     (jml = pas::increment(jml, 1));
                     movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
@@ -1889,9 +1780,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
         piecepos = data.queenblack;
-        while ((piecepos != 0)) {
-            pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-            piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        for(move_bits<true> remaining(piecepos); remaining; ) {
+            pos = remaining.pop();
             attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
             attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
             attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
@@ -1909,9 +1799,8 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
                 }
             }
             attack2 = (attack & path);
-            while ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                attack2 = (attack2 & petir_bitboard_mask::bit2nmasknot[post]);
+            for(move_bits<true> remaining(attack2); remaining; ) {
+                post = remaining.pop();
                 if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
                     (jml = pas::increment(jml, 1));
                     movelist[jml].moves = pas::add(pos, pas::shl(post, 7));

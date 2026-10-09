@@ -1,28 +1,19 @@
 // Faithful translation of next.pas; Delphi source is in original/.
 #include "petir.hpp"
+#include <algorithm>
 namespace petir_next {
 std::int32_t t1 = 0;
 // next.pas:54
 void nextbest_max(petir_header::tmovelist& a, std::int32_t cur, std::int32_t tot) {
-    std::int32_t i{};
-    std::int32_t max{};
-    std::int32_t b{};
-    petir_header::tmoverecord temp{};
-    std::int32_t pas_temp_1{};
-    max = a[cur].score;
-    b = cur;
-    pas_temp_1 = tot;
-    for (i = pas::add(cur, 1); i <= pas_temp_1; ++i) {
-        if ((a[i].score > max)) {
-            b = i;
-            max = a[i].score;
-        }
-    }
-    if ((cur != b)) {
-        temp = a[cur];
-        a[cur] = a[b];
-        a[b] = temp;
-    }
+    auto* current = &a[cur];
+    if(tot<=cur)return;
+    // Checked endpoints establish a valid range without a capacity test for
+    // every score. max_element retains the first maximum, preserving ties.
+    auto* end = &a[tot]+1;
+    auto* best = std::max_element(current,end,[](const auto& left,const auto& right) {
+        return left.score<right.score;
+    });
+    if(best!=current)std::swap(*current,*best);
 }
 
 // next.pas:113

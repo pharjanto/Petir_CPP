@@ -2,9 +2,10 @@
 #include "petir.hpp"
 namespace petir_usee {
 // usee.pas:83
-std::int32_t see(std::int32_t giliran, petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto) {
+std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto) {
     std::int32_t return_value{};
-    pas::Array<std::int8_t, 0, 32> list{};
+    // Every entry used by the backward pass is assigned during the forward pass.
+    pas::Array<std::int8_t, 0, 32> list;
     std::uint64_t attack{};
     std::uint64_t temp{};
     std::int32_t piece{};
@@ -107,7 +108,7 @@ std::int32_t see(std::int32_t giliran, petir_header::tdata& data, std::int32_t s
 }
 
 // usee.pas:21
-void xray(std::uint64_t& attack, std::int32_t square, std::int32_t target, petir_header::tdata& data) {
+void xray(std::uint64_t& attack, std::int32_t square, std::int32_t target, const petir_header::tdata& data) {
     std::int32_t dn{};
     std::int32_t a{};
     std::uint64_t temp{};

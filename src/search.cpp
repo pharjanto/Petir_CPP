@@ -38,6 +38,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     std::uint8_t sto{};
     bool nullmoveok{};
     bool incheck{};
+    std::uint64_t pin_mask{};
     bool mte{};
     std::uint64_t h{};
     std::int32_t goodcap{};
@@ -212,6 +213,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     }
     fase = 0;
     temp = data;
+    pin_mask = incheck?0:petir_tools::pinned_pieces(data,giliran);
     curmovecap = 0;
     tmoves = petir_header::_no_move;
     t_alpha = alpha;
@@ -244,7 +246,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                         continue;
                     }
                 } else {
-                    if (petir_tools::white_open_check(data, moves)) {
+                    if ((pin_mask & petir_bitboard_mask::bit2nmask[moves & 127]) && petir_tools::white_open_check(data, moves)) {
                         continue;
                     }
                 }
@@ -254,7 +256,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                         continue;
                     }
                 } else {
-                    if (petir_tools::black_open_check(data, moves)) {
+                    if ((pin_mask & petir_bitboard_mask::bit2nmask[moves & 127]) && petir_tools::black_open_check(data, moves)) {
                         continue;
                     }
                 }
