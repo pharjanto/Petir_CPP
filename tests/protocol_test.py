@@ -65,8 +65,8 @@ with Engine() as e:
         assert {int(line.split()[2]) for line in infos}==set(range(1,depth+1)),infos
         assert max(int(line.split()[2]) for line in infos)==depth,infos
         assert_completed_best(e,move)
-    # The second search starts its depth loop anew but reuses the first search's
-    # hash results, so it keeps the answer while visiting fewer nodes.
+    # Every search explores root moves from depth 1, including with a retained
+    # root entry. Child hash cutoffs still save work on the repeated position.
     for mtdf,depth in ((False,7),(True,4)):
         e.send('setoption name MTDf value '+str(mtdf).lower())
         e.send('setoption name Clear Hash')
@@ -74,18 +74,42 @@ with Engine() as e:
         for run in range(2):
             e.send('position startpos moves e2e4 e7e5 g1f3');e.transcript.clear()
             e.send(f'go depth {depth}');move=best(e,5);infos=search_infos(e.transcript)
-            if run==0:
-                assert infos and int(infos[0].split()[2])==1,infos
-                assert {int(line.split()[2]) for line in infos}==set(range(1,depth+1)),infos
+            assert infos and int(infos[0].split()[2])==1,infos
+            assert {int(line.split()[2]) for line in infos}==set(range(1,depth+1)),infos
             assert int(infos[-1].split()[2])==depth,infos
             assert_completed_best(e,move)
             nodes=int(next(line.split()[2] for line in e.transcript if line.startswith('info nodes ')))
+            assert nodes>0,e.transcript
             searches.append((move,infos[-1].split()[5],nodes))
-        assert searches[0][:2]==searches[1][:2] and searches[1][2]<searches[0][2],searches
+        assert searches[0][1]==searches[1][1] and searches[1][2]<searches[0][2],searches
+        # A shallow request also searches the root despite the deeper entry.
+        e.send('position startpos moves e2e4 e7e5 g1f3');e.transcript.clear()
+        e.send('go depth 1');move=best(e,5);infos=search_infos(e.transcript)
+        assert infos and {int(line.split()[2]) for line in infos}=={1},infos
+        assert int(next(line.split()[2] for line in e.transcript if line.startswith('info nodes ')))>0,e.transcript
+        assert_completed_best(e,move)
+    # Follow the engine move and predicted reply from its previous PV, without
+    # clearing the cached child entries that become the next root.
+    for mtdf in (False,True):
+        # Normal search supplies a full PV; MTD(f) can report only the root move.
+        e.send('setoption name MTDf value false')
+        e.send('setoption name Clear Hash')
+        e.send('position startpos moves e2e4 e7e5 g1f3');e.transcript.clear()
+        e.send('go depth 7');move=best(e,5)
+        pvs=[line.split(' pv ',1)[1].split() for line in search_infos(e.transcript) if ' pv ' in line]
+        pvs=[pv for pv in pvs if len(pv)>=2 and pv[0]==move]
+        assert pvs,e.transcript
+        continuation='e2e4 e7e5 g1f3 '+' '.join(pvs[-1][:2])
+        e.send('setoption name MTDf value '+str(mtdf).lower())
+        e.send('position startpos moves '+continuation);e.transcript.clear()
+        e.send('go depth 7');move=best(e,5);infos=search_infos(e.transcript)
+        assert infos and int(infos[0].split()[2])==1,infos
+        assert {int(line.split()[2]) for line in infos}==set(range(1,8)),infos
+        assert_completed_best(e,move)
     e.send('setoption name MTDf value false')
     for limit in ('movetime 0','wtime 0 btime 0','wtime 20 btime 20'):
         e.send('position startpos');start=time.monotonic();e.send('go '+limit)
-        assert best(e,1)!='0000' and time.monotonic()-start<.5,limit
+        assert best(e,1)!='0000' and time.monotonic()-start<(.02 if limit=='wtime 20 btime 20' else .1),limit
     for _ in range(3):
         e.send('position startpos');e.send('go infinite');time.sleep(.08)
         e.send('stop');assert_completed_best(e,best(e,2))
@@ -131,13 +155,13 @@ with Engine() as e:
     for run in range(2):
         e.transcript.clear();e.send('go');move=e.until('move ',5)
         infos=[line.split() for line in e.transcript if re.match(r'^\d+ -?\d+ \d+ \d+ ',line)]
-        if run==0:
-            assert infos and int(infos[0][0])==1,infos
-            assert {int(line[0]) for line in infos}==set(range(1,6)),infos
+        assert infos and int(infos[0][0])==1,infos
+        assert {int(line[0]) for line in infos}==set(range(1,6)),infos
         assert int(infos[-1][0])==5,infos
         searches.append((move,infos[-1][1],int(infos[-1][3])))
         e.send('force');e.send('undo');barrier(e)
-    assert searches[0][:2]==searches[1][:2] and searches[1][2]<searches[0][2],searches
+    # Re-searching can select another move tied at the same score.
+    assert searches[0][1]==searches[1][1] and searches[1][2]<searches[0][2],searches
 
 with Engine() as e:
     e.send('uci');e.until('uciok');e.send('setoption name OwnBook value false')
@@ -161,8 +185,8 @@ with Engine() as e:
         assert not any(line.startswith('move ') for line in e.transcript),e.transcript
     # A late clock update still enforces the supplied remaining time.
     e.send('force');e.send('new');e.send('level 0 3 0');e.send('go');time.sleep(.02)
-    start=time.monotonic();e.send('time 1');e.until('move ',1)
-    assert time.monotonic()-start<.5
+    start=time.monotonic();e.send('time 10');e.until('move ',1)
+    assert time.monotonic()-start<.1
 
 with Engine() as e:
     e.send('xboard');e.send('new');e.send('force')

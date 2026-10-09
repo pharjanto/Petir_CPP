@@ -6,12 +6,11 @@ namespace {
 // before stand pat, without generating every quiet move in the common case.
 bool has_legal_noncheck_move(petir_header::tdata& data, int side, petir_header::tmovelist& moves) {
     const bool white=side==petir_header::_sisiputih;
-    auto pawns=white?data.pawnwhite:data.pawnblack;
-    while(pawns) {
-        const int from=petir_bitboard_mask::firstbitp(pas::address(pawns));
-        pawns&=pawns-1;
-        const int to=from+(white?8:-8);
-        if(to<0 || to>63 || data.papan[to]!=0)continue;
+    auto pushes=(white?data.pawnwhite<<8:data.pawnblack>>8)&~data.allpieces;
+    while(pushes) {
+        const int to=petir_bitboard_mask::firstbitp(pas::address(pushes));
+        pushes&=pushes-1;
+        const int from=to+(white?-8:8);
         const auto move=static_cast<std::uint16_t>(from|(to<<7));
         if(!(white?petir_tools::white_open_check(data,move):petir_tools::black_open_check(data,move)))return true;
     }
@@ -28,7 +27,9 @@ bool has_legal_noncheck_move(petir_header::tdata& data, int side, petir_header::
     while(targets) {
         const int to=petir_bitboard_mask::firstbitp(pas::address(targets));
         targets&=targets-1;
-        if(legal(from|(to<<7)))return true;
+        // In a nonchecked position the old king square cannot shield an attack
+        // on an adjacent destination, so an attack test suffices here.
+        if(!(white?petir_tools::white_attacked(data,to):petir_tools::black_attacked(data,to)))return true;
     }
     int count=0;
     if(white)petir_movgen::white_movgen_caps(data,moves,count);else petir_movgen::black_movgen_caps(data,moves,count);
@@ -63,6 +64,11 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
     std::int32_t pas_temp_2{};
     std::int32_t pas_temp_3{};
     std::int32_t pas_temp_4{};
+#ifdef PETIR_DISABLE_Q_POSITIONAL_EXTENSION
+    constexpr bool positional_extension_enabled = false;
+#else
+    constexpr bool positional_extension_enabled = true;
+#endif
 // search.pas:991
     auto cap_is_danger = [&]() -> bool {
     bool return_value{};
@@ -106,7 +112,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
 };
 
     // Portability guards: stop safely and keep the original 64-ply arrays in bounds.
-    if (petir_header::stop_process.load()) return 0;
+    if (petir::search_should_stop()) return 0;
     if ((giliran == petir_header::_sisiputih)) {
         incheck = petir_tools::white_checked(data);
     } else {
@@ -177,7 +183,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
         }
     }
     if ((!nganu && !incheck)) {
-        if ((((ply > 0) && (cext > 0)) && (e < beta))) {
+        if ((positional_extension_enabled && (((ply > 0) && (cext > 0)) && (e < beta)))) {
             nilai = petir_ueval::materialvalue(giliran, data.materialscore);
             if ((pas::sub(e, nilai) >= 90)) {
                 if ((pas::sub(e, nilai) >= 200)) {
@@ -208,6 +214,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
     t_beta = beta;
     pas_temp_4 = jml;
     for (a = 1; a <= pas_temp_4; ++a) {
+        if(petir::search_should_stop())return 0;
         if ((a != jml)) {
             petir_next::nextbest_max(ml, a, jml);
         }
@@ -259,6 +266,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
             }
         }
         nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(t_beta), pas::negate(t_alpha), data, pas::sub(ply, 1), pas::add(depth, 1), cext, petir_search::noval, pas::negate(nodetype)));
+        if(petir::search_should_stop()) {data=temp;return 0;}
         if ((nilai >= beta)) {
             data = temp;
             return_value = nilai;

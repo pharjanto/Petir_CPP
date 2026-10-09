@@ -46,7 +46,7 @@ void printpv(std::int32_t& n, pas::String spv, std::int32_t l, std::int32_t t, s
     if ((!petir_header::usewinboard)) {
     } else {
         if (petir_header::usewinboard) {
-            s = ((((((((pas::inttostr(l) + ' ') + pas::inttostr(nilai3)) + ' ') + pas::inttostr((pas::sub(pas::gettickcount(), petir_header::ref2) / 10))) + ' ') + pas::inttostr(petir_header::total_node)) + ' ') + spv);
+            s = pas::inttostr(l) + ' ' + pas::inttostr(nilai3) + ' ' + pas::inttostr(static_cast<std::int32_t>(petir::search_time.elapsed_ms()/10)) + ' ' + pas::inttostr(petir_header::total_node) + ' ' + spv;
             ;
             pas::send_winboard(s);
         }

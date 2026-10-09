@@ -154,6 +154,7 @@ std::uint64_t perft(Position p,int stm,int depth) {
     return nodes;
 }
 void prepare_search(int stm,bool timed,int ticks) {
+    search_time.reset();
     evalms=totaladdhash=collision=lazyts=maxdepth1=evalsee=movgenms=cetc=futfail=futtry=total_node=maxdepth=hash_hit=0;
     stalemate=false;ai_side=stm;timepassed=0;stop_process=false;
     lazy_margin1a=lazy_margin1;lazy_margin2a=lazy_margin2;lazy_margin3a=lazy_margin3;

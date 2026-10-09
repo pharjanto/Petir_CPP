@@ -52,16 +52,13 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
     std::int32_t pas_temp_1{};
     std::int32_t pas_temp_2{};
     rlevel = (level / petir_header::fractional_ply);
+    if(petir::search_should_stop(true))return 0;
     pas::fillchar(petir_search::curr_move, sizeof(petir_search::curr_move), 0);
     cnode = petir_header::total_node;
     hmoves = petir_header::_no_move;
-    if (petir_hashing::searchhash(data.hashkey, alpha, beta, level, giliran, nilai, hmoves, mbadcap, data.move50count)) {
-        (petir_header::hashco = pas::increment(petir_header::hashco, 1));
-        petir_header::mmoves = hmoves;
-        petir_root::newpv = false;
-        return_value = nilai;
-        return return_value;
-    }
+    // Retain the hash move for ordering, but search root moves at every depth.
+    // Cached score cutoffs remain available below the root.
+    (void)petir_hashing::searchhash(data.hashkey, alpha, beta, level, giliran, nilai, hmoves, mbadcap, data.move50count);
     h = data.hashkey;
     (petir_header::total_node = pas::increment(petir_header::total_node, 1));
     finish = false;
@@ -95,6 +92,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
     tcext = cext;
     petir_search::empty_historytable();
     do {
+        if(petir::search_should_stop(true))return 0;
         petir_search::stack[depth].ext = false;
         pas::fillchar(petir_search::stack, sizeof(petir_search::stack), 0);
         cext = tcext;
@@ -180,7 +178,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
         }
         tnilai = nilai;
         search2: ;
-        if (((petir_header::timepassed >= petir_header::timelimit) || petir_header::stop_process)) {
+        if (petir::search_should_stop(true)) {
             petir_repetition::delrephash(h2, pas::sub(2, giliran));
             data = temp;
             return return_value;
@@ -198,7 +196,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
                     }
                 }
                 nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(beta), pas::negate(t_alpha), data, nullmove, pas::add(depth, 1), cext, false, 0, petir_search::node_pv));
-                if (((petir_header::timepassed >= petir_header::timelimit) || petir_header::stop_process)) {
+                if (petir::search_should_stop(true)) {
                     petir_repetition::delrephash(h2, pas::sub(2, giliran));
                     data = temp;
                     return return_value;
@@ -225,7 +223,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
                     }
                     if ((lmoves != moves)) {
                         if ((((petir_header::modetime == petir_header::moves_minutes) || (petir_header::modetime == petir_header::minutes_game_increment)) && (eext <= 6))) {
-                            (petir_header::timelimit = pas::increment(petir_header::timelimit, (petir_root::rtl / 10)));
+                            petir::search_time.adjust_soft(0.1);
                             (eext = pas::increment(eext, 1));
                         }
                     }
@@ -268,7 +266,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
     if ((petir_header::mmoves == petir_header::_no_move)) {
         petir_header::mmoves = hmoves;
     }
-    if (((petir_header::timepassed >= petir_header::timelimit) || petir_header::stop_process)) {
+    if (petir::search_should_stop(true)) {
         return return_value;
     }
     if ((g <= alpha)) {

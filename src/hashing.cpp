@@ -20,16 +20,16 @@ void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::
         (*kk).level = level;
         (*kk).moves = moves;
         (*kk).move50count = move50count;
-        (*kk).flag = ((*kk).flag & (~petir_hashing_header::bit_old));
+        (*kk).flag = petir_hashing_header::bit_used|petir_hashing_header::generation;
     } else {
-        if (((((*kk).flag & petir_hashing_header::bit_old) != 0) || (level >= (*kk).level))) {
+        if (petir_hashing_header::is_old(*kk) || level >= (*kk).level) {
             (*kk).moves = moves;
             (*kk).move50count = move50count;
             (*kk).key = key;
             (*kk).nilai = nilai;
             (*kk).tipe = tipe;
             (*kk).level = level;
-            (*kk).flag = ((*kk).flag & (~petir_hashing_header::bit_old));
+            (*kk).flag = petir_hashing_header::bit_used|petir_hashing_header::generation;
         }
     }
 }

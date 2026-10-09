@@ -1,6 +1,7 @@
 // Generated from the bundled Delphi source; see tools/translate.py.
 #pragma once
 #include "pascal_runtime.hpp"
+#include "time_manager.hpp"
 namespace petir_header {
 inline constexpr auto version = 1;
 inline constexpr auto a1 = 0;
@@ -375,6 +376,8 @@ inline pas::Array<std::int32_t, 1, 8> y_king_direction = {pas::negate(1), pas::n
 namespace petir_hashing_header {
 inline constexpr auto bit_used = 64;
 inline constexpr auto bit_old = 128;
+inline constexpr std::uint8_t generation_mask = 63;
+extern std::uint8_t generation;
 #pragma pack(push, 1)
 struct thashrecord {
     std::uint8_t flag;
@@ -386,6 +389,7 @@ struct thashrecord {
     std::uint8_t move50count; // Uses the former unused byte; entry stays 16 bytes.
 };
 #pragma pack(pop)
+inline bool is_old(const thashrecord& entry) {return (entry.flag&generation_mask)!=generation;}
 using thashdata = std::vector<petir_hashing_header::thashrecord>;
 extern petir_hashing_header::thashdata hashtable;
 extern std::int32_t anu;

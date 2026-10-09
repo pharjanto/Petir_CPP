@@ -6,19 +6,48 @@ int self_test() {
     int failures=0,checks=0;
     auto check=[&](bool ok,const std::string& message) {++checks;if(!ok) {++failures;std::cerr<<"FAIL: "<<message<<'\n';}};
     using namespace petir_header;
+    ClockLimits tm_limits;tm_limits.timed=true;tm_limits.remaining_ms=1000;
+    auto tm_budget=TimeManager::allocate(tm_limits);
+    check(tm_budget.soft_ms>0 && tm_budget.soft_ms<250 && tm_budget.hard_ms<=950,"low-clock allocation has no 250 ms floor and reserves overhead");
+    tm_limits.increment_ms=2000;const auto with_increment=TimeManager::allocate(tm_limits);
+    check(with_increment.soft_ms>tm_budget.soft_ms && with_increment.hard_ms<=950,"increment improves the target without spending future increment before the move");
+    tm_limits.remaining_ms=50;
+    check(TimeManager::allocate(tm_limits).emergency && TimeManager::allocate(tm_limits).hard_ms==0,"clock below overhead selects the emergency path even with increment");
+    tm_limits.remaining_ms=60000;tm_limits.increment_ms=0;tm_limits.moves_to_go=1;
+    check(TimeManager::allocate(tm_limits).hard_ms<=59950,"last move of a control still retains move overhead");
+    tm_limits.movetime_ms=80;tm_budget=TimeManager::allocate(tm_limits);
+    check(tm_budget.soft_ms==30 && tm_budget.hard_ms==30,"fixed movetime includes response overhead");
+    TimeManager tm;const auto received=TimeManager::now_ms();
+    tm.start({true,false,10,20},received-100);
+    check(tm.expired(true),"the hard deadline includes time spent preparing the search");
+    tm.adjust_soft(100);
+    check(tm.expired(true) && !tm.can_start_iteration(0),"soft extensions cannot revive an expired hard deadline");
+    tm.tighten(received,60000,0);
+    check(tm.expired(true),"clock updates cannot extend the original hard deadline");
+    tm.start({true,false,10000,20000},received);
+    check(!tm.can_start_iteration(15000),"iteration prediction rejects work that would exceed the hard budget");
+    tm.start({true,false,100,1000},received);
+    tm.tighten(received,0,50);
+    check(tm.expired(true),"a late zero-clock update expires the deadline immediately");
+    tm.start({},received);
+    check(!tm.expired(true) && tm.can_start_iteration(1000),"depth-only and infinite searches do not acquire a clock limit");
     // Compare the native scan with the legacy 16-bit lookup for every word
-    // value in each block, including boards containing higher occupied blocks.
+    // value in each block, including higher/lower occupied blocks respectively.
     std::uint64_t scan_bits=0;
     check(petir_bitboard_mask::firstbitp(pas::address(scan_bits))==0,"empty bit scan retains legacy zero result");
-    bool scan_matches=true;
+    check(petir_bitboard_mask::lastbitp(pas::address(scan_bits))==-1,"empty reverse bit scan retains legacy minus-one result");
+    bool scan_matches=true,reverse_scan_matches=true;
     for(int block=0;block<4;++block) {
         for(std::uint32_t word=1;word<=65535;++word) {
             scan_bits=std::uint64_t(word)<<(block*16);
             if(block<3)scan_bits|=UINT64_C(0xffff000000000000);
             if(petir_bitboard_mask::firstbitp(pas::address(scan_bits))!=block*16+petir_bitboard_mask::firstbitmask[word])scan_matches=false;
+            scan_bits=(std::uint64_t(word)<<(block*16))|((UINT64_C(1)<<(block*16))-1);
+            if(petir_bitboard_mask::lastbitp(pas::address(scan_bits))!=block*16+petir_bitboard_mask::firstbitmask[word])reverse_scan_matches=false;
         }
     }
     check(scan_matches,"native bit scan matches legacy lookup across all 16-bit blocks");
+    check(reverse_scan_matches,"native reverse scan preserves the highest-word/least-bit order for every word");
     Position start{};petir_udata::initstate(start);
     check(start.hashkey==3423812783342919194ULL,"Delphi starting hash and Random evaluation order");
     check(consistent(start),"starting board, rotated occupancy, material, and hash agree");
@@ -188,6 +217,8 @@ int self_test() {
         "8/8/8/8/8/6k1/5q2/7K w - - 0 1",
         "R5bk/5Q2/6K1/8/8/8/8/8 b - - 0 1",
         "8/8/8/8/8/6k1/5q2/r5BK w - - 0 1",
+        "8/8/1b6/8/8/5k2/r7/6nK w - - 0 1",
+        "6Nk/R7/5K2/8/8/1B6/8/8 b - - 0 1",
         "7k/5Q2/6K1/8/8/8/p7/N7 b - - 0 1",
         "n7/P7/8/8/8/6k1/5q2/7K w - - 0 1",
         "8/1b6/8/8/5b2/4k3/5qP1/7K w - - 0 1",
@@ -204,6 +235,8 @@ int self_test() {
     for(const char* fen:{
         "7k/4Q3/6K1/8/8/8/8/8 b - - 0 1",
         "8/8/8/8/8/6k1/4q3/7K w - - 0 1",
+        "8/8/8/8/8/5k2/r7/6nK w - - 0 1",
+        "6Nk/R7/5K2/8/8/8/8/8 b - - 0 1",
         "8/8/8/8/8/6k1/5q2/1N5K w - - 0 1",
         "8/P7/8/8/8/6k1/5q2/7K w - - 0 1",
         "8/8/2p5/2Pp4/8/6k1/5q2/7K w - d6 0 1",
@@ -323,12 +356,38 @@ int self_test() {
     prepare_search(1,false,0);usewinboard=false;
     check(cached_start(),"new search retains the previous search's hash result");
     const auto hash_slot=start.hashkey&static_cast<std::uint64_t>(maxhash-1);
-    check((petir_hashing_header::hashtable[hash_slot].flag&petir_hashing_header::bit_old)!=0,"previous search's hash result is aged for replacement");
+    check(petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot]),"previous search's hash result is aged for replacement");
+    const auto aged_record=petir_hashing_header::hashtable[hash_slot];
+    const auto colliding_key=start.hashkey^static_cast<std::uint64_t>(maxhash);
+    petir_hashing::addtable(colliding_key,1,8,parse_move("d2d4",start,1),321,pv_node,start.move50count);
+    check(petir_hashing_header::hashtable[hash_slot].key==colliding_key && !petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot]),"a shallow entry replaces an older generation and is stamped current");
+    petir_hashing_header::hashtable[hash_slot]=aged_record;
+    const auto flags_before_age=aged_record.flag;
+    petir_hashing_header::cleartable2();
+    check(petir_hashing_header::hashtable[hash_slot].flag==flags_before_age && cached_start(),"generation aging leaves cached entries and their bytes untouched");
+    const auto generation_before_wrap=petir_hashing_header::generation;
+    for(int cycle=0;cycle<64;++cycle)petir_hashing_header::cleartable2();
+    check(petir_hashing_header::generation==generation_before_wrap && petir_hashing_header::hashtable[hash_slot].flag==flags_before_age && cached_start(),"generation wrap preserves hash contents and score validity");
     check(historyw[1][28]==4096 && historyb[-1][36]==4096 && killer0[0]==0 && killer1[63]==0,"new search decays move-ordering history and resets killers");
     check(petir_repetition::addrephash(start.hashkey,1)==2,"search reset preserves game repetition history");
     petir_repetition::initrepdata();
     petir_hashing_header::cleartable();
     check(!cached_start(),"explicit Clear Hash discards the retained result");
+    // A deep exact root entry must guide ordering without replacing depth 1.
+    const int root_hint=parse_move("e2e4",start,1);
+    petir_hashing::addtable(start.hashkey,1,48,root_hint,777,pv_node,start.move50count);
+    std::string first_root_move;
+    usewinboard=true;
+    pas::output=[&](const pas::String& output) {
+        if(!first_root_move.empty())return;
+        std::istringstream line(output.value);int d=0,score=0,time=0,nodes=0;
+        line>>d>>score>>time>>nodes>>first_root_move;
+    };
+    (void)petir_uiterative::iterative(1,1,_nodemax,start);
+    pas::output={};usewinboard=false;
+    check(total_node>0 && petir_uiterative::completed_depth==1 && petir_uiterative::completed_score!=777,"depth 1 searches root moves instead of accepting a cached root score");
+    check(first_root_move=="e2e4","root search tries the retained hash move first");
+    petir_hashing_header::cleartable();
     (void)petir_uiterative::iterative(5,1,_nodemax,start);
     auto moves=legal_moves(start,1);
     check(std::find(moves.begin(),moves.end(),mmoves)!=moves.end(),"iterative search returns a legal starting move");

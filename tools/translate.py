@@ -514,7 +514,11 @@ class Render:
         guards=''
         if self.u.name=='search' and f.name in ('mainsearch','q_search'):
             guards='    // Portability guards: stop safely and keep the original 64-ply arrays in bounds.\n'
-            if f.name=='q_search':guards+='    if (petir_header::stop_process.load()) return 0;\n'
+            if f.name=='q_search':
+                locals+='#ifdef PETIR_DISABLE_Q_POSITIONAL_EXTENSION\n    constexpr bool positional_extension_enabled = false;\n#else\n    constexpr bool positional_extension_enabled = true;\n#endif\n'
+                body=body.replace('if ((((ply > 0) && (cext > 0)) && (e < beta))) {',
+                                  'if ((positional_extension_enabled && (((ply > 0) && (cext > 0)) && (e < beta)))) {',1)
+                guards+='    if (petir_header::stop_process.load()) return 0;\n'
             guards+='    if (depth >= 63) return petir_ueval::eval(data, giliran, alpha, beta);\n'
         return ('// '+self.u.name+'.pas:'+str(f.line)+'\n'+sig+' {\n'+locals+nests+guards+body+end+'}'+(';' if nested else '')+'\n\n')
 

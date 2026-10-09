@@ -101,13 +101,8 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
 };
 
     // Portability guards: stop safely and keep the original 64-ply arrays in bounds.
+    if (petir::search_should_stop())return 0;
     if (depth >= 63) return petir_ueval::eval(data, giliran, alpha, beta);
-    if ((petir_header::timepassed >= petir_header::timelimit)) {
-        return return_value;
-    }
-    if (petir_header::stop_process) {
-        return return_value;
-    }
     petir_search::stack[depth].ext = false;
     if ((data.move50count >= 101)) {
         return_value = petir_header::contemp_draw;
@@ -193,6 +188,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             } else {
                 nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(beta), pas::negate(pas::sub(beta, 1)), data, true, pas::add(depth, 1), cext, true, 0, pas::negate(nodetype)));
             }
+            if(petir::search_should_stop()) {data.hashkey=h;data.ep=tempep;return 0;}
             if ((nilai >= beta)) {
                 data.hashkey = h;
                 data.ep = tempep;
@@ -228,6 +224,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     rlevel = pas::shr(level, 3);
     isscoredraw = false;
     do {
+        if(petir::search_should_stop())return 0;
         petir_search::stack[depth].evaluated = false;
         scoredraw = false;
         futflag = false;
@@ -488,6 +485,9 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             }
         }
         search2: ;
+        if(petir::search_should_stop()) {
+            petir_repetition::delrephash(data.hashkey,pas::sub(2,giliran));data=temp;return 0;
+        }
         if ((((nilai > t_alpha) && (nilai < beta)) && (legalmove > 1))) {
             if ((areduce != 0)) {
                 (newlevel = pas::increment(newlevel, areduce));
@@ -511,6 +511,9 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             }
         }
         search3: ;
+        if(petir::search_should_stop()) {
+            petir_repetition::delrephash(data.hashkey,pas::sub(2,giliran));data=temp;return 0;
+        }
         if ((nilai > g)) {
             g = nilai;
             isscoredraw = scoredraw;
@@ -534,7 +537,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
         petir_repetition::delrephash(data.hashkey, pas::sub(2, giliran));
         data = temp;
     } while (!((1 == 2)));
-    if (((petir_header::timepassed >= petir_header::timelimit) || petir_header::stop_process)) {
+    if (petir::search_should_stop()) {
         return return_value;
     }
     if ((legalmove == 0)) {

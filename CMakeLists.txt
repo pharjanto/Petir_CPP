@@ -8,6 +8,8 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 option(PETIR_CHECK_BOUNDS "Check the original Pascal array bounds" OFF)
 option(PETIR_SANITIZERS "Enable address and undefined-behavior sanitizers" OFF)
+option(PETIR_Q_POSITIONAL_EXTENSION "Allow quiescence to restart normal search for a positional bonus" ON)
+set(PETIR_OUTPUT_NAME "" CACHE STRING "Optional executable name override, without the extension")
 find_package(Threads REQUIRED)
 add_executable(petir
     src/header.cpp src/bitboard_mask.cpp src/bitboard.cpp src/udata.cpp
@@ -15,11 +17,16 @@ add_executable(petir
     src/valid.cpp src/hashing_header.cpp src/hashing.cpp src/repetition.cpp
     src/next.cpp src/ueval.cpp src/search.cpp src/quiescence.cpp src/root.cpp src/uiterative.cpp
     src/customboard.cpp src/notation.cpp src/pv.cpp src/opening_book.cpp
-    src/etc.cpp src/undoredo.cpp src/engine.cpp src/main.cpp src/selftest.cpp)
+    src/etc.cpp src/undoredo.cpp src/engine.cpp src/time_manager.cpp src/main.cpp src/selftest.cpp)
 target_link_libraries(petir PRIVATE Threads::Threads)
 set_target_properties(petir PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 32)
-if(WIN32)
+if(PETIR_OUTPUT_NAME)
+    set_target_properties(petir PROPERTIES OUTPUT_NAME "${PETIR_OUTPUT_NAME}")
+elseif(WIN32)
     set_target_properties(petir PROPERTIES OUTPUT_NAME petir64)
+endif()
+if(NOT PETIR_Q_POSITIONAL_EXTENSION)
+    target_compile_definitions(petir PRIVATE PETIR_DISABLE_Q_POSITIONAL_EXTENSION)
 endif()
 if(PETIR_CHECK_BOUNDS)
     target_compile_definitions(petir PRIVATE PETIR_CHECK_BOUNDS)
@@ -42,6 +49,8 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
     add_test(NAME protocol-regression COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/protocol_test.py" "$<TARGET_FILE:petir>")
     set_tests_properties(protocol-regression PROPERTIES TIMEOUT 60)
+    add_test(NAME time-management-regression COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/time_management_test.py" "$<TARGET_FILE:petir>")
+    set_tests_properties(time-management-regression PROPERTIES TIMEOUT 90)
     if(MSVC AND (CMAKE_CXX_FLAGS MATCHES "fsanitize=address" OR CMAKE_CXX_FLAGS_RELEASE MATCHES "fsanitize=address"))
         # MSVC ASan aborts on deliberate OOM before std::bad_alloc can be caught.
         # The same recovery test runs in normal and bounds-checked Release builds.

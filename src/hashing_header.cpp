@@ -2,6 +2,7 @@
 #include "petir.hpp"
 namespace petir_hashing_header {
 petir_hashing_header::thashdata hashtable{};
+std::uint8_t generation{};
 std::int32_t anu{};
 // hashing_header.pas:89
 void inithashkey() {
@@ -56,12 +57,8 @@ void cleartable() {
 
 // hashing_header.pas:64
 void cleartable2() {
-    std::int32_t a{};
-    std::int32_t pas_temp_1{};
-    pas_temp_1 = pas::sub(petir_header::maxhash, 1);
-    for (a = 0; a <= pas_temp_1; ++a) {
-        petir_hashing_header::hashtable[a].flag = (petir_hashing_header::hashtable[a].flag | petir_hashing_header::bit_old);
-    }
+    // The tag changes replacement priority only; key and rule-50 checks remain.
+    generation = (generation+1)&generation_mask;
 }
 
 // hashing_header.pas:37

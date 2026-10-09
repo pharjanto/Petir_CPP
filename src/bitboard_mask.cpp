@@ -46,29 +46,12 @@ std::int32_t firstbitp(petir_bitboard_mask::pword p) {
 
 // bitboard_mask.pas:108
 std::int32_t lastbitp(petir_bitboard_mask::pword p) {
-    std::int32_t return_value{};
-    (p = pas::increment(p, 3));
-    if (((*p) != 0)) {
-        return_value = pas::add(petir_bitboard_mask::firstbitmask[(*p)], 48);
-        return return_value;
-    }
-    (p = pas::decrement(p, 1));
-    if (((*p) != 0)) {
-        return_value = pas::add(petir_bitboard_mask::firstbitmask[(*p)], 32);
-        return return_value;
-    }
-    (p = pas::decrement(p, 1));
-    if (((*p) != 0)) {
-        return_value = pas::add(petir_bitboard_mask::firstbitmask[(*p)], 16);
-        return return_value;
-    }
-    (p = pas::decrement(p, 1));
-    if (((*p) != 0)) {
-        return_value = petir_bitboard_mask::firstbitmask[(*p)];
-        return return_value;
-    }
-    return_value = pas::negate(1);
-    return return_value;
+    std::uint64_t bits;
+    std::memcpy(&bits,p,sizeof(bits));
+    if(!bits)return -1;
+    // Delphi selects the least bit in the highest occupied 16-bit word.
+    const int word_offset=(63-std::countl_zero(bits))&~15;
+    return word_offset+std::countr_zero(bits>>word_offset);
 }
 
 // bitboard_mask.pas:96

@@ -146,3 +146,55 @@ The additional legality check has a runtime cost. A local fixed-depth-12 compari
 | PGN mate defense | 1,331 ms | 1,440 ms |
 
 Best moves and scores matched in these samples. Node counts matched for the first two positions; the PGN position changed from 7,949,107 to 7,949,444 nodes. The short rook-ending sample (45 versus 46 ms) was excluded from percentage comparisons. These timings describe this machine and sample; they do not establish playing-strength improvement.
+
+## NPS with native bit scans and faster stalemate probes
+
+On 2026-10-09, two further optimizations were retained after comparison with a freshly built baseline. `lastbitp` now uses native leading/trailing-zero operations to select the least bit in the highest occupied 16-bit word. Its original unusual ordering and empty-board result (-1) are preserved. The regression suite compares all 65,535 nonzero word values in each block with the legacy lookup while lower blocks are occupied.
+
+The nonchecked quiescence move-existence probe now finds unobstructed pawn pushes with a bitboard shift before testing pins. It tests king destinations for attacks directly, avoiding a position copy, hash/material updates, and node-counter restoration. This is valid because the current king is not checked: its old square cannot shield an attack on an adjacent destination. The full make/check fallback remains for other moves. Additional fixtures cover safe and defended king captures for both colors; the 4,575-position legal-move audit continues to pass. Stalemate detection remains active before stand pat.
+
+The final comparison used fresh processes, disabled books, 64 MiB Hash, fixed depth 12, three runs per executable, reversed executable order on alternate runs, and no concurrent builds. The positional quiescence extension was enabled for every executable in this comparison.
+
+| Position | Baseline median | Native scan only | Native scan + faster probe | Final NPS increase |
+|---|---:|---:|---:|---:|
+| Start position | 573 ms | 547 ms | 539 ms | 6.3% |
+| Kiwipete | 2,859 ms | 2,698 ms | 2,691 ms | 6.2% |
+| PGN mate defense | 1,436 ms | 1,368 ms | 1,334 ms | 7.6% |
+
+Node counts, scores, best moves, and PVs matched exactly in all compared searches. The rook-ending sample was too short for a useful speed claim: its medians were 46, 48, and 47 ms respectively. An initial link-time optimization trial was slower in all four samples and was not adopted. These are local runtime measurements, not playing-strength measurements.
+
+The final suite passes **458 core checks with zero failures**, plus UCI/WinBoard protocol regressions, in performance Release, bounds-checked Release, MSVC AddressSanitizer, and the extension-disabled performance build. The intentional AddressSanitizer OOM-test exclusion described above still applies. The normal executable is `build/windows-x64/Release/petir64.exe`; the extension-disabled comparison executable is `build/windows-x64-no-qextension-nps/Release/petir64-no-qextension-nps.exe`.
+
+## Default build time-management regression
+
+On 2026-10-09, the default MSVC x64 Release build received the millisecond time manager, direct search deadline checks, separate soft/hard budgets, iteration prediction, increment-aware allocation, 50 ms default Move Overhead, emergency legal replies, and constant-time TT generation aging. The positional quiescence extension remains enabled. The executable is `build/windows-x64/Release/petir64.exe`.
+
+`ctest --preset windows-x64 --output-on-failure` passes all three suites: core regression, protocol regression, and the new time-management regression. The core suite performs **472 checks with zero failures**, including clock reserves, increment caps, setup charged against deadlines, soft extensions bounded by the hard deadline, nonextending late updates, iteration prediction, retained hash scores, collision replacement, and generation wrap. Existing protocol coverage includes cancellation, ponder/ponderhit, MTD(f), completed-iteration move/PV restoration, and allocation-failure recovery.
+
+The new end-to-end suite performs **148 strict positive-clock deadline checks** while two additional engine processes search continuously. It covers UCI and WinBoard, both colors, 20/50/100/200/500/1000 ms clocks, quiet and Kiwipete positions, 16/256 MiB Hash, fixed movetime, asymmetric clocks with large increments, movetime capped by the available clock, late WinBoard updates, and 80 successive clocked endgame replies with a 1 s bank and no increment starting at fullmove 120. Returned moves are replayed for legality. Terminal endgame boards are checked with perft and restarted without replenishing the clock. Every response arrived before its supplied clock; the final banks in the CTest run were approximately 257 and 284 ms. The longest response was about 450 ms on a 500 ms movetime request.
+
+A fixed-depth-12 comparison against the existing default Arena executable used fresh processes, disabled books, 64 MiB Hash, three runs per position, and alternating executable order. Node counts, scores, best moves, and PVs matched exactly in all four positions. Search deadline checks add some overhead; the local median response times below range from approximately unchanged to 5% slower. Concurrent tournament activity limits timing precision.
+
+| Position | Previous default, median | New default, median |
+|---|---:|---:|
+| Start position | 568 ms | 595 ms |
+| Kiwipete | 2,835 ms | 2,874 ms |
+| Rook ending | 304 ms | 303 ms |
+| PGN mate defense | 1,436 ms | 1,443 ms |
+
+These checks ran on this Windows host and do not guarantee scheduling on every tournament machine. The time-policy constants and any playing-strength effect need match testing. Only the default build was rebuilt and validated for this change; the running Arena executables and tournament files were left untouched.
+
+## Root search starts with retained hash entries
+
+On 2026-10-09, a depth-7 search after `e2e4 e7e5 g1f3` reproduced the missing shallow iterations: repeating the position reported only depth 7 and zero searched nodes. Playing the first two PV moves, `b8c6 d2d4`, made the next search first report depth 6. Clearing the hash restored reports from depth 1.
+
+Root probes now retain the cached move for ordering without accepting a cached score cutoff. Every root iteration searches moves; descendant hash cutoffs and generation aging remain enabled. UCI `ponderhit` continues the existing search. The rebuilt default Release executable passes the core, protocol, and time-management suites. The strengthened protocol regression fails against the saved previous executable on the repeated-position depth-1 assertion. Coverage now checks repeated UCI and WinBoard positions, a shallow depth-1 request with a deeper retained entry, and previous-PV continuations in normal search and MTD(f). A core fixture injects an exact cached root score and verifies that depth 1 searches nodes, computes its own score, and tries the cached move first. Repeated searches may choose a different move tied at the same score.
+
+A local fixed-depth-10 comparison used books disabled, 64 MiB Hash, three runs per executable, and alternating executable order. Each fresh process searched the position twice without clearing the hash between the two searches. The opening sample was the position after `e2e4 e7e5 g1f3`; the other sample was Kiwipete. Cold-search node counts, scores, and best moves matched between builds. Repeated searches now report all depths 1–10 and still benefit from descendant hash entries.
+
+| Position | Previous cold median | New cold median | Previous repeated median | New repeated median | New cold / repeated nodes |
+|---|---:|---:|---:|---:|---:|
+| Opening | 215.293 ms | 215.461 ms | 0.225 ms | 45.009 ms | 906,605 / 181,644 |
+| Kiwipete | 864.788 ms | 860.253 ms | 0.231 ms | 26.866 ms | 3,845,303 / 114,972 |
+
+The previous repeated searches visited zero nodes because they returned cached root scores. These measurements quantify the extra search work; they do not establish a playing-strength improvement. Raw measurements are in `build/root-depth-start-comparison.json`.

@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include <algorithm>
+#include <condition_variable>
 #include <mutex>
 #include <sstream>
 #include <thread>
@@ -8,7 +9,7 @@ namespace {
 using namespace petir_header;
 std::mutex output_mutex;
 void emit(const std::string& s) {std::lock_guard lock(output_mutex);std::cout<<s<<std::endl;}
-std::int64_t now_ms() {return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();}
+std::int64_t now_ms() {return petir::TimeManager::now_ms();}
 std::vector<std::string> words(const std::string& line) {std::istringstream s(line);std::vector<std::string> v;for(std::string x;s>>x;)v.push_back(x);return v;}
 std::string join(const std::vector<std::string>& v,std::size_t a,std::size_t b) {std::string s;for(;a<b;++a) {if(!s.empty())s+=' ';s+=v[a];}return s;}
 class Console {
@@ -21,22 +22,30 @@ class Console {
     std::vector<std::pair<petir::Position,int>> history;
     std::thread worker;
     std::atomic_bool pondering=false,hold_result=false;
-    std::atomic<std::int64_t> deadline=0,clock_origin=0;
-    int ponder_budget_ms=1000;
-    int wb_white_ms=0,wb_black_ms=0;
-    int winboard_budget_ms() const {
-        if(!usetimer)return 0;
-        const int budget=std::max(1,petir::original_time_budget(stm))*250;
-        if(modetime==seconds_move)return budget;
-        const int remaining=stm==1?wb_white_ms:wb_black_ms;
-        return std::min(budget,std::max(1,remaining-std::min(20,remaining/10)));
+    std::mutex hold_mutex;
+    std::condition_variable hold_cv;
+    petir::TimeBudget ponder_budget;
+    int move_overhead_ms=50;
+    std::int64_t wb_white_ms=0,wb_black_ms=0,wb_base_ms=0,wb_increment_ms=0,wb_move_ms=0;
+    petir::ClockLimits winboard_limits() const {
+        petir::ClockLimits limits;
+        limits.timed=usetimer;limits.overhead_ms=move_overhead_ms;
+        if(modetime==seconds_move)limits.movetime_ms=wb_move_ms;
+        else {
+            limits.remaining_ms=stm==1?wb_white_ms:wb_black_ms;
+            limits.increment_ms=wb_increment_ms;
+            if(rmoves>0)limits.moves_to_go=rmoves-(jumlahlangkah/2)%rmoves;
+        }
+        return limits;
     }
     void finish(bool return_move=false) {
         {
             std::lock_guard lock(result_mutex);
             if(!return_move)publish_result=false;
+            std::lock_guard hold_lock(hold_mutex);
             stop_process=true;hold_result=false;pondering=false;
         }
+        hold_cv.notify_all();
         if(worker.joinable())worker.join();
     }
     void reset_history() {
@@ -85,69 +94,81 @@ class Console {
         stm=3-stm;++jumlahlangkah;
         petir_repetition::addrephash(position.hashkey,stm-1);return true;
     }
-    void begin_search(int requested_depth,bool timed,int budget_ms,bool ponder=false,bool infinite=false) {
+    int fallback_move(const petir::Position& root,int side,const std::vector<int>& moves) const {
+        if(moves.empty())return 0;
+        int alpha=-20500,beta=20500,score=0,hint=0;bool avoid=false;
+        (void)petir_hashing::searchhash(root.hashkey,alpha,beta,512,side,score,hint,avoid,root.move50count);
+        return std::find(moves.begin(),moves.end(),hint)!=moves.end()?hint:moves.front();
+    }
+    void publish_move(petir::Position root,int root_side,int best,bool searched) {
+        computer_thinking=false;
+        std::lock_guard lock(result_mutex);
+        if(!publish_result.load())return;
+        if(searched && post.load() && petir_uiterative::completed_depth>0) {
+            const auto pv=petir_uiterative::completed_pv;
+            const auto d=std::to_string(petir_uiterative::completed_depth);
+            const auto score=std::to_string(petir_uiterative::completed_score);
+            const auto elapsed=petir::search_time.elapsed_ms();
+            if(mode==Mode::UCI)emit("info depth "+d+" score cp "+score+" time "+std::to_string(elapsed)+" nodes "+std::to_string(total_node)+" pv "+pv);
+            else emit(d+" "+score+" "+std::to_string(elapsed/10)+" "+std::to_string(total_node)+" "+pv);
+        }
+        if(mode==Mode::UCI) {
+            if(searched)emit("info nodes "+std::to_string(total_node)+" time "+std::to_string(petir::search_time.elapsed_ms()));
+            emit("bestmove "+petir::move_text(best,root,root_side));
+        } else if(best) {
+            const auto text=petir::move_text(best,root,root_side);
+            // Publish before board/history maintenance; finish() serializes the next command.
+            emit("move "+text);
+            history.emplace_back(position,stm);petir::make_move(position,stm,best);
+            if(stm==2)++fullmove;
+            stm=3-stm;++jumlahlangkah;
+            petir_repetition::addrephash(position.hashkey,stm-1);
+            report_result(petir::legal_moves(position,stm));
+        } else emit((root_side==1?petir_tools::white_checked(root):petir_tools::black_checked(root))?(root_side==1?"0-1 {Checkmate}":"1-0 {Checkmate}"):"1/2-1/2 {Stalemate}");
+    }
+    void begin_search(int requested_depth,const petir::ClockLimits& limits,std::int64_t received_at,bool ponder=false,bool infinite=false) {
         finish();auto root=position;int root_side=stm;
+        const auto budget=petir::TimeManager::allocate(limits);
+        petir::search_time.reset();
+        petir::search_time.start(ponder || infinite?petir::TimeBudget{}:budget,received_at);
         auto moves=petir::legal_moves(root,root_side);
         if(mode==Mode::WinBoard && report_result(moves))return;
-        petir::prepare_search(root_side,timed,std::max(2,budget_ms/250));
         publish_result=true;
-        if(ponder || infinite) {usetimer=true;timelimit=999999999;}
-        pondering=ponder;hold_result=ponder || infinite;ponder_budget_ms=budget_ms;
-        clock_origin=now_ms();deadline=timed && !ponder && !infinite?clock_origin+budget_ms:0;
+        const int fallback=fallback_move(root,root_side,moves);
+        if(!ponder && !infinite && (budget.emergency || petir::search_time.expired(true))) {
+            // No hash maintenance, book lookup, worker, timer, or optional PV output.
+            publish_move(root,root_side,fallback,false);return;
+        }
+        petir::prepare_search(root_side,limits.timed,INT32_MAX);
+        petir::search_time.start(ponder || infinite?petir::TimeBudget{}:budget,received_at);
+        pondering=ponder;hold_result=ponder || infinite;ponder_budget=budget;
         usewinboard=true;
         pas::output=[this](const pas::String& text) {
-            if(!post)return;
+            if(!post || petir::search_should_stop(true))return;
             if(mode==Mode::WinBoard) {emit(text.value);return;}
             std::istringstream s(text.value);int d=0,score=0,cs=0,nodes=0;std::string pv;
             if(s>>d>>score>>cs>>nodes) {std::getline(s,pv);emit("info depth "+std::to_string(d)+" score cp "+std::to_string(score)+" time "+std::to_string(cs*10)+" nodes "+std::to_string(nodes)+" pv"+pv);}
         };
-        worker=std::thread([this,root,root_side,moves,requested_depth,ponder,infinite]() mutable {
-            std::atomic_bool active=true;
-            std::thread ticker([&] {
-                while(active.load()) {
-                    const auto current=now_ms();
-                    timepassed=static_cast<int>(pondering.load()?0:(current-clock_origin.load())/250);
-                    auto end=deadline.load();
-                    if(end && current>=end) {stop_process=true;hold_result=false;}
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                }
-            });
-            int best=0;bool searched=false;
+        worker=std::thread([this,root,root_side,moves,fallback,requested_depth,ponder,infinite]() mutable {
+            int best=fallback;bool searched=false;
             try {
-                if(!moves.empty()) {
-                    if(use_book && !ponder && !infinite)best=petir_opening_book::searchbook(root,root_side);
-                    if(!best) {searched=true;(void)petir_uiterative::iterative(std::clamp(requested_depth,1,49),root_side,_nodemax,root);best=mmoves;}
-                    if(std::find(moves.begin(),moves.end(),best)==moves.end())best=moves.front();
+                if(!moves.empty() && !petir::search_should_stop(true)) {
+                    int book=0;
+                    if(use_book && !ponder && !infinite)book=petir_opening_book::searchbook(root,root_side);
+                    if(book)best=book;
+                    else if(!petir::search_should_stop(true)) {searched=true;(void)petir_uiterative::iterative(std::clamp(requested_depth,1,49),root_side,_nodemax,root);best=mmoves;}
+                    if(std::find(moves.begin(),moves.end(),best)==moves.end())best=fallback;
                 }
             } catch(const std::exception& e) {
                 emit(mode==Mode::UCI?"info string search stopped: "+std::string(e.what()):"Error (search): "+std::string(e.what()));
                 best=petir_uiterative::completed_move;
-                if(std::find(moves.begin(),moves.end(),best)==moves.end())best=moves.empty()?0:moves.front();
+                if(std::find(moves.begin(),moves.end(),best)==moves.end())best=fallback;
             }
-            while(hold_result.load() && !stop_process.load())std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            active=false;ticker.join();computer_thinking=false;
-            std::lock_guard lock(result_mutex);
-            if(!publish_result.load())return;
-            if(searched && post.load() && petir_uiterative::completed_depth>0) {
-                // Finish with the completed result, rather than an interrupted PV.
-                const auto pv=petir_uiterative::completed_pv;
-                const auto d=std::to_string(petir_uiterative::completed_depth);
-                const auto score=std::to_string(petir_uiterative::completed_score);
-                const auto elapsed=now_ms()-clock_origin.load();
-                if(mode==Mode::UCI)emit("info depth "+d+" score cp "+score+" time "+std::to_string(elapsed)+" nodes "+std::to_string(total_node)+" pv "+pv);
-                else emit(d+" "+score+" "+std::to_string(elapsed/10)+" "+std::to_string(total_node)+" "+pv);
+            {
+                std::unique_lock hold_lock(hold_mutex);
+                hold_cv.wait(hold_lock,[this]{return !hold_result.load() || stop_process.load();});
             }
-            if(mode==Mode::UCI) {
-                emit("info nodes "+std::to_string(total_node)+" time "+std::to_string(now_ms()-clock_origin.load()));
-                emit("bestmove "+petir::move_text(best,root,root_side));
-            } else {
-                if(best) {
-                    const auto text=petir::move_text(best,root,root_side);
-                    apply(text);emit("move "+text);
-                    report_result(petir::legal_moves(position,stm));
-                }
-                else emit((root_side==1?petir_tools::white_checked(root):petir_tools::black_checked(root))?(root_side==1?"0-1 {Checkmate}":"1-0 {Checkmate}"):"1/2-1/2 {Stalemate}");
-            }
+            publish_move(root,root_side,best,searched);
         });
     }
     void uci_position(const std::vector<std::string>& w) {
@@ -168,29 +189,30 @@ class Console {
         position=next;stm=next_side;fullmove=next_fullmove;history=std::move(next_history);
         jumlahlangkah=(fullmove-1)*2+(stm==2);rebuild_repetition();
     }
-    void uci_go(const std::vector<std::string>& w) {
-        finish();int d=49,movetime=0,wtime=0,btime=0,moves_to_go=0;bool ponder=false,infinite=false,depth_given=false,clock_given=false,movetime_given=false;
+    void uci_go(const std::vector<std::string>& w,std::int64_t received_at) {
+        int d=49,moves_to_go=0;std::int64_t movetime=0,wtime=0,btime=0,winc=0,binc=0;
+        bool ponder=false,infinite=false,depth_given=false,clock_given=false,movetime_given=false;
         for(std::size_t i=1;i<w.size();++i) {
             if(w[i]=="ponder")ponder=true;
             else if(w[i]=="infinite")infinite=true;
             else if(i+1<w.size() && (w[i]=="depth" || w[i]=="movetime" || w[i]=="wtime" || w[i]=="btime" || w[i]=="winc" || w[i]=="binc" || w[i]=="movestogo")) {
-                int v=std::max(0,std::stoi(w[++i]));const auto& key=w[i-1];
-                if(key=="depth") {d=v;depth_given=true;}
+                auto v=std::clamp<std::int64_t>(std::stoll(w[++i]),0,INT32_MAX);const auto& key=w[i-1];
+                if(key=="depth") {d=static_cast<int>(std::clamp<std::int64_t>(v,1,49));depth_given=true;}
                 if(key=="movetime") {movetime=v;movetime_given=true;}
                 if(key=="wtime") {wtime=v;clock_given=true;}
                 if(key=="btime") {btime=v;clock_given=true;}
-                if(key=="movestogo")moves_to_go=v;
-                // Original Petir does not add increments to its per-move budget.
+                if(key=="winc")winc=v;
+                if(key=="binc")binc=v;
+                if(key=="movestogo")moves_to_go=static_cast<int>(v);
             }
         }
-        bool timed=movetime_given || clock_given;
-        clockwhite=wtime/250;clockblack=btime/250;modetime=minutes_game;
-        int budget=movetime_given?std::max(1,movetime):std::max(1,petir::original_time_budget(stm))*250;
-        const int remaining=stm==1?wtime:btime;
-        if(moves_to_go>0 && !movetime_given)budget=std::max(1,remaining/moves_to_go);
-        if(clock_given)budget=std::min(budget,std::max(1,remaining-std::min(20,remaining/10)));
-        if(!timed && !depth_given)infinite=true;
-        begin_search(d,timed,std::max(1,budget),ponder,infinite);
+        petir::ClockLimits limits;
+        limits.timed=movetime_given || clock_given;
+        limits.remaining_ms=stm==1?wtime:btime;limits.increment_ms=stm==1?winc:binc;
+        limits.moves_to_go=moves_to_go;limits.overhead_ms=move_overhead_ms;
+        if(movetime_given)limits.movetime_ms=clock_given?std::min(movetime,limits.remaining_ms):movetime;
+        if(!limits.timed && !depth_given)infinite=true;
+        begin_search(d,limits,received_at,ponder,infinite);
     }
     void option(const std::vector<std::string>& w) {
         finish();auto v=std::find(w.begin(),w.end(),"value");std::size_t n=v-w.begin();
@@ -205,21 +227,20 @@ class Console {
         else if(name=="Clear Hash")petir_hashing_header::cleartable();
         else if(name=="Contempt")contemp_draw=std::clamp(std::stoi(value),-1000,1000);
         else if(name=="MTDf")use_mtdf=value=="true";
+        else if(name=="Move Overhead")move_overhead_ms=std::clamp(std::stoi(value),0,5000);
     }
-    void winboard_command(const std::string& line,const std::vector<std::string>& w) {
+    void winboard_command(const std::string& line,const std::vector<std::string>& w,std::int64_t received_at) {
         const auto& c=w[0];
-        if(c=="protover") {emit("feature myname=\"Petir 1 C++ faithful port\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=0 done=1");return;}
+        if(c=="protover") {emit("feature myname=\"Petir 1 C++ faithful port\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=0 option=\"Move Overhead -spin 50 0 5000\" done=1");return;}
         if(c=="ping" && w.size()>1) {emit("pong "+w[1]);return;}
         if(c=="?") {finish(true);return;}
         if(c=="time" || c=="otim") {
             if(w.size()>1) {
-                const int ms=static_cast<int>(std::clamp<std::int64_t>(std::stoll(w[1]),0,INT32_MAX/10))*10;
-                if((engine_side==1)==(c=="time")) {clockwhite=ms/250;wb_white_ms=ms;}
-                else {clockblack=ms/250;wb_black_ms=ms;}
+                const auto ms=std::clamp<std::int64_t>(std::stoll(w[1]),0,INT32_MAX/10)*10;
+                if((engine_side==1)==(c=="time"))wb_white_ms=ms;
+                else wb_black_ms=ms;
                 if(c=="time" && usetimer && modetime!=seconds_move) {
-                    const auto cap=now_ms()+std::max(1,ms-std::min(20,ms/10));
-                    auto end=deadline.load();
-                    while(end>cap && !deadline.compare_exchange_weak(end,cap)) {}
+                    petir::search_time.tighten(received_at,ms,move_overhead_ms);
                 }
             }
             return;
@@ -227,15 +248,22 @@ class Console {
         if(c=="post") {post=true;return;}
         if(c=="nopost") {post=false;return;}
         if(c=="hard" || c=="easy")return;
+        if(c=="option") {
+            const auto setting=join(w,1,w.size());const auto equals=setting.find('=');
+            if(equals!=std::string::npos && setting.substr(0,equals)=="Move Overhead") {
+                finish();move_overhead_ms=std::clamp(std::stoi(setting.substr(equals+1)),0,5000);
+            }
+            return;
+        }
         const bool move_command=c=="usermove" || (c.size()>=4 && c[0]>='a' && c[0]<='h' && c[1]>='1' && c[1]<='8');
         if(c!="new" && c!="force" && c!="go" && c!="setboard" && c!="sd" && c!="st" && c!="level" && c!="result" && c!="undo" && c!="remove" && !move_command)return;
         finish();
         if(c=="new") {
             petir::new_game();position=data;stm=1;fullmove=1;engine_side=2;force=false;reset_history();
-            if(usetimer) {clockwhite=clockblack=realclock;wb_white_ms=wb_black_ms=realclock*250;}
+            if(usetimer)wb_white_ms=wb_black_ms=wb_base_ms;
         }
         else if(c=="force")force=true;
-        else if(c=="go") {force=false;engine_side=stm;begin_search(depth,usetimer,winboard_budget_ms());}
+        else if(c=="go") {force=false;engine_side=stm;begin_search(depth,winboard_limits(),received_at);}
         else if(c=="setboard") {
             int next_side=1,next_fullmove=1;
             auto next=petir::from_fen(join(w,1,w.size()),next_side,&next_fullmove);
@@ -243,12 +271,13 @@ class Console {
             jumlahlangkah=(fullmove-1)*2+(stm==2);reset_history();
         }
         else if(c=="sd" && w.size()>1) {depth=std::clamp(std::stoi(w[1]),1,49);usetimer=false;modetime=fixed_depth;}
-        else if(c=="st" && w.size()>1) {depth=49;realclock=std::max(1,static_cast<int>(std::stod(w[1])*4));usetimer=true;modetime=seconds_move;}
+        else if(c=="st" && w.size()>1) {depth=49;wb_move_ms=static_cast<std::int64_t>(std::clamp(std::stod(w[1])*1000,0.0,double(INT32_MAX)));usetimer=true;modetime=seconds_move;}
         else if(c=="level" && w.size()>3) {
             depth=49;
-            rmoves=std::stoi(w[1]);auto colon=w[2].find(':');int secs=std::stoi(w[2])*60;if(colon!=std::string::npos)secs+=std::stoi(w[2].substr(colon+1));
-            realclock=secs*4;clockwhite=clockblack=realclock;wb_white_ms=wb_black_ms=secs*1000;
-            rincrement=static_cast<int>(std::stod(w[3])*4);usetimer=true;modetime=rmoves?moves_minutes:minutes_game_increment;
+            rmoves=std::max(0,std::stoi(w[1]));auto colon=w[2].find(':');std::int64_t secs=std::stoll(w[2])*60;if(colon!=std::string::npos)secs+=std::stoll(w[2].substr(colon+1));
+            wb_base_ms=std::clamp<std::int64_t>(secs,0,INT32_MAX/1000)*1000;wb_white_ms=wb_black_ms=wb_base_ms;
+            wb_increment_ms=static_cast<std::int64_t>(std::clamp(std::stod(w[3])*1000,0.0,double(INT32_MAX)));
+            usetimer=true;modetime=rmoves?moves_minutes:minutes_game_increment;
         }
         else if(c=="result")force=true;
         else if(c=="undo" || c=="remove") {
@@ -258,7 +287,7 @@ class Console {
         } else if(move_command) {
             std::string m=c=="usermove"?(w.size()>1?w[1]:""):c;
             if(!apply(m))emit("Illegal move: "+m);
-            else if(!force && stm==engine_side)begin_search(depth,usetimer,winboard_budget_ms());
+            else if(!force && stm==engine_side)begin_search(depth,winboard_limits(),received_at);
         }
     }
 public:
@@ -266,20 +295,24 @@ public:
     void run() {
         reset_history();std::string line;
         while(std::getline(std::cin,line)) {
+            const auto received_at=now_ms();
             auto w=words(line);if(w.empty())continue;
             try {
                 const auto& c=w[0];
                 if(c=="quit") {finish();break;}
                 if(c=="xboard") {finish();mode=Mode::WinBoard;continue;}
-                if(c=="uci") {finish();mode=Mode::UCI;emit("id name Petir 1 C++ faithful port");emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Clear Hash type button");emit("uciok");}
-                else if(mode==Mode::WinBoard)winboard_command(line,w);
+                if(c=="uci") {finish();mode=Mode::UCI;emit("id name Petir 1 C++ faithful port");emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Move Overhead type spin default 50 min 0 max 5000");emit("option name Clear Hash type button");emit("uciok");}
+                else if(mode==Mode::WinBoard)winboard_command(line,w,received_at);
                 else if(c=="isready")emit("readyok");
                 else if(c=="setoption")option(w);
                 else if(c=="ucinewgame") {finish();petir::new_game();position=data;stm=1;fullmove=1;reset_history();}
                 else if(c=="position")uci_position(w);
-                else if(c=="go")uci_go(w);
+                else if(c=="go")uci_go(w,received_at);
                 else if(c=="stop")finish(true);
-                else if(c=="ponderhit") {pondering=false;hold_result=false;clock_origin=now_ms();deadline=clock_origin+ponder_budget_ms;}
+                else if(c=="ponderhit" && pondering.load()) {
+                    {std::lock_guard hold_lock(hold_mutex);petir::search_time.start(ponder_budget,received_at);pondering=false;hold_result=false;}
+                    hold_cv.notify_all();
+                }
                 else if(c=="d") {finish();emit(petir::to_fen(position,stm,fullmove));}
             } catch(const std::exception& e) {emit(mode==Mode::UCI?"info string "+std::string(e.what()):"Error: "+std::string(e.what()));}
         }

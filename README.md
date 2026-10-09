@@ -1,6 +1,6 @@
 # Petir 1 — faithful C++20 engine port
 
-This project ports the **active chess engine core** from your Delphi source to native 64-bit C++. It retains Petir's search, evaluation constants, move ordering, rotated bitboards, hash tables, repetition logic, and binary opening books. No playing-strength changes have been made. The VCL chessboard and desktop dialogs are outside this engine-only port.
+This project ports the **active chess engine core** from your Delphi source to native 64-bit C++. It retains Petir's classical search, evaluation constants, move ordering, rotated bitboards, repetition logic, and binary opening books. The console adapter adds modern time management and the compatibility fixes described in `PORTING_NOTES.md`. Playing strength requires match testing. The VCL chessboard and desktop dialogs are outside this engine-only port.
 
 The source is editable C++, with no Pascal compiler or Python dependency at runtime. Python is optional for protocol tests and translation provenance tooling.
 
@@ -59,17 +59,21 @@ position startpos moves e2e4 e7e5
 go depth 6
 ```
 
-Wait for `bestmove`. Send `stop` to interrupt search and `quit` to exit. Options include `Hash`, `OwnBook`, `Contempt`, `MTDf`, and `Clear Hash`.
+Wait for `bestmove`. Send `stop` to interrupt search and `quit` to exit. Options include `Hash`, `OwnBook`, `Contempt`, `MTDf`, `Move Overhead`, and `Clear Hash`.
 
-Supported UCI search controls: `depth`, `movetime`, `wtime`, `btime`, `movestogo`, `infinite`, `ponder`, `ponderhit`, and `stop`. Increments are accepted but do not change Petir's original budgeting formula. `searchmoves`, `nodes`, and `mate` limits are not implemented. Each search starts iterative deepening at depth 1. Hash entries are retained between moves and aged for replacement, while move-ordering history uses the original decay and killers reset. Cached iterations can finish immediately and omit intermediate PV reports. Use `Clear Hash` for a search without prior hash entries; a new game also resets move-ordering history. Game history is retained for repetition detection; opening-book replies still bypass search. Depth limits are respected, including requests combined with clocks. Fixed `movetime` adds a wall-clock deadline around the original search. Interrupted searches retain the last completed iteration's move and report its score and PV before `bestmove`. Replacing a position, starting a new game, or quitting discards the pending result.
+Supported UCI search controls: `depth`, `movetime`, `wtime`, `btime`, `winc`, `binc`, `movestogo`, `infinite`, `ponder`, `ponderhit`, and `stop`. `searchmoves`, `nodes`, and `mate` limits are not implemented. Each new search starts iterative deepening at depth 1 and searches root moves at every depth, using the cached root move for ordering. Hash score cutoffs remain enabled below the root. Hash entries are retained between moves and aged for replacement using a generation tag, while move-ordering history uses the original decay and killers reset. Use `Clear Hash` for a search without prior hash entries; a new game also resets move-ordering history. Game history is retained for repetition detection; opening-book replies still bypass search. Depth limits are respected, including requests combined with clocks. Interrupted searches retain the last completed iteration's move and report its score and PV before `bestmove`. Replacing a position, starting a new game, or quitting discards the pending result.
+
+The default build handles clocks and increments in 64-bit monotonic milliseconds. `Move Overhead` reserves **50 ms by default** (range 0–5000), including for fixed `movetime`. Search preparation counts against the deadline. A soft target and iteration-duration estimate control whether to deepen; direct deadline checks in search enforce a hard ceiling that score drops and move changes cannot extend. When the clock is too low for useful search, the engine immediately returns a validated legal root move. The allocator also banks overhead for future moves in games without increment. Configure the reserve through `setoption name Move Overhead value 100` in UCI or `option Move Overhead=100` in WinBoard if your GUI needs a larger margin. `go ponder` starts its timed budget on `ponderhit`, which continues the existing search at its current depth; depth-only and infinite searches have no clock deadline.
 
 For **WinBoard**, send `xboard` and `protover 2`. Supported commands include `new`, `force`, `go`, coordinate `usermove`, `setboard`, `time`, `otim`, `level`, `st`, `sd`, `ping`, `post`, `nopost`, `undo`, `remove`, `?`, and `quit`. WinBoard `hard`/`easy` are accepted, but automatic WinBoard pondering is not implemented; UCI pondering is available. SAN and analyze mode are not advertised.
 
-Clock updates, posting controls, and unsupported WinBoard commands leave the search running. `?` returns a move; `force`, `new`, `setboard`, `result`, undo, and replacement moves discard an active search. WinBoard reports checkmate, stalemate, insufficient mating material, threefold repetition, and the 50-move rule. Period timing wraps the move count for each new period without losing the game's fullmove number. Hash resizing retains the previous usable table if allocation fails. The diagnostic `d` command prints all six FEN fields.
+Clock updates, posting controls, and unsupported WinBoard commands leave the search running. A late `time` update can tighten the active clock deadline while retaining the overhead reserve. `?` returns a move; `force`, `new`, `setboard`, `result`, undo, and replacement moves discard an active search. WinBoard reports checkmate, stalemate, insufficient mating material, threefold repetition, and the 50-move rule. Period timing wraps the move count for each new period without losing the game's fullmove number. Hash resizing retains the previous usable table if allocation fails. The diagnostic `d` command prints all six FEN fields.
 
 Cached hash scores require the same halfmove counter as the current position. A matching board with a different counter can supply a move-ordering hint, but cannot supply a score cutoff or a score-dependent pruning flag. Hash entries remain 16 bytes, so the default table remains 64 MiB.
 
 En passant check evasions must leave the king safe, including when the capture blocks a sliding-piece check. Quiescence recognizes stalemate before returning a static or cached evaluation.
+
+For a comparison build, configure a separate build directory with `-DPETIR_Q_POSITIONAL_EXTENSION=OFF` to disable the positional quiescence restart. The forced check-evasion extension stays active. The normal build keeps the positional extension enabled. `-DPETIR_OUTPUT_NAME=petir64-no-qextension` gives that build a separate executable name; the default Windows name stays `petir64.exe`.
 
 Command-line utilities:
 
@@ -94,6 +98,7 @@ The legacy PGN learner is retained as `--learn-pgn FILE`. It keeps the original 
 | `src/hashing*.cpp`, `repetition.cpp`, `opening_book.cpp` | Original hash and book logic |
 | `src/pascal_runtime.hpp` | Fixed-width Delphi semantics and portable I/O |
 | `src/engine.cpp`, `main.cpp` | Initialization, FEN input, protocols, and thread lifecycle |
+| `src/time_manager.cpp`, `time_manager.hpp` | Millisecond clock allocation, soft targets, and hard deadlines |
 | `original/` | Unmodified Pascal units and full original uploaded archive |
 | `tools/translate.py` | Reproducible, Petir-specific source translation |
 | `PORTING_NOTES.md` | Exact compatibility changes and retained limitations |
