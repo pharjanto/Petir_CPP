@@ -7,6 +7,11 @@
 
 namespace {
 using namespace petir_header;
+#ifdef PETIR_ENGINE_NAME
+constexpr const char* engine_name=PETIR_ENGINE_NAME;
+#else
+constexpr const char* engine_name="Petir 1 C++ faithful port";
+#endif
 std::mutex output_mutex;
 void emit(const std::string& s) {std::lock_guard lock(output_mutex);std::cout<<s<<std::endl;}
 std::int64_t now_ms() {return petir::TimeManager::now_ms();}
@@ -100,17 +105,21 @@ class Console {
         (void)petir_hashing::searchhash(root.hashkey,alpha,beta,512,side,score,hint,avoid,root.move50count);
         return std::find(moves.begin(),moves.end(),hint)!=moves.end()?hint:moves.front();
     }
-    void publish_move(petir::Position root,int root_side,int best,bool searched) {
+    void publish_move(petir::Position root,int root_side,int best,bool searched,bool from_book=false) {
         computer_thinking=false;
         std::lock_guard lock(result_mutex);
         if(!publish_result.load())return;
-        if(searched && post.load() && petir_uiterative::completed_depth>0) {
-            const auto pv=petir_uiterative::completed_pv;
-            const auto d=std::to_string(petir_uiterative::completed_depth);
-            const auto score=std::to_string(petir_uiterative::completed_score);
+        if(post.load() && best && !from_book) {
+            const bool completed=searched && petir_uiterative::completed_depth>0 && petir_uiterative::completed_move==best;
+            // Without a completed iteration, report this root's static score at
+            // depth 0 and the legal move being returned. Do not reuse old search data.
+            const auto pv=completed?petir_uiterative::completed_pv:petir::move_text(best,root,root_side);
+            const auto d=std::to_string(completed?petir_uiterative::completed_depth:0);
+            const auto score=std::to_string(completed?petir_uiterative::completed_score:petir_ueval::eval(root,root_side,-20500,20500));
             const auto elapsed=petir::search_time.elapsed_ms();
-            if(mode==Mode::UCI)emit("info depth "+d+" score cp "+score+" time "+std::to_string(elapsed)+" nodes "+std::to_string(total_node)+" pv "+pv);
-            else emit(d+" "+score+" "+std::to_string(elapsed/10)+" "+std::to_string(total_node)+" "+pv);
+            const auto nodes=std::to_string(searched?total_node:0);
+            if(mode==Mode::UCI)emit("info depth "+d+" score cp "+score+" time "+std::to_string(elapsed)+" nodes "+nodes+" pv "+pv);
+            else emit(d+" "+score+" "+std::to_string(elapsed/10)+" "+nodes+" "+pv);
         }
         if(mode==Mode::UCI) {
             if(searched)emit("info nodes "+std::to_string(total_node)+" time "+std::to_string(petir::search_time.elapsed_ms()));
@@ -136,7 +145,7 @@ class Console {
         publish_result=true;
         const int fallback=fallback_move(root,root_side,moves);
         if(!ponder && !infinite && (budget.emergency || petir::search_time.expired(true))) {
-            // No hash maintenance, book lookup, worker, timer, or optional PV output.
+            // Skip search preparation and return a legal move with depth-0 info.
             publish_move(root,root_side,fallback,false);return;
         }
         petir::prepare_search(root_side,limits.timed,INT32_MAX);
@@ -150,12 +159,12 @@ class Console {
             if(s>>d>>score>>cs>>nodes) {std::getline(s,pv);emit("info depth "+std::to_string(d)+" score cp "+std::to_string(score)+" time "+std::to_string(cs*10)+" nodes "+std::to_string(nodes)+" pv"+pv);}
         };
         worker=std::thread([this,root,root_side,moves,fallback,requested_depth,ponder,infinite]() mutable {
-            int best=fallback;bool searched=false;
+            int best=fallback;bool searched=false,from_book=false;
             try {
                 if(!moves.empty() && !petir::search_should_stop(true)) {
                     int book=0;
                     if(use_book && !ponder && !infinite)book=petir_opening_book::searchbook(root,root_side);
-                    if(book)best=book;
+                    if(book) {best=book;from_book=true;}
                     else if(!petir::search_should_stop(true)) {searched=true;(void)petir_uiterative::iterative(std::clamp(requested_depth,1,49),root_side,_nodemax,root);best=mmoves;}
                     if(std::find(moves.begin(),moves.end(),best)==moves.end())best=fallback;
                 }
@@ -168,7 +177,7 @@ class Console {
                 std::unique_lock hold_lock(hold_mutex);
                 hold_cv.wait(hold_lock,[this]{return !hold_result.load() || stop_process.load();});
             }
-            publish_move(root,root_side,best,searched);
+            publish_move(root,root_side,best,searched,from_book);
         });
     }
     void uci_position(const std::vector<std::string>& w) {
@@ -231,7 +240,7 @@ class Console {
     }
     void winboard_command(const std::string& line,const std::vector<std::string>& w,std::int64_t received_at) {
         const auto& c=w[0];
-        if(c=="protover") {emit("feature myname=\"Petir 1 C++ faithful port\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=0 option=\"Move Overhead -spin 50 0 5000\" done=1");return;}
+        if(c=="protover") {emit(std::string("feature myname=\"")+engine_name+"\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=0 option=\"Move Overhead -spin 50 0 5000\" done=1");return;}
         if(c=="ping" && w.size()>1) {emit("pong "+w[1]);return;}
         if(c=="?") {finish(true);return;}
         if(c=="time" || c=="otim") {
@@ -301,7 +310,7 @@ public:
                 const auto& c=w[0];
                 if(c=="quit") {finish();break;}
                 if(c=="xboard") {finish();mode=Mode::WinBoard;continue;}
-                if(c=="uci") {finish();mode=Mode::UCI;emit("id name Petir 1 C++ faithful port");emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Move Overhead type spin default 50 min 0 max 5000");emit("option name Clear Hash type button");emit("uciok");}
+                if(c=="uci") {finish();mode=Mode::UCI;emit(std::string("id name ")+engine_name);emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Move Overhead type spin default 50 min 0 max 5000");emit("option name Clear Hash type button");emit("uciok");}
                 else if(mode==Mode::WinBoard)winboard_command(line,w,received_at);
                 else if(c=="isready")emit("readyok");
                 else if(c=="setoption")option(w);

@@ -198,3 +198,11 @@ A local fixed-depth-10 comparison used books disabled, 64 MiB Hash, three runs p
 | Kiwipete | 864.788 ms | 860.253 ms | 0.231 ms | 26.866 ms | 3,845,303 / 114,972 |
 
 The previous repeated searches visited zero nodes because they returned cached root scores. These measurements quantify the extra search work; they do not establish a playing-strength improvement. Raw measurements are in `build/root-depth-start-comparison.json`.
+
+## Positional quiescence restart disabled by default
+
+On 2026-10-09, `PETIR_Q_POSITIONAL_EXTENSION` was changed to `OFF` by default in CMake and explicitly set to `OFF` in the supplied presets. All three Windows Release presets were reconfigured and rebuilt: `windows-x64`, `windows-x64-439-reduction`, and `windows-x64-before-439-reduction`. Their generated Release compiler definitions include `PETIR_DISABLE_Q_POSITIONAL_EXTENSION`; at that point, the 4.39 reduction was enabled only in its comparison build. Check evasions, capture/check search, stalemate handling, and deadline checks remain active.
+
+Each build passes all three CTest suites (core, protocol, and time-management regression), including **474 core checks with zero failures**. The executables retain their existing names and paths. Earlier measurements in this document that used the positional extension describe the previous configuration.
+
+On 2026-10-09, the 4.39 history-based quiet-move reduction was made unconditional in the C++ search. The reduction build option, older reduction branch, comparison presets, and conditional engine-name suffix were removed. The standard `windows-x64` Release build was reconfigured and rebuilt, and all three CTest suites passed: core, protocol, and time-management regression.

@@ -8,7 +8,7 @@
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/windows-x64",
-      "cacheVariables": { "PETIR_CHECK_BOUNDS": "OFF" },
+      "cacheVariables": { "PETIR_CHECK_BOUNDS": "OFF", "PETIR_Q_POSITIONAL_EXTENSION": "OFF" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
@@ -16,7 +16,7 @@
       "displayName": "Linux 64-bit Release",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/linux-release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "PETIR_CHECK_BOUNDS": "OFF" },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "PETIR_CHECK_BOUNDS": "OFF", "PETIR_Q_POSITIONAL_EXTENSION": "OFF" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
     },
     {

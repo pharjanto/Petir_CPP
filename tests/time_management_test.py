@@ -34,6 +34,14 @@ def timed_reply(engine,command,prefix,remaining,label,allow_terminal=False):
     assert elapsed<remaining,(label,remaining,elapsed,seen[-10:])
     move=line.split()[1]
     assert re.fullmatch(r'[a-h][1-8][a-h][1-8][qrbn]?',move) or (allow_terminal and move=='0000'),(label,line,seen[-10:])
+    if move!='0000':
+        if prefix=='bestmove ':
+            infos=[row.split() for row in seen if row.startswith('info depth ')]
+            assert infos and infos[-1][3:5]==['score','cp'],(label,seen[-10:])
+            assert infos[-1][infos[-1].index('pv')+1]==move,(label,seen[-10:])
+        else:
+            infos=[row.split() for row in seen if re.match(r'^\d+ -?\d+ \d+ \d+ ',row)]
+            assert infos and infos[-1][4]==move,(label,seen[-10:])
     measurements.append(dict(case=label,clock_ms=remaining,reply_ms=round(elapsed,3)))
     return move
 

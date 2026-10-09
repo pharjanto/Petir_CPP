@@ -126,6 +126,47 @@ with Engine() as e:
 
 with Engine() as e:
     e.send('uci');e.until('uciok');e.send('setoption name OwnBook value false')
+    # Warm search state must not leak into a subsequent emergency reply.
+    e.send('position startpos');e.send('go depth 4');best(e)
+    for side in ('w','b'):
+        fen=f'7k/8/8/8/8/8/8/KQ6 {side} - - 0 1'
+        evaluation=subprocess.run([sys.argv[1],'--eval',fen],capture_output=True,text=True,check=True,timeout=5)
+        score=int(evaluation.stdout.split()[0])
+        assert (score>500 if side=='w' else score<-500),(side,score)
+        for overhead,limit in ((50,'movetime 0'),(50,'movetime 50'),(50,'wtime 20 btime 20'),
+                               (0,'movetime 1'),(0,'movetime 2'),(0,'wtime 5 btime 5')):
+            e.send(f'setoption name Move Overhead value {overhead}')
+            e.send('position fen '+fen);e.transcript.clear();e.send('go '+limit)
+            move=best(e,1);infos=search_infos(e.transcript)
+            assert len(infos)==1 and infos[0].split()[2]=='0',e.transcript
+            assert int(infos[0].split()[5])==score,e.transcript
+            assert infos[0].split()[9]=='0',e.transcript
+            assert infos[0].split(' pv ')[1].split()==[move],e.transcript
+            # Replay the reported PV to check its legality for this root.
+            e.send('position fen '+fen+' moves '+move);e.send('isready');e.until('readyok')
+    # A forced reply can bypass iterative deepening even with ample time.
+    e.send('position fen 7k/7R/6K1/8/8/8/8/8 b - - 0 1');e.transcript.clear()
+    e.send('go depth 3');move=best(e,1)
+    assert move=='h8g8',e.transcript
+    assert_completed_best(e,move)
+    assert search_infos(e.transcript)[-1].split()[2]=='0',e.transcript
+    # Stopping before a worker starts still supplies final info for its move.
+    for _ in range(3):
+        e.send('position startpos');e.transcript.clear()
+        e.send('go infinite');e.send('stop');assert_completed_best(e,best(e,2))
+    e.send('xboard');e.send('force');e.send('level 0 1 0');e.send('option Move Overhead=50')
+    for posting in ('post','nopost'):
+        e.send('force');e.send('setboard '+fen);e.send('time 2');e.send('otim 2');e.send(posting)
+        barrier(e);e.transcript.clear();e.send('go');move=e.until('move ',1).split()[1]
+        infos=[line.split() for line in e.transcript if re.match(r'^\d+ -?\d+ \d+ \d+ ',line)]
+        if posting=='post':
+            assert len(infos)==1,e.transcript
+            assert infos[0][:2]==['0',str(score)] and infos[0][3:]==['0',move],e.transcript
+        else:
+            assert not infos,e.transcript
+
+with Engine() as e:
+    e.send('uci');e.until('uciok');e.send('setoption name OwnBook value false')
     # The same rook position is winning with counter 0, but draws at counter 99
     # in this depth-3 search. A retained result must not override the new counter.
     for board,turn in (('7k/8/8/8/8/8/8/KR6','w'),('kr6/8/8/8/8/8/8/7K','b')):

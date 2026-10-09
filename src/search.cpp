@@ -448,7 +448,16 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                 ;
             }
         }
-        if (((((((((((((((!incheck) && (depth <= 10)) && (data.cp == 0)) && (depth >= 2)) && (legalmove > 6)) && (!mte)) && (areduce == 0)) && (!petir_search::stack[pas::sub(depth, 1)].mte)) && (!petir_search::stack[pas::sub(depth, 2)].mte)) && (!petir_tools::pawn_7_rank(1, data))) && (!petir_tools::pawn_7_rank(2, data))) && (!donotreduce)) && (!petir_tools::good_move(data, sto, giliran))) && (!petir_tools::menskak2(temp, giliran, moves)))) {
+        // 4.39 search.pas:758: require poor history before reducing a quiet move.
+        if (!incheck && (depth <= 6) && (nodetype != petir_search::node_pv)
+            && (data.cp == 0) && (depth >= 2) && (legalmove > 12) && !mte
+            && (areduce == 0) && !petir_search::stack[pas::sub(depth, 1)].mte
+            && !petir_search::stack[pas::sub(depth, 2)].mte
+            && !petir_tools::pawn_7_rank(giliran, data) && !donotreduce
+            && !petir_tools::good_move(data, sto, giliran)
+            && (petir_search::hist_tried[get_moving_piece()][get_dest(sto)] >= petir_search::min_try)
+            && (petir_search::hist_succ[get_moving_piece()][get_dest(sto)] <= pas::shr(petir_search::hist_tried[get_moving_piece()][get_dest(sto)], 6))
+            && !petir_tools::menskak2(temp, giliran, moves)) {
             (newlevel = pas::decrement(newlevel, 8));
             areduce = 8;
             goto search1;
