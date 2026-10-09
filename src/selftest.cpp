@@ -138,12 +138,90 @@ int self_test() {
     check(generation_defines_entries,"generated move/score entries do not depend on initial buffer contents");
     auto bare=from_fen("7k/8/8/8/8/8/8/K7 w - - 0 1",stm);
     check(petir_ueval::eval(bare,stm,-20500,20500)==0,"bare kings evaluate as draw");
+    auto check_mirrored_table=[&](const char* name,const auto& white,const auto& black) {
+        bool matches=true;
+        for(int square=0;square<64;++square)
+            if(white[square]!=black[square^56])matches=false;
+        check(matches,std::string("piece-square table agrees after color reversal: ")+name);
+    };
+    check_mirrored_table("pawn",petir_ueval::nilai_pos_pion_w,petir_ueval::nilai_pos_pion_b);
+    check_mirrored_table("king kingside endgame",petir_ueval::nilai_pos_raja_endk_w,petir_ueval::nilai_pos_raja_endk_b);
+    check_mirrored_table("king general endgame",petir_ueval::nilai_pos_raja_endn_w,petir_ueval::nilai_pos_raja_endn_b);
+    auto king_white=from_fen("k5r1/8/8/8/8/8/P6P/1R2K3 w - - 0 1",stm);
+    const int king_white_score=petir_ueval::eval(king_white,stm,-20500,20500);
+    auto king_black=from_fen("1r2k3/p6p/8/8/8/8/8/K5R1 b - - 0 1",stm);
+    check(king_white_score==petir_ueval::eval(king_black,stm,-20500,20500),
+        "endgame king placement agrees after color reversal");
+    // A king one file from the black passer must get the same evaluation
+    // adjustment as in the color-reversed position (d3/e1 becomes d6/e8).
+    auto black_passer=from_fen("k7/8/8/8/8/3p4/8/1R2K3 w - - 0 1",stm);
+    const int black_passer_score=petir_ueval::eval(black_passer,stm,-20500,20500);
+    auto white_passer=from_fen("1r2k3/8/3P4/8/8/8/8/K7 b - - 0 1",stm);
+    check(black_passer_score==petir_ueval::eval(white_passer,stm,-20500,20500),
+        "passed-pawn defender king file distance agrees after color reversal");
+    auto isolated_white=from_fen("7k/8/8/8/8/4P3/4P3/KR5r w - - 0 1",stm);
+    const int isolated_white_score=petir_ueval::eval(isolated_white,stm,-20500,20500);
+    auto isolated_black=from_fen("kr5R/4p3/4p3/8/8/8/8/7K b - - 0 1",stm);
+    check(isolated_white_score==petir_ueval::eval(isolated_black,stm,-20500,20500),
+        "isolated doubled pawns receive the same penalty after color reversal");
+    // With e5/e6 doubled passers, only the front pawn's advance bonus counts.
+    // Probe each rank's bonus independently without freezing the whole score.
+    auto doubled_passers=from_fen("7k/8/4P3/4P3/8/8/8/KR6 w - - 0 1",stm);
+    const int doubled_passers_score=petir_ueval::eval(doubled_passers,stm,-20500,20500);
+    int doubled_mirror_side=2;
+    auto doubled_mirror=from_fen("kr6/8/8/8/4p3/4p3/8/7K b - - 0 1",doubled_mirror_side);
+    check(doubled_passers_score==petir_ueval::eval(doubled_mirror,doubled_mirror_side,-20500,20500),
+        "doubled passer evaluation agrees after color reversal");
+    for(int rank:{4,5}) {
+        const auto bonus=petir_ueval::w_nilai_pion_advance_bebas[rank];
+        petir_ueval::w_nilai_pion_advance_bebas[rank]=static_cast<std::uint8_t>(bonus+1);
+        const int adjusted_score=petir_ueval::eval(doubled_passers,stm,-20500,20500);
+        petir_ueval::w_nilai_pion_advance_bebas[rank]=bonus;
+        check(adjusted_score-doubled_passers_score==(rank==5?1:0),
+            std::string("white doubled passers use the front pawn's advance bonus: ")+(rank==5?"e6":"e5"));
+    }
+    // Each bishop has four own pawns on its color and no opposing bishop.
+    // Neutralizing just that penalty isolates its effect from other terms.
+    struct BadBishopFixture {const char* name;const char* fen;int sign;};
+    for(const auto& fixture:{
+        BadBishopFixture{"black", "7k/8/8/3p1p2/2p1p3/8/8/KR3b2 w - - 0 1",1},
+        BadBishopFixture{"white", "7k/8/8/3P1P2/2P1P3/8/8/KB5r w - - 0 1",-1}}) {
+        auto position=from_fen(fixture.fen,stm);
+        const int score=petir_ueval::eval(position,stm,-20500,20500);
+        const auto penalty=petir_evalmask::nilai_badbishop[4];
+        petir_evalmask::nilai_badbishop[4]=0;
+        const int neutral_score=petir_ueval::eval(position,stm,-20500,20500);
+        petir_evalmask::nilai_badbishop[4]=penalty;
+        check(score-neutral_score==fixture.sign*penalty,
+            std::string("bad-bishop penalty applies without an opposing bishop: ")+fixture.name);
+    }
+    // Isolate king pressure from the mobility/PST effects of moving the rook.
+    auto king_pressure_contribution=[&](const char* fen) {
+        int side=1;auto position=from_fen(fen,side);
+        const int score=petir_ueval::eval(position,side,-20500,20500);
+        const auto pressure_table=petir_ueval::nilai_king_pressure;
+        for(int i=0;i<64;++i)petir_ueval::nilai_king_pressure[i]=0;
+        const int neutral_score=petir_ueval::eval(position,side,-20500,20500);
+        petir_ueval::nilai_king_pressure=pressure_table;
+        return score-neutral_score;
+    };
+    struct RookDefenseFixture {const char* name;const char* defended;const char* exposed;};
+    for(const auto& fixture:{
+        RookDefenseFixture{"black",
+            "r1b3rk/4Q3/4N3/8/8/8/7P/R3K2R w - - 0 1",
+            "r1b2r1k/4Q3/4N3/8/8/8/7P/R3K2R w - - 0 1"},
+        RookDefenseFixture{"white",
+            "r3k2r/7p/8/8/8/4n3/4q3/R1B3RK b - - 0 1",
+            "r3k2r/7p/8/8/8/4n3/4q3/R1B2R1K b - - 0 1"}}) {
+        check(king_pressure_contribution(fixture.defended)<king_pressure_contribution(fixture.exposed),
+            std::string("rook defense reduces king danger without its own queen: ")+fixture.name);
+    }
     // These windows pass stage 1; the removed later lazy checkpoints used to
     // return before king-danger evaluation or rule-50 scaling completed.
     struct LazyEvalFixture {const char* name;const char* fen;int alpha,beta,score;};
     for(const auto& fixture:{
         LazyEvalFixture{"king danger after former stage 2",
-            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-74,-73,-74},
+            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-68},
         LazyEvalFixture{"rule-50 scaling after former stage 3",
             "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,100}}) {
         auto position=from_fen(fixture.fen,stm);
@@ -152,6 +230,34 @@ int self_test() {
         const int narrow=petir_ueval::eval(position,stm,fixture.alpha,fixture.beta);
         check(full==fixture.score,std::string("full evaluation reference: ")+fixture.name);
         check(narrow==full,std::string("narrow evaluation completes remaining terms: ")+fixture.name);
+    }
+    // Use windows that previously let stage 1 bypass the final draw scaling.
+    for(const char* fen:{
+        "7k/8/8/8/8/8/8/KQ6 w - - 0 1",
+        "kq6/8/8/8/8/8/8/7K b - - 0 1"}) {
+        int strong_side=1;auto position=from_fen(fen,strong_side);
+        for(int counter:{80,99})for(int side:{strong_side,3-strong_side}) {
+            position.move50count=static_cast<std::uint8_t>(counter);
+            const int full=petir_ueval::eval(position,side,-20500,20500);
+            const int beta=side==strong_side?101:-100;
+            const int narrow=petir_ueval::eval(position,side,beta-1,beta);
+            check(narrow==full,"stage 1 preserves rule-50 scaling at halfmove "+std::to_string(counter)
+                +" / side "+std::to_string(side)+" / stronger side "+std::to_string(strong_side));
+        }
+    }
+    for(const char* fen:{
+        "7k/8/8/8/8/8/8/KRB4r w - - 0 1",
+        "krb4R/8/8/8/8/8/8/7K b - - 0 1",
+        "7k/8/8/8/8/8/8/KRN4r w - - 0 1",
+        "krn4R/8/8/8/8/8/8/7K b - - 0 1"}) {
+        int strong_side=1;auto position=from_fen(fen,strong_side);
+        for(int side:{strong_side,3-strong_side}) {
+            const int full=petir_ueval::eval(position,side,-20500,20500);
+            const int beta=side==strong_side?-999:1000;
+            const int narrow=petir_ueval::eval(position,side,beta-1,beta);
+            check(narrow==full,"stage 1 preserves rook-plus-minor draw scaling: "+std::string(fen)
+                +" / side "+std::to_string(side));
+        }
     }
     check(insufficient_material(bare),"bare kings are insufficient mating material");
     for(const char* fen:{
@@ -285,10 +391,36 @@ int self_test() {
         m=parse_move("a7a8"+std::string(1,piece),promotion,stm);
         check(m!=0,"accept opponent promotion "+std::string(1,piece));make_move(promotion,stm,m);
         if(piece=='b') {
-            check(promotion.ngajahputih==0,"preserve original missing bishop-count increment on promotion");
-            ++promotion.ngajahputih; // Validate all other fields, without changing the maker.
+            check(promotion.ngajahputih==1,"bishop promotion increments the bishop count");
         }
         check(consistent(promotion),"promotion material and bitboards "+std::string(1,piece));
+    }
+    struct BishopPromotionFixture {const char* name;const char* fen;const char* promotion;const char* capture;};
+    for(const auto& fixture:{
+        BishopPromotionFixture{"white first bishop",
+            "1r5k/P7/8/8/8/8/8/7K w - - 0 1","a7a8b","b8a8"},
+        BishopPromotionFixture{"black first bishop",
+            "7k/8/8/8/8/8/p7/1R5K b - - 0 1","a2a1b","b1a1"},
+        BishopPromotionFixture{"white second bishop by capture",
+            "1rr4k/P7/8/8/8/8/8/K4B2 w - - 0 1","a7b8b","c8b8"},
+        BishopPromotionFixture{"black second bishop by capture",
+            "k4b2/8/8/8/8/8/p7/1RR4K b - - 0 1","a2b1b","c1b1"}}) {
+        int side=1;auto position=from_fen(fixture.fen,side);
+        const int before=side==1?position.ngajahputih:position.ngajahhitam;
+        const int promotion_move=parse_move(fixture.promotion,position,side);
+        check(promotion_move!=0,std::string("bishop promotion is legal: ")+fixture.name);
+        if(!promotion_move)continue;
+        make_move(position,side,promotion_move);
+        check((side==1?position.ngajahputih:position.ngajahhitam)==before+1,
+            std::string("bishop promotion increases existing count: ")+fixture.name);
+        check(consistent(position),std::string("bishop promotion preserves incremental state: ")+fixture.name);
+        const int capture_move=parse_move(fixture.capture,position,3-side);
+        check(capture_move!=0,std::string("promoted bishop can be captured: ")+fixture.name);
+        if(!capture_move)continue;
+        make_move(position,3-side,capture_move);
+        check((side==1?position.ngajahputih:position.ngajahhitam)==before,
+            std::string("capturing promoted bishop restores original count: ")+fixture.name);
+        check(consistent(position),std::string("promoted bishop capture preserves incremental state: ")+fixture.name);
     }
     // Replay deterministic legal sequences to check all incremental representations.
     Position walk=start;stm=1;std::uint32_t sequence=12345;

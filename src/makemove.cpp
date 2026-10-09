@@ -827,6 +827,7 @@ void promosi_putih(petir_header::tdata& data, std::int32_t sto, std::int32_t pro
                     data.papan[sto] = petir_header::_gajahputih;
                     data.bishopwhite = (data.bishopwhite | petir_bitboard_mask::bit2nmask[sto]);
                     data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
+                    (data.ngajahputih = pas::increment(data.ngajahputih, 1));
                     (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_gajah));
                     (data.nilai_perwira_putih = pas::increment(data.nilai_perwira_putih, 3));
                 }
@@ -869,6 +870,7 @@ void promosi_hitam(petir_header::tdata& data, std::int32_t sto, std::int32_t pro
                     data.papan[sto] = petir_header::_gajahhitam;
                     data.bishopblack = (data.bishopblack | petir_bitboard_mask::bit2nmask[sto]);
                     data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
+                    (data.ngajahhitam = pas::increment(data.ngajahhitam, 1));
                     (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_gajah));
                     (data.nilai_perwira_hitam = pas::increment(data.nilai_perwira_hitam, 3));
                 }

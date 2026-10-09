@@ -1,6 +1,7 @@
 // Faithful translation of ueval.pas; Delphi source is in original/.
 #include "petir.hpp"
 #include <algorithm>
+#include <bit>
 namespace petir_ueval {
 // ueval.pas:850
 std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr) {
@@ -170,7 +171,8 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             (nilai = pas::increment(nilai, petir_ueval::nilai_blocked_rook));
         }
     }
-    if ((alpha == pas::sub(beta, 1))) {
+    // Complete evaluation when its score needs the later draw scaling.
+    if (!draw2 && data.move50count < 80 && alpha == pas::sub(beta, 1)) {
         m = petir_ueval::dynamiclazy(data);
         if (endgame) {
             (m = pas::increment(m, 600));
@@ -506,7 +508,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
                 (nilai = pas::increment(nilai, pas::shl(petir_ueval::nilai_pion_terisolasi[(pos & 7)], 1)));
                 tempb = false;
                 if (((petir_bitboard_mask::rook_attack_up_mask[pos] & data.pawnblack) != 0)) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_pion_terisolasi[(pos & 7)]));
+                    (nilai = pas::increment(nilai, pas::shl(petir_ueval::nilai_pion_terisolasi[(pos & 7)], 1)));
                     tempb = true;
                 }
                 if (((petir_bitboard_mask::rook_attack_down_mask[pos] & (data.pawnwhite | data.pawnblack)) == 0)) {
@@ -662,7 +664,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
             if (((pas::sub(posrajahitam, pos) <= 9) && ((petir_bitboard_mask::kingmask[pos] & data.kingblack) != 0))) {
                 (temp = pas::increment(temp, petir_ueval::b_nilai_pion_bebas_didukung_raja[pas::shr(pos, 3)]));
             } else {
-                if ((((petir_evalmask::tabel_edistance2[pos][posrajaputih] >= 7) && (pas::shr(posrajaputih, 3) <= pas::shr(pos, 3))) && (pas::shr(pos, 3) >= pas::abs(pas::sub(filerajaputih, (pos & 8)))))) {
+                if ((((petir_evalmask::tabel_edistance2[pos][posrajaputih] >= 7) && (pas::shr(posrajaputih, 3) <= pas::shr(pos, 3))) && (pas::shr(pos, 3) >= pas::abs(pas::sub(filerajaputih, (pos & 7)))))) {
                     if ((petir_evalmask::tabel_edistance2[pos][posrajaputih] >= 8)) {
                         (temp = pas::decrement(temp, pas::shr(petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)], 1)));
                     } else {
@@ -679,7 +681,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     pawnbattack = (pawnbattack | pas::shr((data.pawnblack & petir_bitboard_mask::mask_right), 7));
     (nilai = pas::increment(nilai, petir_ueval::nilai_pion_tumpuk[temp3]));
     (nilai = pas::increment(nilai, petir_ueval::nilai_pion_terisolasi_ak[temp4]));
-    if ((petir_ueval::ipopcount(data.bishopwhite) == 1)) {
+    if ((petir_ueval::ipopcount(data.bishopblack) == 1)) {
         (nilai = pas::increment(nilai, petir_evalmask::nilai_badbishop[temp2]));
     }
     tempk64 = (pawnbattack & whitekingattack);
@@ -723,7 +725,8 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     temp4 = 0;
     while ((piecepos != 0)) {
         (npionputih = pas::increment(npionputih, 1));
-        pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
+        // Evaluate the foremost white passer before marking its file handled.
+        pos = 63 - std::countl_zero(piecepos);
         piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
         (nilai = pas::increment(nilai, petir_ueval::nilai_pos_pion_w[pos]));
         if (((petir_ueval::color[pos] == petir_ueval::color[posgajah]) && (pos >= petir_header::a3))) {
@@ -919,7 +922,7 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
     pawnwattack = (pawnwattack | pas::shl((data.pawnwhite & petir_bitboard_mask::mask_right), 9));
     (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_tumpuk[temp3]));
     (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_terisolasi_ak[temp4]));
-    if ((petir_ueval::ipopcount(data.bishopblack) == 1)) {
+    if ((petir_ueval::ipopcount(data.bishopwhite) == 1)) {
         (nilai = pas::decrement(nilai, petir_evalmask::nilai_badbishop[temp2]));
     }
     tempk64 = (pawnwattack & blackkingattack);
@@ -941,8 +944,8 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
         attack = (horattack | verattack);
         temp64 = (attack & (~data.whitepieces));
         (nilai = pas::increment(nilai, petir_ueval::mobil_rook[petir_ueval::popcount(pas::address(temp64))]));
+        rookwattack = (rookwattack | attack);
         if (bevalks) {
-            rookwattack = (rookwattack | attack);
             tempk64 = (attack & blackkingattack);
             (blackkingpressure = pas::increment(blackkingpressure, petir_ueval::ipopcount(tempk64)));
             if ((petir_ueval::ipopcount(tempk64) > 0)) {
@@ -1032,8 +1035,8 @@ std::int32_t eval(petir_header::tdata data, std::int32_t giliran, std::int32_t a
         attack = (horattack | verattack);
         temp64 = (attack & (~data.blackpieces));
         (nilai = pas::decrement(nilai, petir_ueval::mobil_rook[petir_ueval::popcount(pas::address(temp64))]));
+        rookbattack = (rookbattack | attack);
         if (wevalks) {
-            rookbattack = (rookbattack | attack);
             tempk64 = (attack & whitekingattack);
             (whitekingpressure = pas::increment(whitekingpressure, petir_ueval::ipopcount(tempk64)));
             if ((petir_ueval::ipopcount(tempk64) > 0)) {
@@ -1568,32 +1571,9 @@ std::int32_t materialvalue(std::int32_t giliran, std::int32_t ms) {
 // ueval.pas:494
 bool isdraw(petir_header::tdata& data, bool& draw2) {
     bool return_value{};
-    std::int32_t pos{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
     return_value = false;
     draw2 = false;
     if (((data.pawnblack | data.pawnwhite) == 0)) {
-        if ((((data.nilai_perwira_putih == 6) && (data.pawnblack != 0)) && (data.pawnwhite == 0))) {
-            pas_temp_1 = petir_ueval::ipopcount(data.pawnblack);
-            if (((pas_temp_1 == 1))) {
-                pos = petir_bitboard_mask::firstbitp(pas::address(data.pawnblack));
-                if ((pos > petir_header::h2)) {
-                    return_value = true;
-                    return return_value;
-                }
-            }
-        }
-        if ((((data.nilai_perwira_hitam == 6) && (data.pawnwhite != 0)) && (data.pawnblack == 0))) {
-            pas_temp_2 = petir_ueval::ipopcount(data.pawnwhite);
-            if (((pas_temp_2 == 1))) {
-                pos = petir_bitboard_mask::firstbitp(pas::address(data.pawnwhite));
-                if ((pos < petir_header::a7)) {
-                    return_value = true;
-                    return return_value;
-                }
-            }
-        }
         if ((((data.nilai_perwira_putih == 8) && (data.nilai_perwira_hitam == 5)) || ((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 8)))) {
             draw2 = true;
             return return_value;
@@ -1842,16 +1822,6 @@ bool anotherdraw(petir_header::tdata& data, std::uint8_t giliran) {
                 }
             }
         }
-    }
-    return return_value;
-}
-
-// ueval.pas:582
-bool anotherdraw2(petir_header::tdata& data, std::uint8_t giliran) {
-    bool return_value{};
-    return_value = false;
-    if (((((data.pawnwhite == 0) && (data.pawnblack == 0)) && ((data.nilai_perwira_putih == data.nilai_perwira_hitam) || ((data.nilai_perwira_putih < 9) && (data.nilai_perwira_hitam < 9)))) && (pas::abs(pas::sub(data.nilai_perwira_hitam, data.nilai_perwira_hitam)) < 5))) {
-        return_value = true;
     }
     return return_value;
 }
