@@ -847,6 +847,256 @@ begin
 end;
 
 
+{ Pawn-owner perspective; caller supplies a frontmost passed pawn.
+  Keep this algorithm and its weights in sync with src/ueval.cpp. }
+function passed_pawn_activity(const data:tdata;pos:integer;white:boolean):integer;
+var
+  rank,step,block,weight,ownking,enemyking,ownDistance,enemyDistance:integer;
+  square,dx,dy:integer;
+  pawns,enemyRooks,enemyBishops,enemyKnights,enemyPawns,enemyKingBits,rear:int64;
+  rearAttack:boolean;
+
+  function attacked(target:integer):boolean;
+  var straight,diagonal,pawnAttack:int64;
+  begin
+    if white then pawnAttack:=w_pawn_attack[target]
+    else pawnAttack:=b_pawn_attack[target];
+    result:=true;
+    if rearAttack or (knightmask[target] and enemyKnights<>0)
+      or (kingmask[target] and enemyKingBits<>0)
+      or (pawnAttack and enemyPawns<>0) then exit;
+    straight:=horzmask2[target,(data.allpieces shr ((target and 56)+1)) and 63]
+      or vertmask2[target,(data.allpiecesr90 shr vershiftmask[target]) and 63];
+    if straight and enemyRooks<>0 then exit;
+    diagonal:=diaga8h1mask[target,(data.allpiecesa8h1 shr a8h1shiftmask[target]) and 255]
+      or diagh8a1mask[target,(data.allpiecesh8a1 shr h8a1shiftmask[target]) and 255];
+    result:=(diagonal and enemyBishops<>0);
+  end;
+
+begin
+  result:=0;
+  if (data.nilai_perwira_putih>12) or (data.nilai_perwira_hitam>12) then exit;
+  pawns:=data.pawnwhite or data.pawnblack;
+  { Leave the existing KPK handling unchanged. }
+  if (data.nilai_perwira_putih=0) and (data.nilai_perwira_hitam=0)
+    and (pawns and (pawns-1)=0) then exit;
+  if white then rank:=pos div 8 else rank:=7-pos div 8;
+  if (rank<4) or (rank>6) then exit;
+  if white then
+  begin
+    step:=8;
+    ownking:=firstbitp(@data.kingwhite);enemyking:=firstbitp(@data.kingblack);
+    enemyRooks:=data.rookblack or data.queenblack;
+    enemyBishops:=data.bishopblack or data.queenblack;
+    enemyKnights:=data.knightblack;enemyPawns:=data.pawnblack;
+    enemyKingBits:=data.kingblack;rear:=rook_attack_down_mask[pos];
+  end else
+  begin
+    step:=-8;
+    ownking:=firstbitp(@data.kingblack);enemyking:=firstbitp(@data.kingwhite);
+    enemyRooks:=data.rookwhite or data.queenwhite;
+    enemyBishops:=data.bishopwhite or data.queenwhite;
+    enemyKnights:=data.knightwhite;enemyPawns:=data.pawnwhite;
+    enemyKingBits:=data.kingwhite;rear:=rook_attack_up_mask[pos];
+  end;
+  block:=pos+step;weight:=rank-3;
+  dx:=abs((ownking and 7)-(block and 7));dy:=abs(ownking div 8-block div 8);
+  ownDistance:=dx;if dy>ownDistance then ownDistance:=dy;
+  if ownDistance>5 then ownDistance:=5;
+  dx:=abs((enemyking and 7)-(block and 7));dy:=abs(enemyking div 8-block div 8);
+  enemyDistance:=dx;if dy>enemyDistance then enemyDistance:=dy;
+  if enemyDistance>5 then enemyDistance:=5;
+  result:=2*weight*(enemyDistance-ownDistance);
+  if data.papan[block]<>0 then begin dec(result,8*weight);exit;end;
+  { Include the rook/queen ray revealed when the pawn advances. }
+  rearAttack:=(vertmask2[pos,(data.allpiecesr90 shr vershiftmask[pos]) and 63]
+    and rear and enemyRooks<>0);
+  { Geometric safety is conservative, not a proof of promotion. }
+  if attacked(block) then begin dec(result,6*weight);exit;end;
+  inc(result,4*weight);
+  square:=block+step;
+  while (square>=0) and (square<64) do
+  begin
+    if data.papan[square]<>0 then exit;
+    if attacked(square) then exit;
+    inc(square,step);
+  end;
+  inc(result,4*weight);
+end;
+
+{ Piece-owner perspective; caller supplies its rook or knight square.
+  Keep this algorithm and its weights in sync with src/ueval.cpp. }
+function endgame_piece_activity(const data:tdata;pos:integer;white:boolean):integer;
+var
+  kind,base,front,safe,n:integer;
+  own,enemy,ownPawns,enemyPawns,enemyAttacks,reach,squareBit:int64;
+  support,challenge,otherDefenders,tiedPawns:int64;
+  blockade:boolean;
+
+  function attacks(square,man:integer):int64;
+  var kind:integer;
+  begin
+    kind:=abs(man);
+    if kind=1 then
+    begin
+      if man>0 then result:=w_pawn_attack[square]
+      else result:=b_pawn_attack[square];
+      exit;
+    end;
+    if kind=2 then begin result:=knightmask[square];exit;end;
+    if kind=6 then begin result:=kingmask[square];exit;end;
+    result:=0;
+    if (kind=4) or (kind=5) then
+      result:=horzmask2[square,(data.allpieces shr ((square and 56)+1)) and 63]
+        or vertmask2[square,(data.allpiecesr90 shr vershiftmask[square]) and 63];
+    if (kind=3) or (kind=5) then
+      result:=result or diaga8h1mask[square,(data.allpiecesa8h1 shr a8h1shiftmask[square]) and 255]
+        or diagh8a1mask[square,(data.allpiecesh8a1 shr h8a1shiftmask[square]) and 255];
+  end;
+
+  function attackMap(pieces:int64):int64;
+  var square:integer;
+  begin
+    result:=0;
+    while pieces<>0 do
+    begin
+      square:=firstbitp(@pieces);
+      pieces:=pieces and bit2nmasknot[square];
+      result:=result or attacks(square,data.papan[square]);
+    end;
+  end;
+
+begin
+  result:=0;
+  if (data.nilai_perwira_putih>12) or (data.nilai_perwira_hitam>12) then exit;
+  if (data.pawnwhite or data.pawnblack)=0 then exit;
+  kind:=abs(data.papan[pos]);
+  if (kind<>2) and (kind<>4) then exit;
+  if white then
+  begin
+    own:=data.whitepieces;enemy:=data.blackpieces;
+    ownPawns:=data.pawnwhite;enemyPawns:=data.pawnblack;
+  end else
+  begin
+    own:=data.blackpieces;enemy:=data.whitepieces;
+    ownPawns:=data.pawnblack;enemyPawns:=data.pawnwhite;
+  end;
+  enemyAttacks:=attackMap(enemy);reach:=attacks(pos,data.papan[pos]);
+  squareBit:=int64(1) shl pos;
+  { Conservative geometric safety; pins/exchanges are not resolved. }
+  if enemyAttacks and squareBit<>0 then exit;
+  if kind=2 then
+  begin
+    if white then
+    begin
+      base:=nilai_kuda_outpost_w[pos];support:=b_pawn_attack[pos];
+      challenge:=w_outpost_mask[pos];front:=pos+8;
+    end else
+    begin
+      base:=nilai_kuda_outpost_b[pos];support:=w_pawn_attack[pos];
+      challenge:=b_outpost_mask[pos];front:=pos-8;
+    end;
+    if (base=0) or (support and ownPawns=0) then exit;
+    if challenge and enemyPawns<>0 then exit;
+    blockade:=false;
+    if (front>=0) and (front<64) then
+      blockade:=(enemyPawns and (int64(1) shl front)<>0);
+    if (reach and enemyPawns and not enemyAttacks=0) and not blockade then exit;
+    result:=base div 2;if blockade then inc(result,4);
+    exit;
+  end;
+  safe:=ipopcount(reach and not own and not enemyAttacks);
+  n:=safe;if n>6 then n:=6;
+  result:=2*n-6;
+  n:=ipopcount(reach and enemyPawns and not enemyAttacks);if n>2 then n:=2;
+  inc(result,4*n);
+  if safe<=3 then
+  begin
+    otherDefenders:=attackMap(own and not squareBit);
+    tiedPawns:=reach and ownPawns and enemyAttacks and not otherDefenders;
+    n:=ipopcount(tiedPawns);if n>2 then n:=2;
+    dec(result,3*n);
+  end;
+end;
+
+{ Soft KRP-KR scaling, not an exact draw claim or a tablebase probe.
+  Keep the algorithm and percentages in sync with src/ueval.cpp. }
+function rook_pawn_scale(const data:tdata;sideToMove:integer):integer;
+var
+  white:boolean;
+  pawn,strongKing,weakKing,strongRook,weakRook,flip:integer;
+  p,sk,wk,sr,wr,pfile,prank,promotion:integer;
+  pawns,strongAttack,weakAttack,pawnAttack:int64;
+
+  function rookAttacks(square:integer):int64;
+  begin
+    result:=horzmask2[square,(data.allpieces shr ((square and 56)+1)) and 63]
+      or vertmask2[square,(data.allpiecesr90 shr vershiftmask[square]) and 63];
+  end;
+
+  function bit(square:integer):int64;
+  begin result:=int64(1) shl square;end;
+
+  function distance(a,b:integer):integer;
+  var dy:integer;
+  begin
+    result:=abs((a and 7)-(b and 7));dy:=abs(a div 8-b div 8);
+    if dy>result then result:=dy;
+  end;
+
+begin
+  result:=100;
+  pawns:=data.pawnwhite or data.pawnblack;
+  if (ipopcount(pawns)<>1) or (ipopcount(data.rookwhite)<>1)
+    or (ipopcount(data.rookblack)<>1)
+    or ((data.queenwhite or data.queenblack or data.bishopwhite or data.bishopblack
+      or data.knightwhite or data.knightblack)<>0) then exit;
+  white:=data.pawnwhite<>0;pawn:=firstbitp(@pawns);
+  if white then
+  begin
+    strongKing:=firstbitp(@data.kingwhite);weakKing:=firstbitp(@data.kingblack);
+    strongRook:=firstbitp(@data.rookwhite);weakRook:=firstbitp(@data.rookblack);
+    pawnAttack:=w_pawn_attack[pawn];
+  end else
+  begin
+    strongKing:=firstbitp(@data.kingblack);weakKing:=firstbitp(@data.kingwhite);
+    strongRook:=firstbitp(@data.rookblack);weakRook:=firstbitp(@data.rookwhite);
+    pawnAttack:=b_pawn_attack[pawn];
+  end;
+  result:=50;
+  strongAttack:=rookAttacks(strongRook);weakAttack:=rookAttacks(weakRook);
+  { Avoid checks and immediately attacked rooks. }
+  if (weakAttack and (bit(strongKing) or bit(strongRook))<>0)
+    or (strongAttack and (bit(weakKing) or bit(weakRook))<>0)
+    or (pawnAttack and (bit(weakKing) or bit(weakRook))<>0)
+    or (kingmask[weakKing] and bit(strongRook)<>0)
+    or (kingmask[strongKing] and bit(weakRook)<>0) then exit;
+  if white then flip:=0 else flip:=56;
+  if (pawn and 7)>=4 then flip:=flip xor 7;
+  p:=pawn xor flip;sk:=strongKing xor flip;wk:=weakKing xor flip;
+  sr:=strongRook xor flip;wr:=weakRook xor flip;
+  pfile:=p and 7;prank:=p div 8;promotion:=56+pfile;
+  { Third-rank defense with lateral room for the defending rook. }
+  if (prank<=4) and (sk div 8<=4) and (distance(wk,promotion)<=1)
+    and (wr div 8=5) and (abs((wr and 7)-pfile)>=2)
+    and (abs((wr and 7)-(wk and 7))>=2) then begin result:=25;exit;end;
+  { Rear checks, king on the promotion square, attacking king far away. }
+  if (prank>=5) and (wk=promotion) and (wr div 8=0)
+    and (distance(sk,p)>=2) then begin result:=25;exit;end;
+  { Rook pawn with own rook trapped in front and distant defending king. }
+  if (p=48) and (sr=56) and ((wk=54) or (wk=55)) and (wr and 7=0)
+    and (wr div 8<=2) and ((sk and 7>=3) or (sk div 8<=4)) then
+    begin result:=25;exit;end;
+  { Favorable seventh-rank non-rook pawn; only on its owner's move. }
+  if (prank=6) and (pfile<>0) and (sk=promotion)
+    and (abs((wk and 7)-pfile)>=2) and (wk div 8>=5)
+    and (sr div 8<=3) and (sr and 7<>pfile) and (distance(wk,sr)>=3)
+    and (((white) and (sideToMove=_sisiputih))
+      or ((not white) and (sideToMove=_sisihitam)))
+    and (weakAttack and bit(pawn)=0) and (kingmask[weakKing] and bit(pawn)=0) then
+      result:=100;
+end;
+
 function eval;
 var
 kingotherside,draw2:boolean;
@@ -1494,6 +1744,7 @@ begin
       inc(NppHitam);
       tempx:=pos and 7;
       dec(nilai,NILAI_PION_BEBAS);
+      dec(nilai,passed_pawn_activity(data,pos,false));
       temp:=0;
       pionbebashitam:=pionbebashitam or bit8mask[tempx];
 
@@ -1817,6 +2068,7 @@ begin
       tempi:=0;
       tempx:=pos and 7;
       inc(nilai,NILAI_PION_BEBAS);
+      inc(nilai,passed_pawn_activity(data,pos,true));
 
       temp:=pos shr 3;
 
@@ -2052,6 +2304,7 @@ begin
   begin
     pos:=firstbitp(@piecepos);
     piecepos:=piecepos and bit2nmasknot[pos];
+    if endgame then inc(nilai,endgame_piece_activity(data,pos,true));
 
     //mendapatkan attack table dr benteng
     horattack:=horzmask2[pos,(data.allpieces shr (pos and 56+1)) and 63];
@@ -2171,6 +2424,7 @@ begin
   begin
     pos:=lastbitp(@piecepos);
     piecepos:=piecepos and bit2nmasknot[pos];
+    if endgame then dec(nilai,endgame_piece_activity(data,pos,false));
 
     horattack:=horzmask2[pos,(data.allpieces shr (pos and 56+1)) and 63];
     verattack:=vertmask2[pos,(data.allpiecesr90 shr vershiftmask[pos]) and 63];
@@ -2289,6 +2543,7 @@ begin
   begin
     pos:=firstbitp(@piecepos);
     piecepos:=piecepos and bit2nmasknot[pos];
+    if endgame then inc(nilai,endgame_piece_activity(data,pos,true));
     inc(nilai,NILAI_POS_KUDA_W[pos]);
     //jika masih belum endgame maka kasih bonus untuk semakin dekat kuda ke raja lawan
     if not early_endgame then inc(nilai,tabel_edistance[pos,posrajahitam]*NILAI_TROPISM_KUDA);
@@ -2342,6 +2597,7 @@ begin
   begin
     pos:=lastbitp(@piecepos);
     piecepos:=piecepos and bit2nmasknot[pos];
+    if endgame then dec(nilai,endgame_piece_activity(data,pos,false));
     dec(nilai,NILAI_POS_KUDA_B[pos]);
     if not early_endgame then dec(nilai,tabel_edistance[pos,posrajaputih]*NILAI_TROPISM_KUDA);
 
@@ -2860,7 +3116,10 @@ begin
       nilai:=nilai div 2
     else
     if (data.nilai_perwira_putih=5) and (data.Nilai_perwira_hitam=5) then
-      nilai:=nilai div 2
+    begin
+      if nilai>0 then nilai:=nilai*rook_pawn_scale(data,realgiliran) div 100
+      else nilai:=nilai div 2;
+    end
     else
     if (data.nilai_perwira_putih=9) and (data.Nilai_perwira_hitam=9) then
       nilai:=nilai div 4
@@ -2881,7 +3140,10 @@ begin
       nilai:=nilai div 2
     else
     if (data.nilai_perwira_putih=5) and (data.Nilai_perwira_hitam=5) then
-      nilai:=nilai div 2
+    begin
+      if nilai<0 then nilai:=nilai*rook_pawn_scale(data,realgiliran) div 100
+      else nilai:=nilai div 2;
+    end
     else
     if (data.nilai_perwira_putih=9) and (data.Nilai_perwira_hitam=9) then
       nilai:=nilai div 4

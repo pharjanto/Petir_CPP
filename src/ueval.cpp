@@ -8,6 +8,177 @@
 #include <intrin.h>
 #endif
 namespace petir_ueval {
+int passed_pawn_activity(const petir_header::tdata& data, int pos, bool white) {
+    using namespace petir_bitboard_mask;
+    // Keep this refinement in endgames and leave KPK to its existing evaluator.
+    if (data.nilai_perwira_putih > 12 || data.nilai_perwira_hitam > 12) return 0;
+    const auto pawns = data.pawnwhite | data.pawnblack;
+    if (data.nilai_perwira_putih == 0 && data.nilai_perwira_hitam == 0
+        && !(pawns & (pawns - 1))) return 0;
+    const int rank = white ? pos / 8 : 7 - pos / 8;
+    if (rank < 4 || rank > 6) return 0;
+    const int step = white ? 8 : -8;
+    const int block = pos + step;
+    const int weight = rank - 3; // Fifth/sixth/seventh rank: 1/2/3.
+    const int own_king = king_square(white ? data.kingwhite : data.kingblack);
+    const int enemy_king = king_square(white ? data.kingblack : data.kingwhite);
+    const auto distance = [block](int king) {
+        return std::min(5, std::max(std::abs((king & 7) - (block & 7)),
+                                    std::abs(king / 8 - block / 8)));
+    };
+    int bonus = 2 * weight * (distance(enemy_king) - distance(own_king));
+    if (data.papan[block] != 0) return bonus - 8 * weight;
+
+    const auto enemy_rooks = white ? data.rookblack | data.queenblack
+                                  : data.rookwhite | data.queenwhite;
+    const auto enemy_bishops = white ? data.bishopblack | data.queenblack
+                                    : data.bishopwhite | data.queenwhite;
+    const auto enemy_knights = white ? data.knightblack : data.knightwhite;
+    const auto enemy_pawns = white ? data.pawnblack : data.pawnwhite;
+    const auto enemy_king_bits = white ? data.kingblack : data.kingwhite;
+    // A rook/queen behind the pawn attacks its future squares once it advances.
+    const auto rear = white ? rook_attack_down_mask[pos] : rook_attack_up_mask[pos];
+    const bool rear_attack = (vertmask2[pos][(data.allpiecesr90 >> vershiftmask[pos]) & 63]
+                              & rear & enemy_rooks) != 0;
+    const auto attacked = [&](int square) {
+        if (rear_attack || (knightmask[square] & enemy_knights)
+            || (kingmask[square] & enemy_king_bits)
+            || ((white ? w_pawn_attack[square] : b_pawn_attack[square]) & enemy_pawns)) return true;
+        const auto straight = horzmask2[square][(data.allpieces >> ((square & 56) + 1)) & 63]
+                            | vertmask2[square][(data.allpiecesr90 >> vershiftmask[square]) & 63];
+        if (straight & enemy_rooks) return true;
+        const auto diagonal = diaga8h1mask[square][(data.allpiecesa8h1 >> a8h1shiftmask[square]) & 255]
+                            | diagh8a1mask[square][(data.allpiecesh8a1 >> h8a1shiftmask[square]) & 255];
+        return (diagonal & enemy_bishops) != 0;
+    };
+    // Geometric safety is deliberately conservative: defended but attacked
+    // squares receive no safe-path bonus. This is not a promotion proof.
+    if (attacked(block)) return bonus - 6 * weight;
+    bonus += 4 * weight;
+    for (int square = block + step; square >= 0 && square < 64; square += step)
+        if (data.papan[square] != 0 || attacked(square)) return bonus;
+    return bonus + 4 * weight;
+}
+
+// Piece-owner perspective. Small additions to existing mobility/PST terms.
+int endgame_piece_activity(const petir_header::tdata& data, int pos, bool white) {
+    using namespace petir_bitboard_mask;
+    if (data.nilai_perwira_putih > 12 || data.nilai_perwira_hitam > 12) return 0;
+    if (!(data.pawnwhite | data.pawnblack)) return 0;
+    const int type = std::abs(data.papan[pos]);
+    if (type != 2 && type != 4) return 0;
+    const auto own = white ? data.whitepieces : data.blackpieces;
+    const auto enemy = white ? data.blackpieces : data.whitepieces;
+    const auto own_pawns = white ? data.pawnwhite : data.pawnblack;
+    const auto enemy_pawns = white ? data.pawnblack : data.pawnwhite;
+    const auto attacks = [&](int square, int piece) {
+        const int kind = std::abs(piece);
+        if (kind == 1) return piece > 0 ? w_pawn_attack[square] : b_pawn_attack[square];
+        if (kind == 2) return knightmask[square];
+        if (kind == 6) return kingmask[square];
+        std::uint64_t reach = 0;
+        if (kind == 4 || kind == 5)
+            reach = horzmask2[square][(data.allpieces >> ((square & 56) + 1)) & 63]
+                  | vertmask2[square][(data.allpiecesr90 >> vershiftmask[square]) & 63];
+        if (kind == 3 || kind == 5)
+            reach |= diaga8h1mask[square][(data.allpiecesa8h1 >> a8h1shiftmask[square]) & 255]
+                   | diagh8a1mask[square][(data.allpiecesh8a1 >> h8a1shiftmask[square]) & 255];
+        return reach;
+    };
+    const auto attack_map = [&](std::uint64_t pieces) {
+        std::uint64_t result = 0;
+        while (pieces) {
+            const int square = std::countr_zero(pieces);
+            pieces &= pieces - 1;
+            result |= attacks(square, data.papan[square]);
+        }
+        return result;
+    };
+    const auto enemy_attacks = attack_map(enemy);
+    const auto reach = attacks(pos, data.papan[pos]);
+    const auto square_bit = UINT64_C(1) << pos;
+    // No extra activity reward while the piece itself is under attack.
+    // This conservative geometric test does not resolve pins or exchanges.
+    if (enemy_attacks & square_bit) return 0;
+    if (type == 2) {
+        const int base = white ? nilai_kuda_outpost_w[pos] : nilai_kuda_outpost_b[pos];
+        if (!base || !((white ? b_pawn_attack[pos] : w_pawn_attack[pos]) & own_pawns)) return 0;
+        if ((white ? petir_evalmask::w_outpost_mask[pos] : petir_evalmask::b_outpost_mask[pos])
+            & enemy_pawns) return 0;
+        const int front = pos + (white ? 8 : -8);
+        const bool blockade = front >= 0 && front < 64
+                           && (enemy_pawns & (UINT64_C(1) << front));
+        // Reward a supported, unchallengeable outpost only with a concrete
+        // pawn target or an enemy pawn immediately blocked by this knight.
+        if (!(reach & enemy_pawns & ~enemy_attacks) && !blockade) return 0;
+        return base / 2 + (blockade ? 4 : 0);
+    }
+    const int safe = std::popcount(reach & ~own & ~enemy_attacks);
+    int bonus = 2 * std::min(6, safe) - 6; // -6..+6, on top of raw mobility.
+    bonus += 4 * std::min(2, std::popcount(reach & enemy_pawns & ~enemy_attacks));
+    if (safe <= 3) {
+        const auto other_defenders = attack_map(own & ~square_bit);
+        const auto tied_pawns = reach & own_pawns & enemy_attacks & ~other_defenders;
+        bonus -= 3 * std::min(2, std::popcount(tied_pawns));
+    }
+    return bonus;
+}
+
+// Percent of the evaluation retained in exactly KRP versus KR. This is
+// soft positional scaling, never an exact draw claim or a tablebase probe.
+int rook_pawn_scale(const petir_header::tdata& data, int side_to_move) {
+    using namespace petir_bitboard_mask;
+    const auto pawns = data.pawnwhite | data.pawnblack;
+    if (std::popcount(pawns) != 1 || std::popcount(data.rookwhite) != 1
+        || std::popcount(data.rookblack) != 1
+        || (data.queenwhite | data.queenblack | data.bishopwhite | data.bishopblack
+            | data.knightwhite | data.knightblack)) return 100;
+    const bool white = data.pawnwhite != 0;
+    const int pawn = king_square(pawns);
+    const int strong_king = king_square(white ? data.kingwhite : data.kingblack);
+    const int weak_king = king_square(white ? data.kingblack : data.kingwhite);
+    const int strong_rook = king_square(white ? data.rookwhite : data.rookblack);
+    const int weak_rook = king_square(white ? data.rookblack : data.rookwhite);
+    const auto rook_attacks = [&](int square) {
+        return horzmask2[square][(data.allpieces >> ((square & 56) + 1)) & 63]
+             | vertmask2[square][(data.allpiecesr90 >> vershiftmask[square]) & 63];
+    };
+    const auto strong_attack = rook_attacks(strong_rook);
+    const auto weak_attack = rook_attacks(weak_rook);
+    const auto pawn_attack = white ? w_pawn_attack[pawn] : b_pawn_attack[pawn];
+    const auto bit = [](int square) { return UINT64_C(1) << square; };
+    // Avoid tactical exceptions: checks or either rook under direct attack.
+    if ((weak_attack & (bit(strong_king) | bit(strong_rook)))
+        || (strong_attack & (bit(weak_king) | bit(weak_rook)))
+        || (pawn_attack & (bit(weak_king) | bit(weak_rook)))
+        || (kingmask[weak_king] & bit(strong_rook))
+        || (kingmask[strong_king] & bit(weak_rook))) return 50;
+    // Normalize the pawn owner to White and the pawn to files a-d.
+    const int flip = (white ? 0 : 56) ^ ((pawn & 7) >= 4 ? 7 : 0);
+    const int p = pawn ^ flip, sk = strong_king ^ flip, wk = weak_king ^ flip;
+    const int sr = strong_rook ^ flip, wr = weak_rook ^ flip;
+    const int file = p & 7, rank = p / 8, promotion = 56 + file;
+    const auto distance = [](int a, int b) {
+        return std::max(std::abs((a & 7) - (b & 7)), std::abs(a / 8 - b / 8));
+    };
+    // Established third-rank defense, with lateral room for the rook.
+    if (rank <= 4 && sk / 8 <= 4 && distance(wk, promotion) <= 1 && wr / 8 == 5
+        && std::abs((wr & 7) - file) >= 2
+        && std::abs((wr & 7) - (wk & 7)) >= 2) return 25;
+    // King on the promotion square, rear checks, attacking king too far away.
+    if (rank >= 5 && wk == promotion && wr / 8 == 0 && distance(sk, p) >= 2) return 25;
+    // Rook pawn with its own rook trapped in front and a distant defending king.
+    if (p == 48 && sr == 56 && (wk == 54 || wk == 55) && (wr & 7) == 0
+        && wr / 8 <= 2 && ((sk & 7) >= 3 || sk / 8 <= 4)) return 25;
+    // Favorable seventh-rank non-rook pawn: king on promotion square,
+    // distant defending king, usable rook and the pawn owner's move.
+    if (rank == 6 && file != 0 && sk == promotion && std::abs((wk & 7) - file) >= 2
+        && wk / 8 >= 5 && sr / 8 <= 3 && (sr & 7) != file && distance(wk, sr) >= 3
+        && side_to_move == (white ? petir_header::_sisiputih : petir_header::_sisihitam)
+        && !(weak_attack & bit(pawn)) && !(kingmask[weak_king] & bit(pawn))) return 100;
+    return 50;
+}
+
 namespace {
 // These helpers are only used in loops that have already checked bits != 0.
 int pop_lsb(std::uint64_t& bits) {
@@ -602,6 +773,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
             (npphitam = pas::increment(npphitam, 1));
             tempx = (pos & 7);
             (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_bebas));
+            nilai -= passed_pawn_activity(data, pos, false);
             temp = 0;
             pionbebashitam = (pionbebashitam | petir_header::bit8(tempx));
             if (((tempx > 0) && ((pionbebashitam & petir_header::bit8(pas::sub(tempx, 1))) != 0))) {
@@ -840,6 +1012,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
             tempi = 0;
             tempx = (pos & 7);
             (nilai = pas::increment(nilai, petir_ueval::nilai_pion_bebas));
+            nilai += passed_pawn_activity(data, pos, true);
             temp = pas::shr(pos, 3);
             pionbebasputih = (pionbebasputih | petir_header::bit8(tempx));
             if (((tempx > 0) && ((pionbebasputih & petir_header::bit8(pas::sub(tempx, 1))) != 0))) {
@@ -994,6 +1167,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
     piecepos = data.rookwhite;
     while ((piecepos != 0)) {
         pos = pop_lsb(piecepos);
+        if (endgame) nilai += endgame_piece_activity(data, pos, true);
         horattack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         verattack = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
         attack = (horattack | verattack);
@@ -1085,6 +1259,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
     while ((piecepos != 0)) {
         // Rook scores and attack unions are independent of iteration order.
         pos = pop_lsb(piecepos);
+        if (endgame) nilai -= endgame_piece_activity(data, pos, false);
         horattack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
         verattack = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
         attack = (horattack | verattack);
@@ -1174,6 +1349,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
     piecepos = data.knightwhite;
     while ((piecepos != 0)) {
         pos = pop_lsb(piecepos);
+        if (endgame) nilai += endgame_piece_activity(data, pos, true);
         (nilai = pas::increment(nilai, petir_ueval::nilai_pos_kuda_w[pos]));
         if ((!early_endgame)) {
             (nilai = pas::increment(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajahitam], petir_ueval::nilai_tropism_kuda)));
@@ -1209,6 +1385,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
     piecepos = data.knightblack;
     while ((piecepos != 0)) {
         pos = pop_lsb(piecepos);
+        if (endgame) nilai -= endgame_piece_activity(data, pos, false);
         (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_kuda_b[pos]));
         if ((!early_endgame)) {
             (nilai = pas::decrement(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajaputih], petir_ueval::nilai_tropism_kuda)));
@@ -1537,7 +1714,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                 nilai = (nilai / 2);
             } else {
                 if (((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 5))) {
-                    nilai = (nilai / 2);
+                    nilai = nilai * (nilai > 0 ? rook_pawn_scale(data, realgiliran) : 50) / 100;
                 } else {
                     if (((data.nilai_perwira_putih == 9) && (data.nilai_perwira_hitam == 9))) {
                         nilai = (nilai / 4);
@@ -1561,7 +1738,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                         nilai = (nilai / 2);
                     } else {
                         if (((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 5))) {
-                            nilai = (nilai / 2);
+                            nilai = nilai * (nilai < 0 ? rook_pawn_scale(data, realgiliran) : 50) / 100;
                         } else {
                             if (((data.nilai_perwira_putih == 9) && (data.nilai_perwira_hitam == 9))) {
                                 nilai = (nilai / 4);

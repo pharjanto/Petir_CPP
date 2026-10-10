@@ -74,8 +74,10 @@ int self_test() {
     Position start{};petir_udata::initstate(start);
     check(start.hashkey==3423812783342919194ULL,"Delphi starting hash and Random evaluation order");
     check(consistent(start),"starting board, rotated occupancy, material, and hash agree");
-    // Scores captured before the evaluation scan/count optimizations. Include
-    // promoted black pieces in different 16-bit blocks, and mixed pawn files.
+    // Evaluation regression scores. The mixed pawn-file fixtures include the
+    // passed-pawn refinement (+12) and opposing rook activity (-10),
+    // mirrored for Black after the existing material draw scaling.
+    // Include promoted black pieces in different 16-bit blocks.
     struct EvalOptimizationFixture {const char* name;const char* fen;int full[4];int narrow[4];};
     for(const auto& fixture:{
         EvalOptimizationFixture{"multiple rooks",
@@ -92,17 +94,18 @@ int self_test() {
             {-1540,-1560,1560,1540},{-1513,-1533,1533,1513}},
         EvalOptimizationFixture{"white pawn files",
             "7k/8/8/P1PP1P1P/P2P1P2/8/8/KB5r w - - 0 1",
-            {768,748,-748,-768},{768,748,-748,-768}},
+            {770,750,-750,-770},{770,750,-750,-770}},
         EvalOptimizationFixture{"black pawn files",
             "kb5R/8/8/p2p1p2/p1pp1p1p/8/8/7K b - - 0 1",
-            {-748,-768,768,748},{-748,-768,768,748}}}) {
+            {-750,-770,770,750},{-750,-770,770,750}}}) {
         int side=1;const auto position=from_fen(fixture.fen,side);const auto saved=position;
         const auto tag=std::string("evaluation optimization: ")+fixture.name;
         check(consistent(position),tag+" fixture is consistent");
         for(int stm:{1,2})for(bool infhr:{false,true}) {
             const int index=(stm-1)*2+int(infhr);
             const auto detail=tag+" side="+std::to_string(stm)+" infhr="+std::to_string(infhr);
-            check(petir_ueval::eval(position,stm,-20500,20500,infhr)==fixture.full[index],detail+" full score unchanged");
+            const int actual=petir_ueval::eval(position,stm,-20500,20500,infhr);
+            check(actual==fixture.full[index],detail+" full score="+std::to_string(actual));
             check(petir_ueval::eval(position,stm,0,1,infhr)==fixture.narrow[index],detail+" lazy score unchanged");
         }
         check(std::memcmp(&position,&saved,sizeof(position))==0,tag+" leaves the input unchanged");
@@ -337,6 +340,134 @@ int self_test() {
     auto king_black=from_fen("1r2k3/p6p/8/8/8/8/8/K5R1 b - - 0 1",stm);
     check(king_white_score==petir_ueval::eval(king_black,stm,-20500,20500),
         "endgame king placement agrees after color reversal");
+    // Exercise the new component independently of material/PST/draw scaling.
+    struct PasserActivityFixture {const char* name;const char* fen;int pawn;int expected;};
+    for(const auto& fixture:{
+        PasserActivityFixture{"clear path, supporting king", "n6k/8/8/3KP3/8/8/8/1R6 w - - 0 1",e5,12},
+        PasserActivityFixture{"own king far away", "n6k/8/8/4P3/8/8/8/KR6 w - - 0 1",e5,4},
+        PasserActivityFixture{"defender king controls push", "n7/5k2/8/3KP3/8/8/8/1R6 w - - 0 1",e5,-6},
+        PasserActivityFixture{"enemy blockade", "7k/8/4n3/3KP3/8/8/8/1R6 w - - 0 1",e5,-4},
+        PasserActivityFixture{"friendly blockade", "n6k/8/4B3/3KP3/8/8/8/1R6 w - - 0 1",e5,-4},
+        PasserActivityFixture{"knight controls push", "7k/6n1/8/3KP3/8/8/8/1R6 w - - 0 1",e5,-2},
+        PasserActivityFixture{"bishop controls push", "7k/8/8/3KP3/6b1/8/8/1R6 w - - 0 1",e5,-2},
+        PasserActivityFixture{"rook controls push", "7k/8/7r/3KP3/8/8/8/1R6 w - - 0 1",e5,-2},
+        PasserActivityFixture{"queen controls push", "7k/8/7q/3KP3/8/8/8/1R6 w - - 0 1",e5,-2},
+        PasserActivityFixture{"rook revealed behind pawn", "7k/8/8/3KP3/8/8/4r3/1R6 w - - 0 1",e5,-2},
+        PasserActivityFixture{"queen revealed behind pawn", "7k/8/8/3KP3/8/8/4q3/1R6 w - - 0 1",e5,-2},
+        PasserActivityFixture{"later path square attacked", "6rk/8/8/3KP3/8/8/8/1R6 w - - 0 1",e5,8},
+        PasserActivityFixture{"later path square occupied", "n6k/4B3/8/3KP3/8/8/8/1R6 w - - 0 1",e5,8},
+        PasserActivityFixture{"seventh-rank board edge", "n6k/4P3/3K4/8/8/8/8/1R6 w - - 0 1",e7,30},
+        PasserActivityFixture{"fourth-rank pawn excluded", "n6k/8/8/3K4/4P3/8/8/1R6 w - - 0 1",e4,0},
+        PasserActivityFixture{"middlegame excluded", "rq5k/8/8/3KP3/8/8/8/1R6 w - - 0 1",e5,0},
+        PasserActivityFixture{"KPK excluded", "7k/8/8/3KP3/8/8/8/8 w - - 0 1",e5,0}}) {
+        auto position=from_fen(fixture.fen,stm);const auto saved=position;
+        const auto tag=std::string("passed-pawn activity: ")+fixture.name;
+        check(consistent(position),tag+" consistent position");
+        check(petir_ueval::passed_pawn_activity(position,fixture.pawn,true)==fixture.expected,tag);
+        // Reverse colors/ranks, including slider occupancy and all piece types.
+        std::string placement;int empty=0;
+        for(int square=63;square>=0;--square) {
+            const int source=(square^7)^56;
+            const int piece=-position.papan[source];
+            if(!piece)++empty;
+            else {if(empty)placement+=char('0'+empty);empty=0;
+                const char* symbols=" PNBRQK";char symbol=symbols[std::abs(piece)];
+                placement+=piece>0?symbol:char(symbol-'A'+'a');}
+            if((square&7)==0) {if(empty)placement+=char('0'+empty);empty=0;if(square)placement+='/';}
+        }
+        int reversed_side=2;auto reversed=from_fen(placement+" b - - 0 1",reversed_side);
+        check(petir_ueval::passed_pawn_activity(reversed,fixture.pawn^56,false)==fixture.expected,
+              tag+" color reversal");
+        check(std::memcmp(&position,&saved,sizeof(position))==0,tag+" input unchanged");
+    }
+    // Endgame activity: safety, pawn targets, passive defense and stable blockades.
+    struct EndgameActivityFixture {const char* name;const char* fen;int square;int expected;};
+    for(const auto& fixture:{
+        EndgameActivityFixture{"rook free movement", "7k/8/8/8/8/8/7P/R6K w - - 0 1",a1,6},
+        EndgameActivityFixture{"rook attacks weak pawn", "7k/8/8/R3p3/8/8/7P/7K w - - 0 1",a5,10},
+        EndgameActivityFixture{"rook attacks defended pawn", "7k/8/5p2/R3p3/8/8/7P/7K w - - 0 1",a5,6},
+        EndgameActivityFixture{"rook under attack", "7k/8/2n5/R3p3/8/8/7P/7K w - - 0 1",a5,0},
+        EndgameActivityFixture{"restricted rook tied to pawn", "7k/8/8/8/8/8/P1r5/RN5K w - - 0 1",a1,-9},
+        EndgameActivityFixture{"restricted rook pawn has another defender", "7k/8/8/8/8/8/P1r5/RB5K w - - 0 1",a1,-6},
+        EndgameActivityFixture{"rook pawnless excluded", "7k/8/8/8/8/8/8/R6K w - - 0 1",a1,0},
+        EndgameActivityFixture{"rook middlegame excluded", "rq5k/8/8/8/8/8/7P/R6K w - - 0 1",a1,0},
+        EndgameActivityFixture{"knight supported useful outpost", "7k/8/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,6},
+        EndgameActivityFixture{"knight no support", "7k/8/1p6/3N4/8/4P3/8/4K3 w - - 0 1",d5,0},
+        EndgameActivityFixture{"knight defended target", "8/k7/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,0},
+        EndgameActivityFixture{"knight future pawn challenge", "7k/4p3/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,0},
+        EndgameActivityFixture{"knight supported blockade", "7k/8/3p4/3N4/4P3/8/8/4K3 w - - 0 1",d5,10},
+        EndgameActivityFixture{"knight no concrete target", "7k/8/7p/3N4/4P3/8/8/4K3 w - - 0 1",d5,0},
+        EndgameActivityFixture{"knight under attack", "7k/2n5/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,0},
+        EndgameActivityFixture{"knight edge blockade", "7k/8/p7/N7/1P6/8/8/4K3 w - - 0 1",a5,0},
+        EndgameActivityFixture{"KPK excluded", "7k/8/8/3KP3/8/8/8/8 w - - 0 1",d5,0}}) {
+        auto position=from_fen(fixture.fen,stm);const auto saved=position;
+        const auto tag=std::string("endgame piece activity: ")+fixture.name;
+        check(consistent(position),tag+" consistent position");
+        const int activity=petir_ueval::endgame_piece_activity(position,fixture.square,true);
+        check(activity==fixture.expected,tag+" actual="+std::to_string(activity));
+        std::string placement;int empty=0;
+        for(int square=63;square>=0;--square) {
+            const int piece=-position.papan[(square^7)^56];
+            if(!piece)++empty;
+            else {if(empty)placement+=char('0'+empty);empty=0;
+                const char* symbols=" PNBRQK";char symbol=symbols[std::abs(piece)];
+                placement+=piece>0?symbol:char(symbol-'A'+'a');}
+            if((square&7)==0) {if(empty)placement+=char('0'+empty);empty=0;if(square)placement+='/';}
+        }
+        int reversed_side=2;auto reversed=from_fen(placement+" b - - 0 1",reversed_side);
+        check(petir_ueval::endgame_piece_activity(reversed,fixture.square^56,false)==activity,
+              tag+" color reversal");
+        check(petir_ueval::eval(position,1,-20500,20500)
+              ==petir_ueval::eval(reversed,2,-20500,20500),tag+" full evaluation color reversal");
+        check(std::memcmp(&position,&saved,sizeof(position))==0,tag+" input unchanged");
+    }
+    // KRP-KR soft scaling: guarded defenses, favorable seventh-rank pawns,
+    // side-to-move sensitivity and both board symmetries.
+    struct RookPawnFixture {const char* name;const char* fen;int scale;};
+    for(const auto& fixture:{
+        RookPawnFixture{"Philidor", "8/4k3/r7/4K3/4P3/8/8/1R6 w - - 0 1",25},
+        RookPawnFixture{"rear checks", "1k6/3K4/1P6/8/1R6/8/8/7r w - - 0 1",25},
+        RookPawnFixture{"rook pawn trapped rook", "R7/P6k/8/8/8/r7/5K2/8 w - - 0 1",25},
+        RookPawnFixture{"seventh rank", "2K5/k1P5/8/8/8/8/7r/3R4 w - - 0 1",100},
+        RookPawnFixture{"defender to move fallback", "2K5/k1P5/8/8/8/8/7r/3R4 b - - 0 1",50},
+        RookPawnFixture{"rook capture tactic", "8/4k3/r7/4K3/4P3/8/8/R7 w - - 0 1",50},
+        RookPawnFixture{"Philidor winning exception", "3k4/8/1r6/8/3K4/2P5/3R4/8 w - - 0 1",50},
+        RookPawnFixture{"unrecognized position", "7k/7r/8/8/8/8/7P/R6K w - - 0 1",50},
+        RookPawnFixture{"KPK outside scope", "7k/8/8/3KP3/8/8/8/8 w - - 0 1",100},
+        RookPawnFixture{"extra pawn outside scope", "8/4k3/r7/4K3/3PP3/8/8/1R6 w - - 0 1",100},
+        RookPawnFixture{"extra minor outside scope", "8/4k3/r7/4K3/4P3/8/8/1RN5 w - - 0 1",100}}) {
+        int original_side=1;auto original=from_fen(fixture.fen,original_side);
+        for(bool color_flip:{false,true})for(bool file_flip:{false,true}) {
+            std::string placement;int empty=0;
+            const int flip=(color_flip?56:0)^(file_flip?7:0);
+            for(int square=63;square>=0;--square) {
+                int piece=original.papan[(square^7)^flip];if(color_flip)piece=-piece;
+                if(!piece)++empty;
+                else {if(empty)placement+=char('0'+empty);empty=0;
+                    const char* symbols=" PNBRQK";char symbol=symbols[std::abs(piece)];
+                    placement+=piece>0?symbol:char(symbol-'A'+'a');}
+                if((square&7)==0){if(empty)placement+=char('0'+empty);empty=0;if(square)placement+='/';}
+            }
+            int side=color_flip?3-original_side:original_side;
+            auto position=from_fen(placement+(side==1?" w - - 0 1":" b - - 0 1"),side);
+            const auto saved=position;
+            const auto tag=std::string("rook-pawn scaling: ")+fixture.name
+                +" color="+std::to_string(color_flip)+" file="+std::to_string(file_flip);
+            check(consistent(position),tag+" consistent position");
+            check(petir_ueval::rook_pawn_scale(position,side)==fixture.scale,tag);
+            const int score=petir_ueval::eval(position,side,-20500,20500);
+            check(score==-petir_ueval::eval(position,3-side,-20500,20500,true),
+                  tag+" infhr preserves actual side to move");
+            check(score==petir_ueval::eval(position,side,score,score+1),tag+" narrow window");
+            check(std::memcmp(&position,&saved,sizeof(position))==0,tag+" input unchanged");
+        }
+    }
+    {
+        int side=1;auto philidor=from_fen("8/4k3/r7/4K3/4P3/8/8/1R6 w - - 0 1",side);
+        auto seventh=from_fen("2K5/k1P5/8/8/8/8/7r/3R4 w - - 0 1",side);
+        check(petir_ueval::eval(philidor,side,-20500,20500)==48,"Philidor full score uses 25 percent scaling");
+        check(petir_ueval::eval(seventh,side,-20500,20500)==316,"seventh-rank full score retains full advantage");
+    }
     // A king one file from the black passer must get the same evaluation
     // adjustment as in the color-reversed position (d3/e1 becomes d6/e8).
     auto black_passer=from_fen("k7/8/8/8/8/3p4/8/1R2K3 w - - 0 1",stm);
@@ -413,7 +544,7 @@ int self_test() {
         check(consistent(position),std::string("lazy evaluation fixture is consistent: ")+fixture.name);
         const int full=petir_ueval::eval(position,stm,-20500,20500);
         const int narrow=petir_ueval::eval(position,stm,fixture.alpha,fixture.beta);
-        check(full==fixture.score,std::string("full evaluation reference: ")+fixture.name);
+        check(full==fixture.score,std::string("full evaluation reference: ")+fixture.name+" actual="+std::to_string(full));
         check(narrow==full,std::string("narrow evaluation completes remaining terms: ")+fixture.name);
     }
     // Use windows that previously let stage 1 bypass the final draw scaling.
