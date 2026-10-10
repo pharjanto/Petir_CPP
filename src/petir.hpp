@@ -827,6 +827,8 @@ namespace petir_ueval {
 std::int32_t eval(const petir_header::tdata& data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr = false);
 // Pawn-owner perspective; caller supplies a frontmost passed pawn.
 int passed_pawn_activity(const petir_header::tdata& data, int pos, bool white);
+// Unscaled owner-perspective bonus for neighboring foremost passed pawns.
+int connected_passed_pawns(const petir_header::tdata& data, bool white);
 // Piece-owner perspective; caller supplies its rook or knight square.
 int endgame_piece_activity(const petir_header::tdata& data, int pos, bool white);
 // Soft KRP-KR percentage; pass the actual side to move (also for infhr).

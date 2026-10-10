@@ -340,6 +340,70 @@ int self_test() {
     auto king_black=from_fen("1r2k3/p6p/8/8/8/8/8/K5R1 b - - 0 1",stm);
     check(king_white_score==petir_ueval::eval(king_black,stm,-20500,20500),
         "endgame king placement agrees after color reversal");
+    // Regressions for material scaling, king/passers and connected-pawn order.
+    // Reflect ranks and colors; side-to-move scores must agree even when lazy
+    // evaluation intentionally returns an approximation in a narrow window.
+    struct SymmetryFixture {const char* name;const char* fen;};
+    for (const auto& fixture : {
+        SymmetryFixture{"minor and pawn versus bare king", "7k/8/8/3N4/4P3/8/8/4K3 w - - 0 1"},
+        SymmetryFixture{"minor and pawn versus queen", "7k/8/8/3N4/4P3/8/8/q3K3 w - - 0 1"},
+        SymmetryFixture{"minor and pawn versus rook", "7k/8/8/3N4/4P3/8/8/r3K3 w - - 0 1"},
+        SymmetryFixture{"minor and pawn versus two knights", "6nk/8/8/3N4/4P3/8/8/n3K3 w - - 0 1"},
+        SymmetryFixture{"nearby defending king", "8/1k1P4/8/8/8/7N/7K/8 b - - 0 1"},
+        SymmetryFixture{"connected passers with promotion shortcut", "8/3b4/3k1p2/p4P2/P7/6pp/1b2K3/8 b - - 9 99"},
+        SymmetryFixture{"staggered passers", "7k/6P1/5P2/8/8/8/8/R3K3 w - - 0 1"},
+        SymmetryFixture{"doubled passers", "7k/8/5PP1/5P2/8/8/8/R3K3 w - - 0 1"}}) {
+        int side=1;const auto original=from_fen(fixture.fen,side);
+        for (int clock : {0,80,99}) {
+            auto position=original;position.move50count=static_cast<std::uint8_t>(clock);
+            Position reversed{};
+            for(int square=0;square<64;++square)
+                reversed.papan[square^56]=static_cast<std::int8_t>(-position.papan[square]);
+            petir_customboard::fillbitboard(reversed);reversed.move50count=position.move50count;
+            const auto saved=position,saved_reversed=reversed;
+            const auto tag=std::string("evaluation symmetry: ")+fixture.name+" clock="+std::to_string(clock);
+            const int full=petir_ueval::eval(position,side,-20500,20500);
+            check(full==petir_ueval::eval(reversed,3-side,-20500,20500),tag+" full");
+            for(const auto& window:{std::array<int,2>{0,1},{full,full+1}})
+                check(petir_ueval::eval(position,side,window[0],window[1])
+                    ==petir_ueval::eval(reversed,3-side,window[0],window[1]),tag+" narrow");
+            check(petir_ueval::eval(position,3-side,-20500,20500,true)==-full
+                &&petir_ueval::eval(reversed,side,-20500,20500,true)==-full,tag+" infhr");
+            check(std::memcmp(&position,&saved,sizeof(position))==0
+                &&std::memcmp(&reversed,&saved_reversed,sizeof(reversed))==0,tag+" input unchanged");
+        }
+    }
+    struct SymmetryScoreFixture {const char* name;const char* fen;int expected;};
+    for(const auto& fixture:{
+        SymmetryScoreFixture{"material scaling reference", "7k/8/8/3N4/4P3/8/8/4K3 w - - 0 1",511},
+        SymmetryScoreFixture{"king distance reference", "8/1k1P4/8/8/8/7N/7K/8 b - - 0 1",-610},
+        SymmetryScoreFixture{"connected shortcut reference", "8/3b4/3k1p2/p4P2/P7/6pp/1b2K3/8 b - - 9 99",1794}}) {
+        auto position=from_fen(fixture.fen,stm);
+        check(petir_ueval::eval(position,stm,-20500,20500)==fixture.expected,fixture.name);
+    }
+    struct ConnectedFixture {const char* name;const char* fen;int expected;};
+    for(const auto& fixture:{
+        ConnectedFixture{"single pawn", "7k/8/5P2/8/8/8/8/R3K3 w - - 0 1",0},
+        ConnectedFixture{"sixth rank pair counted once", "7k/8/5PP1/8/8/8/8/R3K3 w - - 0 1",127},
+        ConnectedFixture{"staggered sixth and seventh", "7k/6P1/5P2/8/8/8/8/R3K3 w - - 0 1",157},
+        ConnectedFixture{"fifth rank pair", "7k/8/8/5PP1/8/8/8/R3K3 w - - 0 1",52},
+        ConnectedFixture{"staggered fifth and sixth", "7k/8/6P1/5P2/8/8/8/R3K3 w - - 0 1",72},
+        ConnectedFixture{"widely staggered passers", "7k/6P1/8/8/5P2/8/8/R3K3 w - - 0 1",7},
+        ConnectedFixture{"three neighboring passers", "7k/8/4PPP1/8/8/8/8/R3K3 w - - 0 1",254},
+        ConnectedFixture{"doubled pawn not counted again", "7k/8/5PP1/5P2/8/8/8/R3K3 w - - 0 1",127},
+        ConnectedFixture{"enemy pawn prevents passers", "7k/6p1/5PP1/8/8/8/8/R3K3 w - - 0 1",0}}) {
+        int side=1;const auto base=from_fen(fixture.fen,side);
+        for(bool color_flip:{false,true})for(bool file_flip:{false,true}) {
+            Position position{};
+            for(int square=0;square<64;++square)
+                position.papan[square^(color_flip?56:0)^(file_flip?7:0)]
+                    =static_cast<std::int8_t>(base.papan[square]*(color_flip?-1:1));
+            petir_customboard::fillbitboard(position);const auto saved=position;
+            check(petir_ueval::connected_passed_pawns(position,!color_flip)==fixture.expected,
+                std::string("connected passers: ")+fixture.name);
+            check(std::memcmp(&position,&saved,sizeof(position))==0,"connected passers leave input unchanged");
+        }
+    }
     // Exercise the new component independently of material/PST/draw scaling.
     struct PasserActivityFixture {const char* name;const char* fen;int pawn;int expected;};
     for(const auto& fixture:{

@@ -1097,6 +1097,50 @@ begin
       result:=100;
 end;
 
+{ Count each neighboring pair of foremost passers once, before promotion
+  shortcuts. The trailing pawn's rank determines the existing pair bonus. }
+function connected_passed_pawns(const data:tdata; white:boolean):integer;
+var own,enemy,pawns:int64;
+    ranks:array[0..7] of integer;
+    f,square,r,separation:integer;
+begin
+  if white then begin own:=data.pawnwhite; enemy:=data.pawnblack; end
+  else begin own:=data.pawnblack; enemy:=data.pawnwhite; end;
+  for f:=0 to 7 do
+  begin
+    ranks[f]:=-1;
+    pawns:=own and file_mask[f];
+    if pawns=0 then continue;
+    if white then begin
+      square:=f+56;
+      while pawns and bit(square)=0 do dec(square,8);
+    end else square:=firstbitp(@pawns);
+    if white then begin
+      if w_pion_bebas_mask[square] and enemy<>0 then continue;
+      ranks[f]:=square shr 3;
+    end else begin
+      if b_pion_bebas_mask[square] and enemy<>0 then continue;
+      ranks[f]:=7-(square shr 3);
+    end;
+  end;
+  result:=0;
+  for f:=1 to 7 do
+  begin
+    if (ranks[f-1]<0) or (ranks[f]<0) then continue;
+    r:=ranks[f-1]; if ranks[f]<r then r:=ranks[f];
+    separation:=abs(ranks[f-1]-ranks[f]);
+    inc(result,NILAI_PION_BEBAS_CONNECTED2);
+    if r>=5 then begin
+      if separation=0 then inc(result,NILAI_PION_BEBAS_CONNECTED)
+      else if separation=1 then inc(result,NILAI_PION_BEBAS_CONNECTED+30)
+      else inc(result,NILAI_PION_BEBAS_CONNECTED3);
+    end else if r>=4 then begin
+      if separation=0 then inc(result,NILAI_PION_BEBAS_CONNECTED3)
+      else if separation=1 then inc(result,NILAI_PION_BEBAS_CONNECTED3+20);
+    end;
+  end;
+end;
+
 function eval;
 var
 kingotherside,draw2:boolean;
@@ -1347,6 +1391,11 @@ begin
   end;
 
   pawnwattack:=0;pawnbattack:=0;
+  { Connection scoring is independent of handled-file masks and early exits. }
+  temp:=data.nilai_perwira_hitam; if temp>41 then temp:=41;
+  inc(nilai,connected_passed_pawns(data,true)*nilai_endgame_scale[temp] div 100);
+  temp:=data.nilai_perwira_putih; if temp>41 then temp:=41;
+  dec(nilai,connected_passed_pawns(data,false)*nilai_endgame_scale[temp] div 100);
   pionbebasputih:=0;pionbebashitam:=0;
 //  knightwattack:=0;knightbattack:=0;
 
@@ -1748,72 +1797,6 @@ begin
       temp:=0;
       pionbebashitam:=pionbebashitam or bit8mask[tempx];
 
-      if (tempx>0) and (pionbebashitam and bit8mask[tempx-1]<>0) then
-      begin
-        inc(temp,NILAI_PION_BEBAS_CONNECTED2);
-      end;
-      if (tempx<7) and (pionbebashitam and bit8mask[tempx+1]<>0) then
-        inc(temp,NILAI_PION_BEBAS_CONNECTED2);
-
-      if (pos shr 3<=2) then
-      begin
-        if tempx>0 then
-        begin
-          if (pionbebashitam and bit8mask[tempx-1]<>0) then
-          begin
-            if (data.papan[pos-1]=_PIONHITAM)
-            then
-              inc(temp,NILAI_PION_BEBAS_CONNECTED)
-            else
-            if (data.papan[pos-9]=_PIONHITAM) then
-              inc(temp,NILAI_PION_BEBAS_CONNECTED+30)
-            else
-              inc(temp,NILAI_PION_BEBAS_CONNECTED3)
-          end;
-        end;
-        if tempx<7 then
-        begin
-          if (pionbebashitam and bit8mask[tempx+1]<>0) then
-          begin
-            if (data.papan[pos+1]=_PIONHITAM)  then
-              inc(temp,NILAI_PION_BEBAS_CONNECTED)
-            else
-            if (data.papan[pos-7]=_PIONHITAM) then
-              inc(temp,NILAI_PION_BEBAS_CONNECTED+30)
-            else
-              inc(temp,NILAI_PION_BEBAS_CONNECTED3)
-          end;
-        end;
-      end else
-      if (pos shr 3<=3) then
-      begin
-        if tempx>0 then
-        begin
-          //jika pion bebas sudah pada baris ke-6 dan disebelah kiri/kanannya ada pion bebas
-          //lain maka kasih bonus tinggi karena kedua pion ini dapat saling melindungi
-          if (pionbebashitam and bit8mask[tempx-1]<>0) then
-          begin
-            if  (data.papan[pos-1]=_PIONHITAM) then
-              inc(temp,NILAI_PION_BEBAS_CONNECTED3)
-            else
-            if (data.papan[pos-9]=_PIONHITAM)  then
-              inc(temp,NILAI_PION_BEBAS_CONNECTED3+20);
-          end;
-        end;
-        if tempx<7 then
-        begin
-          if (pionbebashitam and bit8mask[tempx+1]<>0)then
-          begin
-            if (data.papan[pos+1]=_PIONHITAM) then
-              inc(temp,NILAI_PION_BEBAS_CONNECTED3) else
-            if (data.papan[pos-7]=_PIONHITAM) then
-              inc(temp,NILAI_PION_BEBAS_CONNECTED3+20);
-
-          end;
-        end;
-      end;
-
-
       //semakin dekat pion dengan petak promosi maka nilainya semakin tinggi
 
 
@@ -1918,7 +1901,7 @@ begin
       if {(tabel_edistance2[pos,posrajahitam]+2<=tabel_edistance2[pos,posrajaputih])
       and }(tabel_edistance2[pos,posrajaputih]>=7)
       and (posrajaputih shr 3 <= pos shr 3)
-      and (pos shr 3 >= abs(filerajaputih - (pos and 8)))
+      and (pos shr 3 >= abs(filerajaputih - (pos and 7)))
        then
        begin
         if (tabel_edistance2[pos,posrajaputih]>=8) then
@@ -2074,70 +2057,6 @@ begin
 
       pionbebasputih:=pionbebasputih or bit8mask[tempx];
 
-      if (tempx>0) and (pionbebasputih and bit8mask[tempx-1]<>0) then
-        inc(tempi,NILAI_PION_BEBAS_CONNECTED2);
-      if (tempx<7) and (pionbebasputih and bit8mask[tempx+1]<>0) then
-        inc(tempi,NILAI_PION_BEBAS_CONNECTED2);
-
-
-      if (temp>=5) then
-      begin
-        if tempx>0 then
-        begin
-          if (pionbebasputih and bit8mask[tempx-1]<>0)
-          then
-          begin
-              if (data.papan[pos-1]=_PIONPUTIH) then
-                inc(tempi,NILAI_PION_BEBAS_CONNECTED)
-              else
-              if (data.papan[pos+7]=_PIONPUTIH) then
-                inc(tempi,NILAI_PION_BEBAS_CONNECTED+30)
-              else
-                inc(tempi,NILAI_PION_BEBAS_CONNECTED3);
-          end;
-        end;
-        if tempx<7 then
-        begin
-          if (pionbebasputih and bit8mask[tempx+1]<>0) then
-          begin
-            if (data.papan[pos+1]=_PIONPUTIH)  then
-              inc(tempi,NILAI_PION_BEBAS_CONNECTED)
-            else
-            if  (data.papan[pos+9]=_PIONPUTIH) then
-              inc(tempi,NILAI_PION_BEBAS_CONNECTED+30)
-            else
-              inc(tempi,NILAI_PION_BEBAS_CONNECTED3);
-          end;
-        end;
-      end else
-      if (temp>=4) then
-      begin
-        if tempx>0 then
-        begin
-          //jika pion bebas sudah pada baris ke-6 dan disebelah kiri/kanannya ada pion bebas
-          //lain maka kasih bonus tinggi karena kedua pion ini dapat saling melindungi
-          if (pionbebasputih and bit8mask[tempx-1]<>0) then
-          begin
-            if (data.papan[pos-1]=_PIONPUTIH) then
-              inc(tempi,NILAI_PION_BEBAS_CONNECTED3);
-            if (data.papan[pos+7]=_PIONPUTIH) then
-              inc(tempi,NILAI_PION_BEBAS_CONNECTED3+20);
-
-          end;
-        end;
-        if tempx<7 then
-        begin
-          if (pionbebasputih and bit8mask[tempx+1]<>0) then
-          begin
-            if (data.papan[pos+1]=_PIONPUTIH) then
-              inc(tempi,NILAI_PION_BEBAS_CONNECTED3)
-            else
-            if  (data.papan[pos+9]=_PIONPUTIH) then
-              inc(tempi,NILAI_PION_BEBAS_CONNECTED3+20)
-          end;
-        end;
-      end;
-
       if (data.nilai_perwira_hitam=0) then
       begin
         if (pos>=a6) and (w_pawn_attack[pos] and data.kingwhite<>0) then
@@ -2234,6 +2153,7 @@ begin
       and }(tabel_edistance2[pos,posrajahitam]>=7)
       //and (temp-posrajahitam shr 3 < 2)
       and (posrajahitam shr 3 >= pos shr 3)
+      and (7-(pos shr 3) >= abs(filerajahitam-(pos and 7)))
       then
       begin
         if (tabel_edistance2[pos,posrajahitam]>=8) then
@@ -3148,7 +3068,7 @@ begin
     if (data.nilai_perwira_putih=9) and (data.Nilai_perwira_hitam=9) then
       nilai:=nilai div 4
     else
-    if ((data.nilai_perwira_putih=6) or (data.nilai_perwira_hitam=3))
+    if ((data.nilai_perwira_putih=6) or (data.nilai_perwira_putih=5))
     and (data.nilai_perwira_hitam=3) then
       nilai:=nilai div 4
   end else

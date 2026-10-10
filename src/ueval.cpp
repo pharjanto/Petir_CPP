@@ -60,6 +60,39 @@ int passed_pawn_activity(const petir_header::tdata& data, int pos, bool white) {
     return bonus + 4 * weight;
 }
 
+// Count each neighboring pair of foremost passers once, before promotion
+// shortcuts. The trailing pawn's rank determines the existing pair bonus.
+int connected_passed_pawns(const petir_header::tdata& data, bool white) {
+    using namespace petir_bitboard_mask;
+    const auto own = white ? data.pawnwhite : data.pawnblack;
+    const auto enemy = white ? data.pawnblack : data.pawnwhite;
+    int ranks[8];
+    for (int file = 0; file < 8; ++file) {
+        ranks[file] = -1;
+        const auto pawns = own & file_mask[file];
+        if (!pawns) continue;
+        const int square = white ? 63 - std::countl_zero(pawns) : std::countr_zero(pawns);
+        if ((white ? w_pion_bebas_mask[square] : b_pion_bebas_mask[square]) & enemy) continue;
+        ranks[file] = white ? square / 8 : 7 - square / 8;
+    }
+    int bonus = 0;
+    for (int file = 1; file < 8; ++file) {
+        if (ranks[file - 1] < 0 || ranks[file] < 0) continue;
+        const int rank = std::min(ranks[file - 1], ranks[file]);
+        const int separation = std::abs(ranks[file - 1] - ranks[file]);
+        bonus += nilai_pion_bebas_connected2;
+        if (rank >= 5)
+            bonus += separation == 0 ? nilai_pion_bebas_connected
+                   : separation == 1 ? nilai_pion_bebas_connected + 30
+                                     : nilai_pion_bebas_connected3;
+        else if (rank >= 4) {
+            if (separation == 0) bonus += nilai_pion_bebas_connected3;
+            else if (separation == 1) bonus += nilai_pion_bebas_connected3 + 20;
+        }
+    }
+    return bonus;
+}
+
 // Piece-owner perspective. Small additions to existing mobility/PST terms.
 int endgame_piece_activity(const petir_header::tdata& data, int pos, bool white) {
     using namespace petir_bitboard_mask;
@@ -715,6 +748,11 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
     else {
         posgajah = 64;
     }
+    // Connection scoring is independent of handled-file masks and early exits.
+    nilai += connected_passed_pawns(data, true)
+        * nilai_endgame_scale[std::min<int>(data.nilai_perwira_hitam, 41)] / 100;
+    nilai -= connected_passed_pawns(data, false)
+        * nilai_endgame_scale[std::min<int>(data.nilai_perwira_putih, 41)] / 100;
     const auto black_pawn_files = pawn_files(data.pawnblack);
     const auto black_isolated_files = black_pawn_files & ~((black_pawn_files << 1) | (black_pawn_files >> 1));
     npionhitam = count_bits<NativePopcount>(data.pawnblack);
@@ -776,65 +814,6 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
             nilai -= passed_pawn_activity(data, pos, false);
             temp = 0;
             pionbebashitam = (pionbebashitam | petir_header::bit8(tempx));
-            if (((tempx > 0) && ((pionbebashitam & petir_header::bit8(pas::sub(tempx, 1))) != 0))) {
-                (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected2));
-            }
-            if (((tempx < 7) && ((pionbebashitam & petir_header::bit8(pas::add(tempx, 1))) != 0))) {
-                (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected2));
-            }
-            if ((pas::shr(pos, 3) <= 2)) {
-                if ((tempx > 0)) {
-                    if (((pionbebashitam & petir_header::bit8(pas::sub(tempx, 1))) != 0)) {
-                        if ((data.papan[pas::sub(pos, 1)] == petir_header::_pionhitam)) {
-                            (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected));
-                        } else {
-                            if ((data.papan[pas::sub(pos, 9)] == petir_header::_pionhitam)) {
-                                (temp = pas::increment(temp, pas::add(petir_ueval::nilai_pion_bebas_connected, 30)));
-                            } else {
-                                (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected3));
-                            }
-                        }
-                    }
-                }
-                if ((tempx < 7)) {
-                    if (((pionbebashitam & petir_header::bit8(pas::add(tempx, 1))) != 0)) {
-                        if ((data.papan[pas::add(pos, 1)] == petir_header::_pionhitam)) {
-                            (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected));
-                        } else {
-                            if ((data.papan[pas::sub(pos, 7)] == petir_header::_pionhitam)) {
-                                (temp = pas::increment(temp, pas::add(petir_ueval::nilai_pion_bebas_connected, 30)));
-                            } else {
-                                (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected3));
-                            }
-                        }
-                    }
-                }
-            } else {
-                if ((pas::shr(pos, 3) <= 3)) {
-                    if ((tempx > 0)) {
-                        if (((pionbebashitam & petir_header::bit8(pas::sub(tempx, 1))) != 0)) {
-                            if ((data.papan[pas::sub(pos, 1)] == petir_header::_pionhitam)) {
-                                (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected3));
-                            } else {
-                                if ((data.papan[pas::sub(pos, 9)] == petir_header::_pionhitam)) {
-                                    (temp = pas::increment(temp, pas::add(petir_ueval::nilai_pion_bebas_connected3, 20)));
-                                }
-                            }
-                        }
-                    }
-                    if ((tempx < 7)) {
-                        if (((pionbebashitam & petir_header::bit8(pas::add(tempx, 1))) != 0)) {
-                            if ((data.papan[pas::add(pos, 1)] == petir_header::_pionhitam)) {
-                                (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected3));
-                            } else {
-                                if ((data.papan[pas::sub(pos, 7)] == petir_header::_pionhitam)) {
-                                    (temp = pas::increment(temp, pas::add(petir_ueval::nilai_pion_bebas_connected3, 20)));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             if ((data.nilai_perwira_putih == 0)) {
                 if (((pos <= petir_header::h3) && ((petir_bitboard_mask::b_pawn_attack[pos] & data.kingblack) != 0))) {
                     (nilai = pas::decrement(nilai, petir_ueval::nilai_can_promote));
@@ -1015,64 +994,6 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
             nilai += passed_pawn_activity(data, pos, true);
             temp = pas::shr(pos, 3);
             pionbebasputih = (pionbebasputih | petir_header::bit8(tempx));
-            if (((tempx > 0) && ((pionbebasputih & petir_header::bit8(pas::sub(tempx, 1))) != 0))) {
-                (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected2));
-            }
-            if (((tempx < 7) && ((pionbebasputih & petir_header::bit8(pas::add(tempx, 1))) != 0))) {
-                (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected2));
-            }
-            if ((temp >= 5)) {
-                if ((tempx > 0)) {
-                    if (((pionbebasputih & petir_header::bit8(pas::sub(tempx, 1))) != 0)) {
-                        if ((data.papan[pas::sub(pos, 1)] == petir_header::_pionputih)) {
-                            (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected));
-                        } else {
-                            if ((data.papan[pas::add(pos, 7)] == petir_header::_pionputih)) {
-                                (tempi = pas::increment(tempi, pas::add(petir_ueval::nilai_pion_bebas_connected, 30)));
-                            } else {
-                                (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected3));
-                            }
-                        }
-                    }
-                }
-                if ((tempx < 7)) {
-                    if (((pionbebasputih & petir_header::bit8(pas::add(tempx, 1))) != 0)) {
-                        if ((data.papan[pas::add(pos, 1)] == petir_header::_pionputih)) {
-                            (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected));
-                        } else {
-                            if ((data.papan[pas::add(pos, 9)] == petir_header::_pionputih)) {
-                                (tempi = pas::increment(tempi, pas::add(petir_ueval::nilai_pion_bebas_connected, 30)));
-                            } else {
-                                (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected3));
-                            }
-                        }
-                    }
-                }
-            } else {
-                if ((temp >= 4)) {
-                    if ((tempx > 0)) {
-                        if (((pionbebasputih & petir_header::bit8(pas::sub(tempx, 1))) != 0)) {
-                            if ((data.papan[pas::sub(pos, 1)] == petir_header::_pionputih)) {
-                                (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected3));
-                            }
-                            if ((data.papan[pas::add(pos, 7)] == petir_header::_pionputih)) {
-                                (tempi = pas::increment(tempi, pas::add(petir_ueval::nilai_pion_bebas_connected3, 20)));
-                            }
-                        }
-                    }
-                    if ((tempx < 7)) {
-                        if (((pionbebasputih & petir_header::bit8(pas::add(tempx, 1))) != 0)) {
-                            if ((data.papan[pas::add(pos, 1)] == petir_header::_pionputih)) {
-                                (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected3));
-                            } else {
-                                if ((data.papan[pas::add(pos, 9)] == petir_header::_pionputih)) {
-                                    (tempi = pas::increment(tempi, pas::add(petir_ueval::nilai_pion_bebas_connected3, 20)));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             if ((data.nilai_perwira_hitam == 0)) {
                 if (((pos >= petir_header::a6) && ((petir_bitboard_mask::w_pawn_attack[pos] & data.kingwhite) != 0))) {
                     (nilai = pas::increment(nilai, petir_ueval::nilai_can_promote));
@@ -1134,7 +1055,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
             if (((pas::sub(pos, posrajaputih) <= 9) && ((petir_bitboard_mask::kingmask[pos] & data.kingwhite) != 0))) {
                 (tempi = pas::increment(tempi, petir_ueval::w_nilai_pion_bebas_didukung_raja[temp]));
             } else {
-                if (((petir_evalmask::tabel_edistance2[pos][posrajahitam] >= 7) && (pas::shr(posrajahitam, 3) >= pas::shr(pos, 3)))) {
+                if (((petir_evalmask::tabel_edistance2[pos][posrajahitam] >= 7) && (pas::shr(posrajahitam, 3) >= pas::shr(pos, 3)) && (7 - pas::shr(pos, 3) >= pas::abs(filerajahitam - (pos & 7))))) {
                     if ((petir_evalmask::tabel_edistance2[pos][posrajahitam] >= 8)) {
                         (tempi = pas::decrement(tempi, pas::shr(petir_ueval::w_nilai_pion_advance_bebas[temp], 1)));
                     } else {
@@ -1743,7 +1664,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                             if (((data.nilai_perwira_putih == 9) && (data.nilai_perwira_hitam == 9))) {
                                 nilai = (nilai / 4);
                             } else {
-                                if ((((data.nilai_perwira_putih == 6) || (data.nilai_perwira_hitam == 3)) && (data.nilai_perwira_hitam == 3))) {
+                                if ((((data.nilai_perwira_putih == 6) || (data.nilai_perwira_putih == 5)) && (data.nilai_perwira_hitam == 3))) {
                                     nilai = (nilai / 4);
                                 }
                             }
