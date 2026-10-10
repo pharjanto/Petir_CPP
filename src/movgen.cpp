@@ -193,13 +193,13 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::sub(pos, 8));
+            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
             if ((movelist[jml].score == 0)) {
                 movelist[jml].score = 3;
             }
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::sub(pos, 8));
+            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
             if ((movelist[jml].score == 0)) {
                 movelist[jml].score = 3;
             }
@@ -330,13 +330,13 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::sub(pos, 8));
+            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
             if ((movelist[jml].score == 0)) {
                 movelist[jml].score = 3;
             }
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::sub(pos, 8));
+            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
             if ((movelist[jml].score == 0)) {
                 movelist[jml].score = 3;
             }
@@ -1206,7 +1206,7 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
 }
 
 // movgen.pas:1520
-void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out, std::int32_t depth) {
+void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
     std::int32_t jml = jml_out;
@@ -1238,9 +1238,6 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_kudaputih][post];
-            if (((depth <= 3) && (petir_usee::see(petir_header::_sisiputih, data, pos, post) < 0))) {
-                movelist[jml].score = 0;
-            }
         }
     }
     piecepos = data.queenwhite;
@@ -1256,9 +1253,6 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_mentriputih][post];
-            if (((depth <= 3) && (petir_usee::see(petir_header::_sisiputih, data, pos, post) < 0))) {
-                movelist[jml].score = 0;
-            }
         }
     }
     piecepos = data.bishopwhite;
@@ -1272,9 +1266,6 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_gajahputih][post];
-            if (((depth <= 3) && (petir_usee::see(petir_header::_sisiputih, data, pos, post) < 0))) {
-                movelist[jml].score = 0;
-            }
         }
     }
     piecepos = data.rookwhite;
@@ -1288,9 +1279,6 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_bentengputih][post];
-            if (((depth <= 3) && (petir_usee::see(petir_header::_sisiputih, data, pos, post) < 0))) {
-                movelist[jml].score = 0;
-            }
         }
     }
     pos = petir_bitboard_mask::king_square(data.kingwhite);

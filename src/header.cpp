@@ -42,6 +42,7 @@ std::int32_t toplevel{};
 bool use_mtdf = false;
 pas::Array<pas::Array<std::int32_t, 0, 67>, pas::negate(6), 6> historyw{};
 pas::Array<pas::Array<std::int32_t, 0, 67>, pas::negate(6), 6> historyb{};
+pas::Array<pas::Array<petir_header::piece_to_history, 0, 67>, pas::negate(6), 6> conthist{};
 pas::Array<petir_header::tkillermove, pas::negate(2), 63> killer0{};
 pas::Array<petir_header::tkillermove, pas::negate(2), 63> killer1{};
 std::int32_t co_hash{};

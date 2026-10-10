@@ -63,7 +63,7 @@ void cleartable2() {
 
 // hashing_header.pas:37
 void inittable() {
-    pas::setlength(petir_hashing_header::hashtable, petir_header::maxhash);
+    petir_hashing_header::hashtable.resize(petir_header::maxhash);
 }
 
 // hashing_header.pas:59

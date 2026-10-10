@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "order_stats.hpp"
 #include <algorithm>
 #include <condition_variable>
 #include <mutex>
@@ -323,6 +324,7 @@ public:
                     hold_cv.notify_all();
                 }
                 else if(c=="d") {finish();emit(petir::to_fen(position,stm,fullmove));}
+                PETIR_ORDER_STAT(else if(c=="orderstats") {finish();emit(petir_order_stats::report());})
             } catch(const std::exception& e) {emit(mode==Mode::UCI?"info string "+std::string(e.what()):"Error: "+std::string(e.what()));}
         }
         finish();

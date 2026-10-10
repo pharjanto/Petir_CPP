@@ -1,5 +1,6 @@
 // Faithful translation of root.pas; Delphi source is in original/.
 #include "petir.hpp"
+#include "order_stats.hpp"
 namespace petir_root {
 std::int32_t bmoves{};
 std::int32_t ntimelimit{};
@@ -91,6 +92,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
     }
     tcext = cext;
     petir_search::empty_historytable();
+    PETIR_ORDER_STAT(petir_order_stats::RootNode ostat;)
     do {
         if(petir::search_should_stop(true))return 0;
         petir_search::stack[depth].ext = false;
@@ -100,7 +102,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
         draw = false;
         newlevel = nlev;
         if ((!incheck)) {
-            petir_next::nextmove(giliran, depth, data, moves, fase, hmoves, curmovecap, curmovenoncap, jmlcap, jmlnoncap, ml, mlcap, goodcap);
+            petir_next::nextmove(giliran, depth, data, moves, fase, hmoves, curmovecap, curmovenoncap, jmlcap, jmlnoncap, ml, mlcap, goodcap, nullptr);
         } else {
             if (petir_next::nextevasion(giliran, data, moves, fase, hmoves, curmovecap, jmlcap, sc, mlcap)) {
                 return_value = pas::sub(pas::negate(petir_header::_nilai_raja), rlevel);
@@ -156,6 +158,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
             }
         }
         (legalmove = pas::increment(legalmove, 1));
+        PETIR_ORDER_STAT(ostat.move(legalmove);)
         petir_search::stack[depth].fase = fase;
         petir_search::stack[depth].legalmove = legalmove;
         petir_search::stack[depth].mte = false;
@@ -166,6 +169,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
             goto search2;
         }
         petir_search::curr_move[depth] = moves;
+        petir_search::curr_piece[depth] = temp.papan[(moves & 127)];
         if (((((!ext) && (sto <= 63)) && (pas::abs(data.papan[sto]) == petir_header::_pionputih)) && petir_tools::isextension(data, newlevel, giliran, moves, cext))) {
             petir_search::stack[depth].ext = true;
             goto search1;
@@ -186,6 +190,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
         lmoves = petir_header::mmoves;
         if ((tipe == petir_header::_nodemax)) {
             if ((((((!petir_header::use_mtdf) && (nilai > t_alpha)) && (nilai < beta)) && (!first)) && (!draw))) {
+                PETIR_ORDER_STAT(ostat.research();)
                 petir_header::mmoves = moves;
                 if (petir_header::runningtest) {
                     pas_temp_1 = 5;
@@ -201,6 +206,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
                     data = temp;
                     return return_value;
                 }
+                PETIR_ORDER_STAT(ostat.research_result(nilai > t_alpha);)
                 if ((nilai < tnilai)) {
                     petir_header::mmoves = lmoves;
                 }
@@ -208,6 +214,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
             if ((nilai > g)) {
                 g = nilai;
                 if ((nilai > t_alpha)) {
+                    PETIR_ORDER_STAT(ostat.raised(legalmove);)
                     if ((!petir_header::use_mtdf)) {
                         spv = petir_pv::getpv(data, pas::sub(3, giliran), pas::add(rlevel, 3));
                         spv = ((petir_notation::movetonotation(moves, temp.ep, giliran) + ' ') + spv);
@@ -257,6 +264,7 @@ std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t t
         petir_repetition::delrephash(h2, pas::sub(2, giliran));
         data = temp;
     } while (!(finish));
+    PETIR_ORDER_STAT(ostat.finish();)
     if ((legalmove == 0)) {
         return_value = petir_header::contemp_draw;
         g = return_value;

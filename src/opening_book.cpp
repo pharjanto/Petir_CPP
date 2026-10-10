@@ -194,7 +194,7 @@ std::int32_t searchbook(petir_header::tdata data, std::int32_t giliran) {
     return_value = petir_header::_no_move;
     pas::fillchar(m, sizeof(m), 0);
     if ((giliran == petir_header::_sisiputih)) {
-        petir_movgen::white_movgen_noncaps(data, ml, jml, 0);
+        petir_movgen::white_movgen_noncaps(data, ml, jml);
         pas_temp_1 = jml;
         for (petir_opening_book::a = 1; petir_opening_book::a <= pas_temp_1; ++petir_opening_book::a) {
             data = temp;
