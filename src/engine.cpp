@@ -29,6 +29,7 @@ void new_game() {
     outofbook=resign_count=draw_count=jumlahlangkah=0;
     pas::fillchar(historyw,sizeof(historyw),0);
     pas::fillchar(historyb,sizeof(historyb),0);
+    pas::fillchar(conthist,sizeof(conthist),0);
     petir_tools::clearkiller();
     petir_hashing_header::cleartable();
     petir_repetition::initrepdata();
@@ -118,7 +119,7 @@ std::vector<int> legal_moves(Position p,int stm) {
     if(incheck) {if(stm==1)petir_movgen::white_evasion(p,ml,count,checks);else petir_movgen::black_evasion(p,ml,count,checks);append();}
     else {
         if(stm==1)petir_movgen::white_movgen_caps(p,ml,count);else petir_movgen::black_movgen_caps(p,ml,count);append();
-        if(stm==1)petir_movgen::white_movgen_noncaps(p,ml,count,0);else petir_movgen::black_movgen_noncaps(p,ml,count);append();
+        if(stm==1)petir_movgen::white_movgen_noncaps(p,ml,count);else petir_movgen::black_movgen_noncaps(p,ml,count);append();
     }
     return result;
 }
@@ -151,7 +152,7 @@ std::uint64_t perft(Position p,int stm,int depth) {
     if(incheck) {if(stm==1)petir_movgen::white_evasion(p,ml,count,checks);else petir_movgen::black_evasion(p,ml,count,checks);visit(false);}
     else {
         if(stm==1)petir_movgen::white_movgen_caps(p,ml,count);else petir_movgen::black_movgen_caps(p,ml,count);visit(true);
-        if(stm==1)petir_movgen::white_movgen_noncaps(p,ml,count,0);else petir_movgen::black_movgen_noncaps(p,ml,count);visit(true);
+        if(stm==1)petir_movgen::white_movgen_noncaps(p,ml,count);else petir_movgen::black_movgen_noncaps(p,ml,count);visit(true);
     }
     return nodes;
 }

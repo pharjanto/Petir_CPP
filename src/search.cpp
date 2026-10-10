@@ -1,11 +1,26 @@
 // Faithful translation of search.pas; Delphi source is in original/.
 #include "petir.hpp"
+#include "order_stats.hpp"
+#include <algorithm>
+#include <cstdlib>
 namespace petir_search {
 pas::Array<std::int32_t, 0, 63> curr_move{};
+pas::Array<std::int32_t, 0, 63> curr_piece{};
 pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> hist_tried{};
 pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> hist_succ{};
 pas::Array<petir_search::anonymous_record_1, 0, 63> stack{};
 std::int32_t rs{};
+// The original rlevel*rlevel step, capped well inside the history limit.
+static std::int32_t history_bonus(std::int32_t rlevel) {return std::min(pas::mul(rlevel, rlevel), petir_header::history_max / 4);}
+// The change for a bonus or penalty: it moves the entry toward +history_max or
+// -history_max and shrinks as the entry nears that limit.
+static std::int32_t history_step(std::int32_t entry, std::int32_t bonus) {return bonus - entry * std::abs(bonus) / petir_header::history_max;}
+// The continuation-history table of the move made at ply d; none above the
+// root or after a null move.
+static petir_header::piece_to_history* continuation(std::int32_t d) {
+    if ((d < 0) || (petir_search::curr_move[d] == petir_header::_no_move)) return nullptr;
+    return &petir_header::conthist[petir_search::curr_piece[d]][(pas::shr(petir_search::curr_move[d], 7) & 127)];
+}
 // search.pas:44
 void empty_historytable() {
     pas::fillchar(petir_search::hist_tried, sizeof(petir_search::hist_tried), 0);
@@ -57,6 +72,9 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     bool donotreduce{};
     std::int32_t pas_temp_1{};
     std::int32_t pas_temp_2{};
+    // Quiet moves searched at this node, penalised when another quiet move is best.
+    std::int32_t quiets[64];
+    std::int32_t quiet_count = 0;
 // search.pas:91
     auto get_moving_piece = [&]() -> std::int8_t {
     std::int8_t return_value{};
@@ -104,6 +122,9 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     // Portability guards: stop safely and keep the original 64-ply arrays in bounds.
     if (petir::search_should_stop())return 0;
     if (depth >= 63) return petir_ueval::eval(data, giliran, alpha, beta);
+    // Continuation-history tables of the opponent's move into this node and of
+    // our move before it.
+    petir_header::piece_to_history* const cont[2] = {continuation(pas::sub(depth, 1)), continuation(pas::sub(depth, 2))};
     petir_search::stack[depth].ext = false;
     if ((data.move50count >= 101)) {
         return_value = petir_header::contemp_draw;
@@ -180,6 +201,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             }
             areduce = 0;
             petir_search::stack[depth].evaluated = false;
+            petir_search::curr_move[depth] = petir_header::_no_move;
             if ((newlevel < petir_header::fractional_ply)) {
                 if (((data.nilai_perwira_putih <= 9) && (data.nilai_perwira_hitam <= 9))) {
                     nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(beta), pas::negate(pas::sub(beta, 1)), data, 0, pas::add(depth, 1), cext, petir_search::noval, pas::negate(nodetype)));
@@ -225,6 +247,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     goodcap = 0;
     rlevel = pas::shr(level, 3);
     isscoredraw = false;
+    PETIR_ORDER_STAT(petir_order_stats::SearchNode ostat(rlevel, giliran, hmoves, nodetype, incheck);)
     do {
         if(petir::search_should_stop())return 0;
         petir_search::stack[depth].evaluated = false;
@@ -235,7 +258,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
         newlevel = nlev;
         areduce = 0;
         if ((!incheck)) {
-            petir_next::nextmove(giliran, depth, data, moves, fase, hmoves, curmovecap, curmovenoncap, jmlcap, jmlnoncap, ml, mlcap, goodcap);
+            petir_next::nextmove(giliran, depth, data, moves, fase, hmoves, curmovecap, curmovenoncap, jmlcap, jmlnoncap, ml, mlcap, goodcap, cont);
             if ((moves == petir_header::_no_move)) {
                 break;
             }
@@ -306,9 +329,14 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
         }
         if ((data.cp == 0)) {
             (petir_search::hist_tried[get_moving_piece()][get_dest(sto)] = pas::increment(petir_search::hist_tried[get_moving_piece()][get_dest(sto)], pas::mul(rlevel, rlevel)));
+            if (quiet_count < 64) {
+                quiets[quiet_count++] = moves;
+            }
         }
         petir_search::curr_move[depth] = moves;
+        petir_search::curr_piece[depth] = get_moving_piece();
         (legalmove = pas::increment(legalmove, 1));
+        PETIR_ORDER_STAT(ostat.move(moves, hmoves, fase, curmovenoncap, jmlnoncap, ml);)
         if ((petir_repetition::addrephash(data.hashkey, pas::sub(2, giliran)) == 1)) {
             nilai = petir_header::contemp_draw;
             scoredraw = true;
@@ -474,6 +502,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             areduce = 8;
         }
         search1: ;
+        PETIR_ORDER_STAT(ostat.searching(areduce);)
         if ((newlevel < 8)) {
             if ((giliran == petir_header::_sisiputih)) {
                 if ((petir_tools::white_forkandpin(sto, data) && (cext > 0))) {
@@ -505,6 +534,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             petir_repetition::delrephash(data.hashkey,pas::sub(2,giliran));data=temp;return 0;
         }
         if ((((nilai > t_alpha) && (nilai < beta)) && (legalmove > 1))) {
+            PETIR_ORDER_STAT(ostat.pvs_research();)
             if ((areduce != 0)) {
                 (newlevel = pas::increment(newlevel, areduce));
             }
@@ -513,9 +543,11 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             } else {
                 nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(beta), pas::negate(t_alpha), data, false, pas::add(depth, 1), cext, nmtree, areduce, petir_search::node_pv));
             }
+            PETIR_ORDER_STAT(ostat.pvs_result(nilai > t_alpha);)
         } else {
             if ((nilai >= beta)) {
                 if ((areduce != 0)) {
+                    PETIR_ORDER_STAT(ostat.lmr_research();)
                     (newlevel = pas::increment(newlevel, areduce));
                     areduce = 0;
                     if ((newlevel < petir_header::fractional_ply)) {
@@ -523,6 +555,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                     } else {
                         nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(nilai), pas::negate(t_alpha), data, false, pas::add(depth, 1), cext, nmtree, areduce, petir_search::node_pv));
                     }
+                    PETIR_ORDER_STAT(ostat.lmr_result(nilai >= beta);)
                 }
             }
         }
@@ -536,12 +569,16 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             if ((nilai > t_alpha)) {
                 tmoves = moves;
                 t_alpha = nilai;
+                PETIR_ORDER_STAT(ostat.raised(legalmove);)
                 if ((g >= beta)) {
+                    PETIR_ORDER_STAT(ostat.cutoff(legalmove);)
                     if ((data.cp == 0)) {
                         (petir_search::hist_succ[get_moving_piece()][get_dest(sto)] = pas::increment(petir_search::hist_succ[get_moving_piece()][get_dest(sto)], pas::mul(rlevel, rlevel)));
                     }
                     if (((data.cp == 0) && (!incheck))) {
                         petir_search::addhistory(rlevel, depth, moves, giliran, get_moving_piece());
+                        petir_search::update_continuation(cont, get_moving_piece(), sto, history_bonus(rlevel));
+                        petir_search::penalise_quiets(rlevel, giliran, temp, cont, quiets, quiet_count, moves);
                     }
                     petir_repetition::delrephash(data.hashkey, pas::sub(2, giliran));
                     data = temp;
@@ -556,6 +593,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     if (petir::search_should_stop()) {
         return return_value;
     }
+    PETIR_ORDER_STAT(ostat.finish(g, alpha, beta, legalmove);)
     if ((legalmove == 0)) {
         tmoves = petir_header::_no_move;
         return_value = petir_header::contemp_draw;
@@ -576,11 +614,9 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                 petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::pv_node, data.move50count);
                 sto = (pas::shr(tmoves, 7) & 127);
                 if ((((tmoves != petir_header::_no_move) && (sto != petir_header::_en_passant)) && ((sto > 63) || (data.papan[sto] == 0)))) {
-                    if ((giliran == petir_header::_sisiputih)) {
-                        (petir_header::historyw[data.papan[(tmoves & 127)]][(pas::shr(tmoves, 7) & 127)] = pas::increment(petir_header::historyw[data.papan[(tmoves & 127)]][(pas::shr(tmoves, 7) & 127)], pas::mul(rlevel, rlevel)));
-                    } else {
-                        (petir_header::historyb[data.papan[(tmoves & 127)]][(pas::shr(tmoves, 7) & 127)] = pas::increment(petir_header::historyb[data.papan[(tmoves & 127)]][(pas::shr(tmoves, 7) & 127)], pas::mul(rlevel, rlevel)));
-                    }
+                    petir_search::update_history(giliran, data.papan[(tmoves & 127)], (pas::shr(tmoves, 7) & 127), history_bonus(rlevel));
+                    petir_search::update_continuation(cont, data.papan[(tmoves & 127)], (pas::shr(tmoves, 7) & 127), history_bonus(rlevel));
+                    petir_search::penalise_quiets(rlevel, giliran, data, cont, quiets, quiet_count, tmoves);
                 }
             }
         }
@@ -588,13 +624,38 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
     return return_value;
 }
 
+// Moves the entry toward +history_max for a bonus and toward -history_max for
+// a penalty; the step shrinks as the entry nears that limit.
+void update_history(std::int32_t giliran, std::int32_t piece, std::int32_t sto, std::int32_t bonus) {
+    auto& entry = (giliran == petir_header::_sisiputih ? petir_header::historyw : petir_header::historyb)[piece][sto];
+    entry += history_step(entry, bonus);
+}
+
+// The same update for the move's entry in each continuation-history table.
+void update_continuation(petir_header::piece_to_history* const* cont, std::int32_t piece, std::int32_t sto, std::int32_t bonus) {
+    for (std::int32_t i = 0; i < 2; ++i) {
+        if (cont[i] != nullptr) {
+            auto& entry = (*cont[i])[piece][sto];
+            entry = static_cast<std::int16_t>(entry + history_step(entry, bonus));
+        }
+    }
+}
+
+// The other quiet moves searched at the node lose what the best one gains.
+void penalise_quiets(std::int32_t rlevel, std::int32_t giliran, const petir_header::tdata& data, petir_header::piece_to_history* const* cont, const std::int32_t* quiets, std::int32_t count, std::int32_t best) {
+    for (std::int32_t i = 0; i < count; ++i) {
+        if (quiets[i] != best) {
+            const std::int32_t piece = data.papan[(quiets[i] & 127)];
+            const std::int32_t sto = (pas::shr(quiets[i], 7) & 127);
+            petir_search::update_history(giliran, piece, sto, -history_bonus(rlevel));
+            petir_search::update_continuation(cont, piece, sto, -history_bonus(rlevel));
+        }
+    }
+}
+
 // search.pas:51
 void addhistory(std::int32_t rlevel, std::int32_t depth, std::int32_t moves, std::int32_t giliran, std::int32_t piece) {
-    if ((giliran == petir_header::_sisiputih)) {
-        (petir_header::historyw[piece][(pas::shr(moves, 7) & 127)] = pas::increment(petir_header::historyw[piece][(pas::shr(moves, 7) & 127)], pas::mul(rlevel, rlevel)));
-    } else {
-        (petir_header::historyb[piece][(pas::shr(moves, 7) & 127)] = pas::increment(petir_header::historyb[piece][(pas::shr(moves, 7) & 127)], pas::mul(rlevel, rlevel)));
-    }
+    petir_search::update_history(giliran, piece, (pas::shr(moves, 7) & 127), history_bonus(rlevel));
     if ((petir_header::killer0[depth] != moves)) {
         petir_header::killer1[depth] = petir_header::killer0[depth];
         petir_header::killer0[depth] = moves;

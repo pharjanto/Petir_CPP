@@ -187,7 +187,7 @@ int self_test() {
                     if(first[i].moves!=second[i].moves || first[i].score!=second[i].score)generation_defines_entries=false;
             };
             audit_generator([&](tmovelist& list,int& count) {if(color==1)petir_movgen::white_movgen_caps(generated_position,list,count);else petir_movgen::black_movgen_caps(generated_position,list,count);});
-            audit_generator([&](tmovelist& list,int& count) {if(color==1)petir_movgen::white_movgen_noncaps(generated_position,list,count,0);else petir_movgen::black_movgen_noncaps(generated_position,list,count);});
+            audit_generator([&](tmovelist& list,int& count) {if(color==1)petir_movgen::white_movgen_noncaps(generated_position,list,count);else petir_movgen::black_movgen_noncaps(generated_position,list,count);});
             audit_generator([&](tmovelist& list,int& count) {if(color==1)petir_movgen::white_movgen_caps2(generated_position,list,count);else petir_movgen::black_movgen_caps2(generated_position,list,count);});
             audit_generator([&](tmovelist& list,int& count) {if(color==1)petir_movgen::q_white_movgen(generated_position,list,count);else petir_movgen::q_black_movgen(generated_position,list,count);});
             if(color==1?petir_tools::white_checked(generated_position):petir_tools::black_checked(generated_position))
@@ -698,7 +698,7 @@ int self_test() {
             }
         };
         if(stm==1)petir_movgen::white_movgen_caps(evasion,candidates,count);else petir_movgen::black_movgen_caps(evasion,candidates,count);append_legal();
-        if(stm==1)petir_movgen::white_movgen_noncaps(evasion,candidates,count,0);else petir_movgen::black_movgen_noncaps(evasion,candidates,count);append_legal();
+        if(stm==1)petir_movgen::white_movgen_noncaps(evasion,candidates,count);else petir_movgen::black_movgen_noncaps(evasion,candidates,count);append_legal();
         std::sort(actual.begin(),actual.end());std::sort(expected.begin(),expected.end());
         check(contains_ep==ep_legal,"en passant evasion legality "+std::string(fen));
         check(actual==expected,"en passant evasions match independent king-safety filtering "+std::string(fen));
@@ -834,7 +834,7 @@ int self_test() {
                 };
                 if(audit_side==1)petir_movgen::white_movgen_caps(audit,candidates,count);else petir_movgen::black_movgen_caps(audit,candidates,count);
                 collect();
-                if(audit_side==1)petir_movgen::white_movgen_noncaps(audit,candidates,count,0);else petir_movgen::black_movgen_noncaps(audit,candidates,count);
+                if(audit_side==1)petir_movgen::white_movgen_noncaps(audit,candidates,count);else petir_movgen::black_movgen_noncaps(audit,candidates,count);
                 collect();
                 if(audit_side==1)petir_movgen::white_evasion(audit,candidates,count,check_count);else petir_movgen::black_evasion(audit,candidates,count,check_count);
                 for(int i=1;i<=count;++i)raw_evasions.push_back(candidates[i].moves);
@@ -882,12 +882,15 @@ int self_test() {
     killer0[0]=killer1[63]=1;
     prepare_search(1,false,0);usewinboard=false;
     check(cached_start(),"new search retains the previous search's hash result");
-    const auto hash_slot=start.hashkey&static_cast<std::uint64_t>(maxhash-1);
+    const auto hash_slot=start.hashkey&static_cast<std::uint64_t>(maxhash-2); // the bucket's first entry
     check(petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot]),"previous search's hash result is aged for replacement");
     const auto aged_record=petir_hashing_header::hashtable[hash_slot];
     const auto colliding_key=start.hashkey^static_cast<std::uint64_t>(maxhash);
     petir_hashing::addtable(colliding_key,1,8,parse_move("d2d4",start,1),321,pv_node,start.move50count);
-    check(petir_hashing_header::hashtable[hash_slot].key==colliding_key && !petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot]),"a shallow entry replaces an older generation and is stamped current");
+    check(petir_hashing_header::hashtable[hash_slot].key==aged_record.key && petir_hashing_header::hashtable[hash_slot+1].key==colliding_key && !petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot+1]),"a shallow entry leaves the previous search's deeper entry and is stamped current");
+    petir_hashing_header::cleartable2();
+    petir_hashing::addtable(colliding_key,1,8,parse_move("d2d4",start,1),321,pv_node,start.move50count);
+    check(petir_hashing_header::hashtable[hash_slot].key==colliding_key && !petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot]),"a shallow entry replaces a deeper one two searches old");
     petir_hashing_header::hashtable[hash_slot]=aged_record;
     const auto flags_before_age=aged_record.flag;
     petir_hashing_header::cleartable2();
