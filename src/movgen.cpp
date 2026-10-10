@@ -193,13 +193,13 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::sub(pos, 8));
+            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
             if ((movelist[jml].score == 0)) {
                 movelist[jml].score = 3;
             }
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::sub(pos, 8));
+            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
             if ((movelist[jml].score == 0)) {
                 movelist[jml].score = 3;
             }
@@ -330,13 +330,13 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         if ((data.papan[pas::sub(pos, 8)] == 0)) {
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::sub(pos, 8));
+            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
             if ((movelist[jml].score == 0)) {
                 movelist[jml].score = 3;
             }
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::sub(pos, 8));
+            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
             if ((movelist[jml].score == 0)) {
                 movelist[jml].score = 3;
             }
