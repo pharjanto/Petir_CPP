@@ -29,6 +29,7 @@ void new_game() {
     outofbook=resign_count=draw_count=jumlahlangkah=0;
     pas::fillchar(historyw,sizeof(historyw),0);
     pas::fillchar(historyb,sizeof(historyb),0);
+    pas::fillchar(conthist,sizeof(conthist),0);
     petir_tools::clearkiller();
     petir_hashing_header::cleartable();
     petir_repetition::initrepdata();

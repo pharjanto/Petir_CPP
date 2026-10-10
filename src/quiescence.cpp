@@ -1,5 +1,6 @@
 // Quiescence search from search.pas; Delphi source is in original/.
 #include "petir.hpp"
+#include "order_stats.hpp"
 namespace petir_search {
 namespace {
 // Called only when the side to move is not in check. Prove a legal move exists
@@ -180,6 +181,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
     t_beta = beta;
     pin_mask = incheck?0:petir_tools::pinned_pieces(data,giliran);
     pas_temp_4 = jml;
+    PETIR_ORDER_STAT(int ostat_searched = 0;)
     for (a = 1; a <= pas_temp_4; ++a) {
         if(petir::search_should_stop())return 0;
         if ((a != jml)) {
@@ -232,9 +234,11 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
                 continue;
             }
         }
+        PETIR_ORDER_STAT(++ostat_searched;)
         nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(t_beta), pas::negate(t_alpha), data, pas::sub(ply, 1), pas::add(depth, 1), cext, petir_search::noval, pas::negate(nodetype)));
         if(petir::search_should_stop()) {data=temp;return 0;}
         if ((nilai >= beta)) {
+            PETIR_ORDER_STAT(petir_order_stats::q_cutoff(incheck, ostat_searched);)
             data = temp;
             return_value = nilai;
             return return_value;
@@ -247,6 +251,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
         }
         data = temp;
     }
+    PETIR_ORDER_STAT(petir_order_stats::q_done(incheck, ostat_searched);)
     return_value = g;
     return return_value;
 }

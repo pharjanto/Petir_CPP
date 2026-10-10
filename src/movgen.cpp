@@ -1239,7 +1239,7 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_kudaputih][post];
             if (((depth <= 3) && (petir_usee::see(petir_header::_sisiputih, data, pos, post) < 0))) {
-                movelist[jml].score = 0;
+                movelist[jml].score = petir_header::see_demoted_score;
             }
         }
     }
@@ -1257,7 +1257,7 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_mentriputih][post];
             if (((depth <= 3) && (petir_usee::see(petir_header::_sisiputih, data, pos, post) < 0))) {
-                movelist[jml].score = 0;
+                movelist[jml].score = petir_header::see_demoted_score;
             }
         }
     }
@@ -1273,7 +1273,7 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_gajahputih][post];
             if (((depth <= 3) && (petir_usee::see(petir_header::_sisiputih, data, pos, post) < 0))) {
-                movelist[jml].score = 0;
+                movelist[jml].score = petir_header::see_demoted_score;
             }
         }
     }
@@ -1289,7 +1289,7 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = petir_header::historyw[petir_header::_bentengputih][post];
             if (((depth <= 3) && (petir_usee::see(petir_header::_sisiputih, data, pos, post) < 0))) {
-                movelist[jml].score = 0;
+                movelist[jml].score = petir_header::see_demoted_score;
             }
         }
     }

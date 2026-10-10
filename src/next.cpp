@@ -62,7 +62,7 @@ bool nextevasion(std::int32_t giliran, petir_header::tdata& data, std::int32_t& 
 }
 
 // next.pas:155
-bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t hmoves, std::int32_t& curmovecap, std::int32_t& curmovenoncap, std::int32_t& jmlcap, std::int32_t& jmlnoncap, petir_header::tmovelist& ml, petir_header::tmovelist& mlcap, std::int32_t& goodcap) {
+bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t hmoves, std::int32_t& curmovecap, std::int32_t& curmovenoncap, std::int32_t& jmlcap, std::int32_t& jmlnoncap, petir_header::tmovelist& ml, petir_header::tmovelist& mlcap, std::int32_t& goodcap, petir_header::piece_to_history* const* cont) {
     bool return_value{};
     std::int32_t a{};
     std::int32_t killer0moves{};
@@ -184,6 +184,21 @@ bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& dat
                 petir_movgen::white_movgen_noncaps(data, ml, jmlnoncap, depth);
             } else {
                 petir_movgen::black_movgen_noncaps(data, ml, jmlnoncap);
+            }
+            // Add how each quiet move did after the previous move and after
+            // our move before it. SEE-losing moves stay last.
+            if ((cont != nullptr) && ((cont[0] != nullptr) || (cont[1] != nullptr))) {
+                for (a = 1; a <= jmlnoncap; ++a) {
+                    if ((ml[a].score != petir_header::see_demoted_score)) {
+                        const std::int32_t piece = data.papan[(ml[a].moves & 127)];
+                        const std::int32_t sto = (pas::shr(ml[a].moves, 7) & 127);
+                        for (std::int32_t i = 0; i < 2; ++i) {
+                            if ((cont[i] != nullptr)) {
+                                (ml[a].score = pas::increment(ml[a].score, (*cont[i])[piece][sto]));
+                            }
+                        }
+                    }
+                }
             }
         }
         (curmovenoncap = pas::increment(curmovenoncap, 1));

@@ -5,6 +5,7 @@
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
 #include <intrin.h>
 #include <xmmintrin.h>
+#include <new>
 #endif
 namespace petir_header {
 inline constexpr auto version = 1;
@@ -259,8 +260,18 @@ extern std::int32_t players;
 extern std::int32_t ai_side;
 extern std::int32_t toplevel;
 extern bool use_mtdf;
+// Quiet-move history stays within +/-history_max (see petir_search::update_history).
+inline constexpr std::int32_t history_max = 16384;
 extern pas::Array<pas::Array<std::int32_t, 0, 67>, pas::negate(6), 6> historyw;
 extern pas::Array<pas::Array<std::int32_t, 0, 67>, pas::negate(6), 6> historyb;
+// SEE-losing quiet moves score below any sum of the history and the two
+// continuation-history entries.
+inline constexpr std::int32_t see_demoted_score = pas::negate(pas::mul(3, history_max));
+// Continuation history: how a quiet move [piece][to] did right after an
+// earlier move, keyed by that move's [piece][to]; the piece's sign gives the
+// side that made it. Entries stay within +/-history_max.
+using piece_to_history = pas::Array<pas::Array<std::int16_t, 0, 67>, pas::negate(6), 6>;
+extern pas::Array<pas::Array<piece_to_history, 0, 67>, pas::negate(6), 6> conthist;
 extern pas::Array<petir_header::tkillermove, pas::negate(2), 63> killer0;
 extern pas::Array<petir_header::tkillermove, pas::negate(2), 63> killer1;
 extern std::int32_t co_hash;
@@ -436,8 +447,21 @@ struct thashrecord {
 };
 #pragma pack(pop)
 inline bool is_old(const thashrecord& entry) {return (entry.flag&generation_mask)!=generation;}
-using thashdata = std::vector<petir_hashing_header::thashrecord>;
+// From the search just before the current one.
+inline bool is_previous(const thashrecord& entry) {return ((entry.flag+1)&generation_mask)==generation;}
+// Cache-line aligned, so a two-entry bucket never straddles two lines.
+template<class T> struct line_allocator {
+    using value_type = T;
+    line_allocator() = default;
+    template<class U> line_allocator(const line_allocator<U>&) {}
+    T* allocate(std::size_t n) {return static_cast<T*>(::operator new(n*sizeof(T), std::align_val_t{64}));}
+    void deallocate(T* p, std::size_t) {::operator delete(p, std::align_val_t{64});}
+    template<class U> bool operator==(const line_allocator<U>&) const {return true;}
+};
+using thashdata = std::vector<petir_hashing_header::thashrecord, line_allocator<petir_hashing_header::thashrecord>>;
 extern petir_hashing_header::thashdata hashtable;
+// The two-entry bucket a key belongs to (maxhash is a power of two).
+inline thashrecord* bucket(std::uint64_t key) {return hashtable.data() + (key & pas::sub(petir_header::maxhash, 2));}
 extern std::int32_t anu;
 }
 namespace petir_udata {
@@ -617,6 +641,8 @@ struct anonymous_record_1 {
     std::int32_t evalvalue;
 };
 extern pas::Array<std::int32_t, 0, 63> curr_move;
+// The piece that made curr_move, for the continuation-history key.
+extern pas::Array<std::int32_t, 0, 63> curr_piece;
 inline constexpr auto min_try = pas::mul(50, 6);
 inline constexpr auto min_threshold = 0.10;
 inline constexpr auto node_all = pas::negate(1);
@@ -800,7 +826,7 @@ bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std:
 // Cache hint only: starts loading the entry searchhash will read for this key.
 inline void prefetch(std::uint64_t key, std::int32_t giliran) {
     if (giliran == petir_header::_sisihitam) key = ~key;
-    const auto* entry = petir_hashing_header::hashtable.data() + (key & pas::sub(petir_header::maxhash, 1));
+    const auto* entry = petir_hashing_header::bucket(key);
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
     _mm_prefetch(reinterpret_cast<const char*>(entry), _MM_HINT_T0);
 #elif defined(__GNUC__)
@@ -819,7 +845,7 @@ bool isrep(std::uint64_t key, std::int32_t giliran);
 namespace petir_next {
 void nextbest_max(petir_header::tmovelist& a, std::int32_t cur, std::int32_t tot);
 bool nextevasion(std::int32_t giliran, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t& hmoves, std::int32_t& curmove, std::int32_t& jml, std::int32_t& skakcount, petir_header::tmovelist& ml);
-bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t hmoves, std::int32_t& curmovecap, std::int32_t& curmovenoncap, std::int32_t& jmlcap, std::int32_t& jmlnoncap, petir_header::tmovelist& ml, petir_header::tmovelist& mlcap, std::int32_t& goodcap);
+bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t hmoves, std::int32_t& curmovecap, std::int32_t& curmovenoncap, std::int32_t& jmlcap, std::int32_t& jmlnoncap, petir_header::tmovelist& ml, petir_header::tmovelist& mlcap, std::int32_t& goodcap, petir_header::piece_to_history* const* cont);
 bool nextroot(std::int32_t giliran, std::int32_t& moves, std::int32_t& fase, std::int32_t& hmoves, std::int32_t& curmove, std::int32_t& jml, petir_header::tmovelist ml);
 bool nextq(std::int32_t giliran, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t& curmove, std::int32_t& jml, std::int32_t& score, std::int32_t ply, petir_header::tmovelist& ml);
 }
@@ -840,6 +866,9 @@ void empty_historytable();
 std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, petir_header::tdata& data, bool nullmove, std::int32_t depth, std::int32_t cext, bool nmtree, std::int32_t reduced, std::int32_t nodetype);
 std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t beta, petir_header::tdata& data, std::int32_t ply, std::int32_t depth, std::int32_t cext, std::int32_t neval, std::int32_t nodetype);
 void addhistory(std::int32_t rlevel, std::int32_t depth, std::int32_t moves, std::int32_t giliran, std::int32_t piece);
+void update_history(std::int32_t giliran, std::int32_t piece, std::int32_t sto, std::int32_t bonus);
+void update_continuation(petir_header::piece_to_history* const* cont, std::int32_t piece, std::int32_t sto, std::int32_t bonus);
+void penalise_quiets(std::int32_t rlevel, std::int32_t giliran, const petir_header::tdata& data, petir_header::piece_to_history* const* cont, const std::int32_t* quiets, std::int32_t count, std::int32_t best);
 }
 namespace petir_root {
 std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t tipe, std::int32_t alpha, std::int32_t beta, petir_header::tdata data, bool nullmove, std::int32_t depth, std::int32_t cext);

@@ -687,12 +687,15 @@ int self_test() {
     killer0[0]=killer1[63]=1;
     prepare_search(1,false,0);usewinboard=false;
     check(cached_start(),"new search retains the previous search's hash result");
-    const auto hash_slot=start.hashkey&static_cast<std::uint64_t>(maxhash-1);
+    const auto hash_slot=start.hashkey&static_cast<std::uint64_t>(maxhash-2); // the bucket's first entry
     check(petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot]),"previous search's hash result is aged for replacement");
     const auto aged_record=petir_hashing_header::hashtable[hash_slot];
     const auto colliding_key=start.hashkey^static_cast<std::uint64_t>(maxhash);
     petir_hashing::addtable(colliding_key,1,8,parse_move("d2d4",start,1),321,pv_node,start.move50count);
-    check(petir_hashing_header::hashtable[hash_slot].key==colliding_key && !petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot]),"a shallow entry replaces an older generation and is stamped current");
+    check(petir_hashing_header::hashtable[hash_slot].key==aged_record.key && petir_hashing_header::hashtable[hash_slot+1].key==colliding_key && !petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot+1]),"a shallow entry leaves the previous search's deeper entry and is stamped current");
+    petir_hashing_header::cleartable2();
+    petir_hashing::addtable(colliding_key,1,8,parse_move("d2d4",start,1),321,pv_node,start.move50count);
+    check(petir_hashing_header::hashtable[hash_slot].key==colliding_key && !petir_hashing_header::is_old(petir_hashing_header::hashtable[hash_slot]),"a shallow entry replaces a deeper one two searches old");
     petir_hashing_header::hashtable[hash_slot]=aged_record;
     const auto flags_before_age=aged_record.flag;
     petir_hashing_header::cleartable2();
