@@ -207,7 +207,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
                 if (((data.papan[sfrom] == petir_header::_rajaputih) && petir_tools::white_attacked(data, sto))) {
                     continue;
                 } else {
-                    if ((pin_mask & petir_bitboard_mask::bit2nmask[sfrom]) && petir_tools::white_open_check(data, ml[a].moves)) {
+                    if ((pin_mask & petir_bitboard_mask::bit(sfrom)) && petir_tools::white_open_check(data, ml[a].moves)) {
                         continue;
                     }
                 }
@@ -215,7 +215,7 @@ std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t bet
                 if (((data.papan[sfrom] == petir_header::_rajahitam) && petir_tools::black_attacked(data, sto))) {
                     continue;
                 } else {
-                    if ((pin_mask & petir_bitboard_mask::bit2nmask[sfrom]) && petir_tools::black_open_check(data, ml[a].moves)) {
+                    if ((pin_mask & petir_bitboard_mask::bit(sfrom)) && petir_tools::black_open_check(data, ml[a].moves)) {
                         continue;
                     }
                 }

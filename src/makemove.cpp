@@ -33,24 +33,24 @@ void makewhitemove(std::int32_t moves, petir_header::tdata& data) {
         captured_piece = data.papan[sto];
         if ((captured_piece != 0)) {
             data.move50count = 0;
-            data.blackpieces = (data.blackpieces & petir_bitboard_mask::bit2nmasknot[sto]);
+            data.blackpieces = (data.blackpieces & petir_bitboard_mask::bitnot(sto));
             if ((captured_piece == petir_header::_pionhitam)) {
-                data.pawnblack = (data.pawnblack & petir_bitboard_mask::bit2nmasknot[sto]);
+                data.pawnblack = (data.pawnblack & petir_bitboard_mask::bitnot(sto));
                 data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionhitam][sto]);
                 data.cp = petir_header::_pionputih;
                 (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_pion));
             } else {
                 if ((captured_piece == petir_header::_kudahitam)) {
                     (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_kuda));
-                    data.knightblack = (data.knightblack & petir_bitboard_mask::bit2nmasknot[sto]);
+                    data.knightblack = (data.knightblack & petir_bitboard_mask::bitnot(sto));
                     data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_kudahitam][sto]);
                     data.cp = petir_header::_kudaputih;
                     (data.nilai_perwira_hitam = pas::decrement(data.nilai_perwira_hitam, 3));
                 } else {
                     if ((captured_piece == petir_header::_gajahhitam)) {
                         (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_gajah));
-                        data.bishopblack = (data.bishopblack & petir_bitboard_mask::bit2nmasknot[sto]);
-                        data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bit2nmasknot[sto]);
+                        data.bishopblack = (data.bishopblack & petir_bitboard_mask::bitnot(sto));
+                        data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bitnot(sto));
                         data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_gajahhitam][sto]);
                         data.cp = petir_header::_kudaputih;
                         (data.ngajahhitam = pas::decrement(data.ngajahhitam, 1));
@@ -58,16 +58,16 @@ void makewhitemove(std::int32_t moves, petir_header::tdata& data) {
                     } else {
                         if ((captured_piece == petir_header::_bentenghitam)) {
                             (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_benteng));
-                            data.rookblack = (data.rookblack & petir_bitboard_mask::bit2nmasknot[sto]);
-                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[sto]);
+                            data.rookblack = (data.rookblack & petir_bitboard_mask::bitnot(sto));
+                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(sto));
                             data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentenghitam][sto]);
                             data.cp = petir_header::_bentengputih;
                             (data.nilai_perwira_hitam = pas::decrement(data.nilai_perwira_hitam, 5));
                         } else {
                             (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_mentri));
-                            data.queenblack = (data.queenblack & petir_bitboard_mask::bit2nmasknot[sto]);
-                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[sto]);
-                            data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bit2nmasknot[sto]);
+                            data.queenblack = (data.queenblack & petir_bitboard_mask::bitnot(sto));
+                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(sto));
+                            data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bitnot(sto));
                             data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_mentrihitam][sto]);
                             data.cp = petir_header::_mentriputih;
                             (data.nilai_perwira_hitam = pas::decrement(data.nilai_perwira_hitam, 9));
@@ -85,10 +85,10 @@ void makewhitemove(std::int32_t moves, petir_header::tdata& data) {
         }
         data.papan[sto] = data.papan[sfrom];
         data.papan[sfrom] = 0;
-        data.whitepieces = (data.whitepieces & petir_bitboard_mask::bit2nmasknot[sfrom]);
-        data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit2nmask[sto]);
-        data.allpieces = (data.allpieces & petir_bitboard_mask::bit2nmasknot[sfrom]);
-        data.allpieces = (data.allpieces | petir_bitboard_mask::bit2nmask[sto]);
+        data.whitepieces = (data.whitepieces & petir_bitboard_mask::bitnot(sfrom));
+        data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit(sto));
+        data.allpieces = (data.allpieces & petir_bitboard_mask::bitnot(sfrom));
+        data.allpieces = (data.allpieces | petir_bitboard_mask::bit(sto));
         data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[sfrom]));
         data.allpiecesr90 = (data.allpiecesr90 | petir_bitboard_mask::bit2nmask90[sto]);
         data.allpiecesa8h1 = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[sfrom]));
@@ -97,8 +97,8 @@ void makewhitemove(std::int32_t moves, petir_header::tdata& data) {
         data.allpiecesh8a1 = (data.allpiecesh8a1 | petir_bitboard_mask::bit2nmaskh8a1[sto]);
         if ((data.papan[sto] == petir_header::_pionputih)) {
             data.move50count = 0;
-            data.pawnwhite = (data.pawnwhite | petir_bitboard_mask::bit2nmask[sto]);
-            data.pawnwhite = (data.pawnwhite & petir_bitboard_mask::bit2nmasknot[sfrom]);
+            data.pawnwhite = (data.pawnwhite | petir_bitboard_mask::bit(sto));
+            data.pawnwhite = (data.pawnwhite & petir_bitboard_mask::bitnot(sfrom));
             data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionputih][sfrom]);
             data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionputih][sto]);
             promosi = (pas::shr(moves, 14) & 7);
@@ -111,24 +111,24 @@ void makewhitemove(std::int32_t moves, petir_header::tdata& data) {
             }
         } else {
             if ((data.papan[sto] == petir_header::_kudaputih)) {
-                data.knightwhite = (data.knightwhite | petir_bitboard_mask::bit2nmask[sto]);
-                data.knightwhite = (data.knightwhite & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                data.knightwhite = (data.knightwhite | petir_bitboard_mask::bit(sto));
+                data.knightwhite = (data.knightwhite & petir_bitboard_mask::bitnot(sfrom));
                 data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_kudaputih][sfrom]);
                 data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_kudaputih][sto]);
             } else {
                 if ((data.papan[sto] == petir_header::_gajahputih)) {
-                    data.bishopwhite = (data.bishopwhite | petir_bitboard_mask::bit2nmask[sto]);
-                    data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
-                    data.bishopwhite = (data.bishopwhite & petir_bitboard_mask::bit2nmasknot[sfrom]);
-                    data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                    data.bishopwhite = (data.bishopwhite | petir_bitboard_mask::bit(sto));
+                    data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit(sto));
+                    data.bishopwhite = (data.bishopwhite & petir_bitboard_mask::bitnot(sfrom));
+                    data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bitnot(sfrom));
                     data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_gajahputih][sfrom]);
                     data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_gajahputih][sto]);
                 } else {
                     if ((data.papan[sto] == petir_header::_bentengputih)) {
-                        data.rookwhite = (data.rookwhite | petir_bitboard_mask::bit2nmask[sto]);
-                        data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[sto]);
-                        data.rookwhite = (data.rookwhite & petir_bitboard_mask::bit2nmasknot[sfrom]);
-                        data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                        data.rookwhite = (data.rookwhite | petir_bitboard_mask::bit(sto));
+                        data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(sto));
+                        data.rookwhite = (data.rookwhite & petir_bitboard_mask::bitnot(sfrom));
+                        data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(sfrom));
                         data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentengputih][sfrom]);
                         data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentengputih][sto]);
                         if (((data.flagrokade & petir_header::bitputihnoc) != 0)) {
@@ -146,18 +146,18 @@ void makewhitemove(std::int32_t moves, petir_header::tdata& data) {
                         }
                     } else {
                         if ((data.papan[sto] == petir_header::_mentriputih)) {
-                            data.queenwhite = (data.queenwhite | petir_bitboard_mask::bit2nmask[sto]);
-                            data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
-                            data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[sto]);
-                            data.queenwhite = (data.queenwhite & petir_bitboard_mask::bit2nmasknot[sfrom]);
-                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[sfrom]);
-                            data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                            data.queenwhite = (data.queenwhite | petir_bitboard_mask::bit(sto));
+                            data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit(sto));
+                            data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(sto));
+                            data.queenwhite = (data.queenwhite & petir_bitboard_mask::bitnot(sfrom));
+                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(sfrom));
+                            data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bitnot(sfrom));
                             data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_mentriputih][sfrom]);
                             data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_mentriputih][sto]);
                         } else {
                             if ((data.papan[sto] == petir_header::_rajaputih)) {
-                                data.kingwhite = (data.kingwhite | petir_bitboard_mask::bit2nmask[sto]);
-                                data.kingwhite = (data.kingwhite & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                                data.kingwhite = (data.kingwhite | petir_bitboard_mask::bit(sto));
+                                data.kingwhite = (data.kingwhite & petir_bitboard_mask::bitnot(sfrom));
                                 data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajaputih][sfrom]);
                                 data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajaputih][sto]);
                                 if (((data.flagrokade & petir_header::bitputihnoc) != 0)) {
@@ -210,37 +210,37 @@ void makeblackmove(std::int32_t moves, petir_header::tdata& data) {
         if ((captured_piece != 0)) {
             data.move50count = 0;
             data.hashkey = (data.hashkey ^ petir_header::hashkey[captured_piece][sto]);
-            data.whitepieces = (data.whitepieces & petir_bitboard_mask::bit2nmasknot[sto]);
+            data.whitepieces = (data.whitepieces & petir_bitboard_mask::bitnot(sto));
             if ((captured_piece == petir_header::_pionputih)) {
-                data.pawnwhite = (data.pawnwhite & petir_bitboard_mask::bit2nmasknot[sto]);
+                data.pawnwhite = (data.pawnwhite & petir_bitboard_mask::bitnot(sto));
                 (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_pion));
                 data.cp = petir_header::_pionputih;
             } else {
                 if ((captured_piece == petir_header::_kudaputih)) {
                     (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_kuda));
-                    data.knightwhite = (data.knightwhite & petir_bitboard_mask::bit2nmasknot[sto]);
+                    data.knightwhite = (data.knightwhite & petir_bitboard_mask::bitnot(sto));
                     (data.nilai_perwira_putih = pas::decrement(data.nilai_perwira_putih, 3));
                     data.cp = petir_header::_kudaputih;
                 } else {
                     if ((captured_piece == petir_header::_gajahputih)) {
                         (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_gajah));
-                        data.bishopwhite = (data.bishopwhite & petir_bitboard_mask::bit2nmasknot[sto]);
-                        data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bit2nmasknot[sto]);
+                        data.bishopwhite = (data.bishopwhite & petir_bitboard_mask::bitnot(sto));
+                        data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bitnot(sto));
                         (data.nilai_perwira_putih = pas::decrement(data.nilai_perwira_putih, 3));
                         data.cp = petir_header::_kudaputih;
                         (data.ngajahputih = pas::decrement(data.ngajahputih, 1));
                     } else {
                         if ((captured_piece == petir_header::_bentengputih)) {
                             (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_benteng));
-                            data.rookwhite = (data.rookwhite & petir_bitboard_mask::bit2nmasknot[sto]);
-                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[sto]);
+                            data.rookwhite = (data.rookwhite & petir_bitboard_mask::bitnot(sto));
+                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(sto));
                             (data.nilai_perwira_putih = pas::decrement(data.nilai_perwira_putih, 5));
                             data.cp = petir_header::_bentengputih;
                         } else {
                             (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_mentri));
-                            data.queenwhite = (data.queenwhite & petir_bitboard_mask::bit2nmasknot[sto]);
-                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[sto]);
-                            data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bit2nmasknot[sto]);
+                            data.queenwhite = (data.queenwhite & petir_bitboard_mask::bitnot(sto));
+                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(sto));
+                            data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bitnot(sto));
                             (data.nilai_perwira_putih = pas::decrement(data.nilai_perwira_putih, 9));
                             data.cp = petir_header::_mentriputih;
                         }
@@ -256,10 +256,10 @@ void makeblackmove(std::int32_t moves, petir_header::tdata& data) {
         }
         data.papan[sto] = piece;
         data.papan[sfrom] = 0;
-        data.blackpieces = (data.blackpieces & petir_bitboard_mask::bit2nmasknot[sfrom]);
-        data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit2nmask[sto]);
-        data.allpieces = (data.allpieces & petir_bitboard_mask::bit2nmasknot[sfrom]);
-        data.allpieces = (data.allpieces | petir_bitboard_mask::bit2nmask[sto]);
+        data.blackpieces = (data.blackpieces & petir_bitboard_mask::bitnot(sfrom));
+        data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit(sto));
+        data.allpieces = (data.allpieces & petir_bitboard_mask::bitnot(sfrom));
+        data.allpieces = (data.allpieces | petir_bitboard_mask::bit(sto));
         data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[sfrom]));
         data.allpiecesr90 = (data.allpiecesr90 | petir_bitboard_mask::bit2nmask90[sto]);
         data.allpiecesa8h1 = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[sfrom]));
@@ -268,8 +268,8 @@ void makeblackmove(std::int32_t moves, petir_header::tdata& data) {
         data.allpiecesh8a1 = (data.allpiecesh8a1 | petir_bitboard_mask::bit2nmaskh8a1[sto]);
         if ((piece == petir_header::_pionhitam)) {
             data.move50count = 0;
-            data.pawnblack = (data.pawnblack | petir_bitboard_mask::bit2nmask[sto]);
-            data.pawnblack = (data.pawnblack & petir_bitboard_mask::bit2nmasknot[sfrom]);
+            data.pawnblack = (data.pawnblack | petir_bitboard_mask::bit(sto));
+            data.pawnblack = (data.pawnblack & petir_bitboard_mask::bitnot(sfrom));
             promosi = (pas::shr(moves, 14) & 7);
             if (((sto <= petir_header::h1) && (promosi == 0))) {
                 promosi = petir_header::promosi_mentri;
@@ -280,20 +280,20 @@ void makeblackmove(std::int32_t moves, petir_header::tdata& data) {
             }
         } else {
             if ((piece == petir_header::_kudahitam)) {
-                data.knightblack = (data.knightblack | petir_bitboard_mask::bit2nmask[sto]);
-                data.knightblack = (data.knightblack & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                data.knightblack = (data.knightblack | petir_bitboard_mask::bit(sto));
+                data.knightblack = (data.knightblack & petir_bitboard_mask::bitnot(sfrom));
             } else {
                 if ((piece == petir_header::_gajahhitam)) {
-                    data.bishopblack = (data.bishopblack | petir_bitboard_mask::bit2nmask[sto]);
-                    data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
-                    data.bishopblack = (data.bishopblack & petir_bitboard_mask::bit2nmasknot[sfrom]);
-                    data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                    data.bishopblack = (data.bishopblack | petir_bitboard_mask::bit(sto));
+                    data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit(sto));
+                    data.bishopblack = (data.bishopblack & petir_bitboard_mask::bitnot(sfrom));
+                    data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bitnot(sfrom));
                 } else {
                     if ((piece == petir_header::_bentenghitam)) {
-                        data.rookblack = (data.rookblack | petir_bitboard_mask::bit2nmask[sto]);
-                        data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[sto]);
-                        data.rookblack = (data.rookblack & petir_bitboard_mask::bit2nmasknot[sfrom]);
-                        data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                        data.rookblack = (data.rookblack | petir_bitboard_mask::bit(sto));
+                        data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(sto));
+                        data.rookblack = (data.rookblack & petir_bitboard_mask::bitnot(sfrom));
+                        data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(sfrom));
                         if (((data.flagrokade & petir_header::bithitamnoc) != 0)) {
                             if ((sfrom == petir_header::h8)) {
                                 data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
@@ -309,16 +309,16 @@ void makeblackmove(std::int32_t moves, petir_header::tdata& data) {
                         }
                     } else {
                         if ((piece == petir_header::_mentrihitam)) {
-                            data.queenblack = (data.queenblack | petir_bitboard_mask::bit2nmask[sto]);
-                            data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[sto]);
-                            data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
-                            data.queenblack = (data.queenblack & petir_bitboard_mask::bit2nmasknot[sfrom]);
-                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[sfrom]);
-                            data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                            data.queenblack = (data.queenblack | petir_bitboard_mask::bit(sto));
+                            data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(sto));
+                            data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit(sto));
+                            data.queenblack = (data.queenblack & petir_bitboard_mask::bitnot(sfrom));
+                            data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(sfrom));
+                            data.bishopqueen = (data.bishopqueen & petir_bitboard_mask::bitnot(sfrom));
                         } else {
                             if ((piece == petir_header::_rajahitam)) {
-                                data.kingblack = (data.kingblack | petir_bitboard_mask::bit2nmask[sto]);
-                                data.kingblack = (data.kingblack & petir_bitboard_mask::bit2nmasknot[sfrom]);
+                                data.kingblack = (data.kingblack | petir_bitboard_mask::bit(sto));
+                                data.kingblack = (data.kingblack & petir_bitboard_mask::bitnot(sfrom));
                                 if (((data.flagrokade & petir_header::bithitamnoc) != 0)) {
                                     data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
                                     data.flagrokade = (data.flagrokade & (~petir_header::bithitamnoc));
@@ -341,40 +341,40 @@ void cekerror(petir_header::tdata data) {
     std::int32_t pas_temp_1{};
     pas_temp_1 = 63;
     for (a = 0; a <= pas_temp_1; ++a) {
-        if (((data.papan[a] == petir_header::_pionputih) && ((petir_bitboard_mask::bit2nmask[a] & data.pawnwhite) == 0))) {
+        if (((data.papan[a] == petir_header::_pionputih) && ((petir_bitboard_mask::bit(a) & data.pawnwhite) == 0))) {
             pas::form1.caption = pas::String("error 1");
         }
-        if (((data.papan[a] == petir_header::_pionhitam) && ((petir_bitboard_mask::bit2nmask[a] & data.pawnblack) == 0))) {
+        if (((data.papan[a] == petir_header::_pionhitam) && ((petir_bitboard_mask::bit(a) & data.pawnblack) == 0))) {
             pas::form1.caption = pas::String("error 2");
         }
-        if (((data.papan[a] == petir_header::_kudaputih) && ((petir_bitboard_mask::bit2nmask[a] & data.knightwhite) == 0))) {
+        if (((data.papan[a] == petir_header::_kudaputih) && ((petir_bitboard_mask::bit(a) & data.knightwhite) == 0))) {
             pas::form1.caption = pas::String("error 30");
         }
-        if (((data.papan[a] == petir_header::_gajahputih) && ((petir_bitboard_mask::bit2nmask[a] & data.bishopwhite) == 0))) {
+        if (((data.papan[a] == petir_header::_gajahputih) && ((petir_bitboard_mask::bit(a) & data.bishopwhite) == 0))) {
             pas::form1.caption = pas::String("error 4");
         }
-        if (((data.papan[a] == petir_header::_bentengputih) && ((petir_bitboard_mask::bit2nmask[a] & data.rookwhite) == 0))) {
+        if (((data.papan[a] == petir_header::_bentengputih) && ((petir_bitboard_mask::bit(a) & data.rookwhite) == 0))) {
             pas::form1.caption = pas::String("error 5");
         }
-        if (((data.papan[a] == petir_header::_mentriputih) && ((petir_bitboard_mask::bit2nmask[a] & data.queenwhite) == 0))) {
+        if (((data.papan[a] == petir_header::_mentriputih) && ((petir_bitboard_mask::bit(a) & data.queenwhite) == 0))) {
             pas::form1.caption = pas::String("error 6");
         }
-        if (((data.papan[a] == petir_header::_rajaputih) && ((petir_bitboard_mask::bit2nmask[a] & data.kingwhite) == 0))) {
+        if (((data.papan[a] == petir_header::_rajaputih) && ((petir_bitboard_mask::bit(a) & data.kingwhite) == 0))) {
             pas::form1.caption = pas::String("error 7");
         }
-        if (((data.papan[a] == petir_header::_rajahitam) && ((petir_bitboard_mask::bit2nmask[a] & data.kingblack) == 0))) {
+        if (((data.papan[a] == petir_header::_rajahitam) && ((petir_bitboard_mask::bit(a) & data.kingblack) == 0))) {
             pas::form1.caption = pas::String("error 8");
         }
-        if (((data.papan[a] == petir_header::_bentenghitam) && ((petir_bitboard_mask::bit2nmask[a] & data.rookblack) == 0))) {
+        if (((data.papan[a] == petir_header::_bentenghitam) && ((petir_bitboard_mask::bit(a) & data.rookblack) == 0))) {
             pas::form1.caption = pas::String("error 8");
         }
-        if (((data.papan[a] == petir_header::_mentrihitam) && ((petir_bitboard_mask::bit2nmask[a] & data.queenblack) == 0))) {
+        if (((data.papan[a] == petir_header::_mentrihitam) && ((petir_bitboard_mask::bit(a) & data.queenblack) == 0))) {
             pas::form1.caption = pas::String("error 8");
         }
-        if (((data.papan[a] == petir_header::_gajahhitam) && ((petir_bitboard_mask::bit2nmask[a] & data.bishopblack) == 0))) {
+        if (((data.papan[a] == petir_header::_gajahhitam) && ((petir_bitboard_mask::bit(a) & data.bishopblack) == 0))) {
             pas::form1.caption = pas::String("error 8");
         }
-        if (((data.papan[a] == petir_header::_kudahitam) && ((petir_bitboard_mask::bit2nmask[a] & data.knightblack) == 0))) {
+        if (((data.papan[a] == petir_header::_kudahitam) && ((petir_bitboard_mask::bit(a) & data.knightblack) == 0))) {
             pas::form1.caption = pas::String("error 8");
         }
         if (((data.papan[a] != 0) && ((petir_bitboard_mask::bit2nmaska8h1[a] & data.allpiecesa8h1) == 0))) {
@@ -402,7 +402,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.allpieces;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] == 0)) {
             pas::form1.caption = pas::String("error4");
         }
@@ -419,7 +419,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.whitepieces;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] <= 0)) {
             pas::form1.caption = pas::String("error4");
         }
@@ -436,7 +436,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.blackpieces;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] >= 0)) {
             pas::form1.caption = pas::String("error5");
         }
@@ -453,7 +453,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.pawnblack;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_pionhitam)) {
             pas::form1.caption = pas::String("error6");
         }
@@ -461,7 +461,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.knightblack;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_kudahitam)) {
             pas::form1.caption = pas::String("error7");
         }
@@ -469,7 +469,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.bishopblack;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_gajahhitam)) {
             pas::form1.caption = pas::String("error8");
         }
@@ -477,7 +477,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.rookblack;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_bentenghitam)) {
             pas::form1.caption = pas::String("error9");
         }
@@ -485,7 +485,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.queenblack;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_mentrihitam)) {
             pas::form1.caption = pas::String("error100");
             return;
@@ -494,7 +494,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.kingblack;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_rajahitam)) {
             pas::form1.caption = pas::String("error 11");
         }
@@ -502,7 +502,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.pawnwhite;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_pionputih)) {
             pas::form1.caption = pas::String("error 12");
         }
@@ -510,7 +510,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.knightwhite;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_kudaputih)) {
             pas::form1.caption = pas::String("error 13");
         }
@@ -518,7 +518,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.bishopwhite;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_gajahputih)) {
             pas::form1.caption = pas::String("error 14");
         }
@@ -526,7 +526,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.rookwhite;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_bentengputih)) {
             pas::form1.caption = pas::String("error 15");
         }
@@ -534,7 +534,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.queenwhite;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::firstbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_mentriputih)) {
             pas::form1.caption = pas::String("error 16");
         }
@@ -542,7 +542,7 @@ void cekerror(petir_header::tdata data) {
     piecepos = data.kingwhite;
     while ((piecepos != 0)) {
         pos = petir_bitboard_mask::lastbitp(pas::address(piecepos));
-        piecepos = (piecepos & petir_bitboard_mask::bit2nmasknot[pos]);
+        piecepos = (piecepos & petir_bitboard_mask::bitnot(pos));
         if ((data.papan[pos] != petir_header::_rajaputih)) {
             pas::form1.caption = pas::String("error 17");
         }
@@ -563,16 +563,16 @@ void whiterokadependek(petir_header::tdata& data) {
     data.papan[petir_header::h1] = 0;
     data.papan[petir_header::f1] = petir_header::_bentengputih;
     data.papan[petir_header::g1] = petir_header::_rajaputih;
-    data.kingwhite = (data.kingwhite & petir_bitboard_mask::bit2nmasknot[petir_header::e1]);
-    data.rookwhite = (data.rookwhite & petir_bitboard_mask::bit2nmasknot[petir_header::h1]);
-    data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[petir_header::h1]);
-    data.rookwhite = (data.rookwhite | petir_bitboard_mask::bit2nmask[petir_header::f1]);
-    data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[petir_header::f1]);
-    data.kingwhite = (data.kingwhite | petir_bitboard_mask::bit2nmask[petir_header::g1]);
-    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bit2nmasknot[petir_header::e1]);
-    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bit2nmasknot[petir_header::h1]);
-    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit2nmask[petir_header::f1]);
-    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit2nmask[petir_header::g1]);
+    data.kingwhite = (data.kingwhite & petir_bitboard_mask::bitnot(petir_header::e1));
+    data.rookwhite = (data.rookwhite & petir_bitboard_mask::bitnot(petir_header::h1));
+    data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(petir_header::h1));
+    data.rookwhite = (data.rookwhite | petir_bitboard_mask::bit(petir_header::f1));
+    data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(petir_header::f1));
+    data.kingwhite = (data.kingwhite | petir_bitboard_mask::bit(petir_header::g1));
+    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bitnot(petir_header::e1));
+    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bitnot(petir_header::h1));
+    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit(petir_header::f1));
+    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit(petir_header::g1));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[petir_header::e1]));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[petir_header::h1]));
     data.allpiecesr90 = (data.allpiecesr90 | petir_bitboard_mask::bit2nmask90[petir_header::f1]);
@@ -605,16 +605,16 @@ void whiterokadepanjang(petir_header::tdata& data) {
     data.papan[petir_header::a1] = 0;
     data.papan[petir_header::d1] = petir_header::_bentengputih;
     data.papan[petir_header::c1] = petir_header::_rajaputih;
-    data.kingwhite = (data.kingwhite & petir_bitboard_mask::bit2nmasknot[petir_header::e1]);
-    data.rookwhite = (data.rookwhite & petir_bitboard_mask::bit2nmasknot[petir_header::a1]);
-    data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[petir_header::a1]);
-    data.rookwhite = (data.rookwhite | petir_bitboard_mask::bit2nmask[petir_header::d1]);
-    data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[petir_header::d1]);
-    data.kingwhite = (data.kingwhite | petir_bitboard_mask::bit2nmask[petir_header::c1]);
-    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bit2nmasknot[petir_header::e1]);
-    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bit2nmasknot[petir_header::a1]);
-    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit2nmask[petir_header::d1]);
-    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit2nmask[petir_header::c1]);
+    data.kingwhite = (data.kingwhite & petir_bitboard_mask::bitnot(petir_header::e1));
+    data.rookwhite = (data.rookwhite & petir_bitboard_mask::bitnot(petir_header::a1));
+    data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(petir_header::a1));
+    data.rookwhite = (data.rookwhite | petir_bitboard_mask::bit(petir_header::d1));
+    data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(petir_header::d1));
+    data.kingwhite = (data.kingwhite | petir_bitboard_mask::bit(petir_header::c1));
+    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bitnot(petir_header::e1));
+    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bitnot(petir_header::a1));
+    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit(petir_header::d1));
+    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit(petir_header::c1));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[petir_header::e1]));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[petir_header::a1]));
     data.allpiecesr90 = (data.allpiecesr90 | petir_bitboard_mask::bit2nmask90[petir_header::d1]);
@@ -647,16 +647,16 @@ void blackrokadependek(petir_header::tdata& data) {
     data.papan[petir_header::h8] = 0;
     data.papan[petir_header::f8] = petir_header::_bentenghitam;
     data.papan[petir_header::g8] = petir_header::_rajahitam;
-    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bit2nmasknot[petir_header::e8]);
-    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bit2nmasknot[petir_header::h8]);
-    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit2nmask[petir_header::f8]);
-    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit2nmask[petir_header::g8]);
-    data.kingblack = (data.kingblack & petir_bitboard_mask::bit2nmasknot[petir_header::e8]);
-    data.rookblack = (data.rookblack & petir_bitboard_mask::bit2nmasknot[petir_header::h8]);
-    data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[petir_header::h8]);
-    data.rookblack = (data.rookblack | petir_bitboard_mask::bit2nmask[petir_header::f8]);
-    data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[petir_header::f8]);
-    data.kingblack = (data.kingblack | petir_bitboard_mask::bit2nmask[petir_header::g8]);
+    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bitnot(petir_header::e8));
+    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bitnot(petir_header::h8));
+    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit(petir_header::f8));
+    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit(petir_header::g8));
+    data.kingblack = (data.kingblack & petir_bitboard_mask::bitnot(petir_header::e8));
+    data.rookblack = (data.rookblack & petir_bitboard_mask::bitnot(petir_header::h8));
+    data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(petir_header::h8));
+    data.rookblack = (data.rookblack | petir_bitboard_mask::bit(petir_header::f8));
+    data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(petir_header::f8));
+    data.kingblack = (data.kingblack | petir_bitboard_mask::bit(petir_header::g8));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[petir_header::e8]));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[petir_header::h8]));
     data.allpiecesr90 = (data.allpiecesr90 | petir_bitboard_mask::bit2nmask90[petir_header::f8]);
@@ -689,16 +689,16 @@ void blackrokadepanjang(petir_header::tdata& data) {
     data.papan[petir_header::a8] = 0;
     data.papan[petir_header::d8] = petir_header::_bentenghitam;
     data.papan[petir_header::c8] = petir_header::_rajahitam;
-    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bit2nmasknot[petir_header::e8]);
-    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bit2nmasknot[petir_header::a8]);
-    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit2nmask[petir_header::d8]);
-    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit2nmask[petir_header::c8]);
-    data.kingblack = (data.kingblack & petir_bitboard_mask::bit2nmasknot[petir_header::e8]);
-    data.rookblack = (data.rookblack & petir_bitboard_mask::bit2nmasknot[petir_header::a8]);
-    data.rookqueen = (data.rookqueen & petir_bitboard_mask::bit2nmasknot[petir_header::a8]);
-    data.rookblack = (data.rookblack | petir_bitboard_mask::bit2nmask[petir_header::d8]);
-    data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[petir_header::d8]);
-    data.kingblack = (data.kingblack | petir_bitboard_mask::bit2nmask[petir_header::c8]);
+    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bitnot(petir_header::e8));
+    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bitnot(petir_header::a8));
+    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit(petir_header::d8));
+    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit(petir_header::c8));
+    data.kingblack = (data.kingblack & petir_bitboard_mask::bitnot(petir_header::e8));
+    data.rookblack = (data.rookblack & petir_bitboard_mask::bitnot(petir_header::a8));
+    data.rookqueen = (data.rookqueen & petir_bitboard_mask::bitnot(petir_header::a8));
+    data.rookblack = (data.rookblack | petir_bitboard_mask::bit(petir_header::d8));
+    data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(petir_header::d8));
+    data.kingblack = (data.kingblack | petir_bitboard_mask::bit(petir_header::c8));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[petir_header::e8]));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[petir_header::a8]));
     data.allpiecesr90 = (data.allpiecesr90 | petir_bitboard_mask::bit2nmask90[petir_header::d8]);
@@ -735,12 +735,12 @@ void black_ep(petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto) {
     data.papan[sto] = petir_header::_pionhitam;
     data.papan[sfrom] = 0;
     data.papan[pas::add(sto, 8)] = 0;
-    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bit2nmasknot[pas::add(sto, 8)]);
-    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bit2nmasknot[sfrom]);
-    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit2nmask[sto]);
-    data.allpieces = (data.allpieces & petir_bitboard_mask::bit2nmasknot[pas::add(sto, 8)]);
-    data.allpieces = (data.allpieces & petir_bitboard_mask::bit2nmasknot[sfrom]);
-    data.allpieces = (data.allpieces | petir_bitboard_mask::bit2nmask[sto]);
+    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bitnot(pas::add(sto, 8)));
+    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bitnot(sfrom));
+    data.blackpieces = (data.blackpieces | petir_bitboard_mask::bit(sto));
+    data.allpieces = (data.allpieces & petir_bitboard_mask::bitnot(pas::add(sto, 8)));
+    data.allpieces = (data.allpieces & petir_bitboard_mask::bitnot(sfrom));
+    data.allpieces = (data.allpieces | petir_bitboard_mask::bit(sto));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[pas::add(sto, 8)]));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[sfrom]));
     data.allpiecesr90 = (data.allpiecesr90 | petir_bitboard_mask::bit2nmask90[sto]);
@@ -750,9 +750,9 @@ void black_ep(petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto) {
     data.allpiecesh8a1 = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[pas::add(sto, 8)]));
     data.allpiecesh8a1 = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[sfrom]));
     data.allpiecesh8a1 = (data.allpiecesh8a1 | petir_bitboard_mask::bit2nmaskh8a1[sto]);
-    data.pawnblack = (data.pawnblack & petir_bitboard_mask::bit2nmasknot[sfrom]);
-    data.pawnwhite = (data.pawnwhite & petir_bitboard_mask::bit2nmasknot[pas::add(sto, 8)]);
-    data.pawnblack = (data.pawnblack | petir_bitboard_mask::bit2nmask[sto]);
+    data.pawnblack = (data.pawnblack & petir_bitboard_mask::bitnot(sfrom));
+    data.pawnwhite = (data.pawnwhite & petir_bitboard_mask::bitnot(pas::add(sto, 8)));
+    data.pawnblack = (data.pawnblack | petir_bitboard_mask::bit(sto));
 }
 
 // makemove.pas:279
@@ -773,12 +773,12 @@ void white_ep(petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto) {
     data.papan[sto] = petir_header::_pionputih;
     data.papan[sfrom] = 0;
     data.papan[pas::sub(sto, 8)] = 0;
-    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bit2nmasknot[pas::sub(sto, 8)]);
-    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bit2nmasknot[sfrom]);
-    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit2nmask[sto]);
-    data.allpieces = (data.allpieces & petir_bitboard_mask::bit2nmasknot[pas::sub(sto, 8)]);
-    data.allpieces = (data.allpieces & petir_bitboard_mask::bit2nmasknot[sfrom]);
-    data.allpieces = (data.allpieces | petir_bitboard_mask::bit2nmask[sto]);
+    data.blackpieces = (data.blackpieces & petir_bitboard_mask::bitnot(pas::sub(sto, 8)));
+    data.whitepieces = (data.whitepieces & petir_bitboard_mask::bitnot(sfrom));
+    data.whitepieces = (data.whitepieces | petir_bitboard_mask::bit(sto));
+    data.allpieces = (data.allpieces & petir_bitboard_mask::bitnot(pas::sub(sto, 8)));
+    data.allpieces = (data.allpieces & petir_bitboard_mask::bitnot(sfrom));
+    data.allpieces = (data.allpieces | petir_bitboard_mask::bit(sto));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[pas::sub(sto, 8)]));
     data.allpiecesr90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[sfrom]));
     data.allpiecesr90 = (data.allpiecesr90 | petir_bitboard_mask::bit2nmask90[sto]);
@@ -788,45 +788,45 @@ void white_ep(petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto) {
     data.allpiecesh8a1 = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[pas::sub(sto, 8)]));
     data.allpiecesh8a1 = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[sfrom]));
     data.allpiecesh8a1 = (data.allpiecesh8a1 | petir_bitboard_mask::bit2nmaskh8a1[sto]);
-    data.pawnwhite = (data.pawnwhite & petir_bitboard_mask::bit2nmasknot[sfrom]);
-    data.pawnblack = (data.pawnblack & petir_bitboard_mask::bit2nmasknot[pas::sub(sto, 8)]);
-    data.pawnwhite = (data.pawnwhite | petir_bitboard_mask::bit2nmask[sto]);
+    data.pawnwhite = (data.pawnwhite & petir_bitboard_mask::bitnot(sfrom));
+    data.pawnblack = (data.pawnblack & petir_bitboard_mask::bitnot(pas::sub(sto, 8)));
+    data.pawnwhite = (data.pawnwhite | petir_bitboard_mask::bit(sto));
 }
 
 // makemove.pas:326
 void promosi_putih(petir_header::tdata& data, std::int32_t sto, std::int32_t promosi) {
-    data.pawnwhite = (data.pawnwhite & (~petir_bitboard_mask::bit2nmask[sto]));
+    data.pawnwhite = (data.pawnwhite & (~petir_bitboard_mask::bit(sto)));
     (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_pion));
     data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionputih][sto]);
     if ((promosi == petir_header::promosi_mentri)) {
         data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_mentriputih][sto]);
         data.papan[sto] = petir_header::_mentriputih;
-        data.queenwhite = (data.queenwhite | petir_bitboard_mask::bit2nmask[sto]);
-        data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
-        data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[sto]);
+        data.queenwhite = (data.queenwhite | petir_bitboard_mask::bit(sto));
+        data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit(sto));
+        data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(sto));
         (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_mentri));
         (data.nilai_perwira_putih = pas::increment(data.nilai_perwira_putih, 9));
     } else {
         if ((promosi == petir_header::promosi_kuda)) {
             data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_kudaputih][sto]);
             data.papan[sto] = petir_header::_kudaputih;
-            data.knightwhite = (data.knightwhite | petir_bitboard_mask::bit2nmask[sto]);
+            data.knightwhite = (data.knightwhite | petir_bitboard_mask::bit(sto));
             (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_kuda));
             (data.nilai_perwira_putih = pas::increment(data.nilai_perwira_putih, 3));
         } else {
             if ((promosi == petir_header::promosi_benteng)) {
                 data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentengputih][sto]);
                 data.papan[sto] = petir_header::_bentengputih;
-                data.rookwhite = (data.rookwhite | petir_bitboard_mask::bit2nmask[sto]);
-                data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[sto]);
+                data.rookwhite = (data.rookwhite | petir_bitboard_mask::bit(sto));
+                data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(sto));
                 (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_benteng));
                 (data.nilai_perwira_putih = pas::increment(data.nilai_perwira_putih, 5));
             } else {
                 if ((promosi == petir_header::promosi_gajah)) {
                     data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_gajahputih][sto]);
                     data.papan[sto] = petir_header::_gajahputih;
-                    data.bishopwhite = (data.bishopwhite | petir_bitboard_mask::bit2nmask[sto]);
-                    data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
+                    data.bishopwhite = (data.bishopwhite | petir_bitboard_mask::bit(sto));
+                    data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit(sto));
                     (data.ngajahputih = pas::increment(data.ngajahputih, 1));
                     (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_gajah));
                     (data.nilai_perwira_putih = pas::increment(data.nilai_perwira_putih, 3));
@@ -838,38 +838,38 @@ void promosi_putih(petir_header::tdata& data, std::int32_t sto, std::int32_t pro
 
 // makemove.pas:369
 void promosi_hitam(petir_header::tdata& data, std::int32_t sto, std::int32_t promosi) {
-    data.pawnblack = (data.pawnblack & (~petir_bitboard_mask::bit2nmask[sto]));
+    data.pawnblack = (data.pawnblack & (~petir_bitboard_mask::bit(sto)));
     (data.materialscore = pas::increment(data.materialscore, petir_header::_nilai_pion));
     data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionhitam][sto]);
     if ((promosi == petir_header::promosi_mentri)) {
         data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_mentrihitam][sto]);
         data.papan[sto] = petir_header::_mentrihitam;
-        data.queenblack = (data.queenblack | petir_bitboard_mask::bit2nmask[sto]);
-        data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[sto]);
-        data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
+        data.queenblack = (data.queenblack | petir_bitboard_mask::bit(sto));
+        data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(sto));
+        data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit(sto));
         (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_mentri));
         (data.nilai_perwira_hitam = pas::increment(data.nilai_perwira_hitam, 9));
     } else {
         if ((promosi == petir_header::promosi_kuda)) {
             data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_kudahitam][sto]);
             data.papan[sto] = petir_header::_kudahitam;
-            data.knightblack = (data.knightblack | petir_bitboard_mask::bit2nmask[sto]);
+            data.knightblack = (data.knightblack | petir_bitboard_mask::bit(sto));
             (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_kuda));
             (data.nilai_perwira_hitam = pas::increment(data.nilai_perwira_hitam, 3));
         } else {
             if ((promosi == petir_header::promosi_benteng)) {
                 data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentenghitam][sto]);
                 data.papan[sto] = petir_header::_bentenghitam;
-                data.rookblack = (data.rookblack | petir_bitboard_mask::bit2nmask[sto]);
-                data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit2nmask[sto]);
+                data.rookblack = (data.rookblack | petir_bitboard_mask::bit(sto));
+                data.rookqueen = (data.rookqueen | petir_bitboard_mask::bit(sto));
                 (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_benteng));
                 (data.nilai_perwira_hitam = pas::increment(data.nilai_perwira_hitam, 5));
             } else {
                 if ((promosi == petir_header::promosi_gajah)) {
                     data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_gajahhitam][sto]);
                     data.papan[sto] = petir_header::_gajahhitam;
-                    data.bishopblack = (data.bishopblack | petir_bitboard_mask::bit2nmask[sto]);
-                    data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit2nmask[sto]);
+                    data.bishopblack = (data.bishopblack | petir_bitboard_mask::bit(sto));
+                    data.bishopqueen = (data.bishopqueen | petir_bitboard_mask::bit(sto));
                     (data.ngajahhitam = pas::increment(data.ngajahhitam, 1));
                     (data.materialscore = pas::decrement(data.materialscore, petir_header::_nilai_gajah));
                     (data.nilai_perwira_hitam = pas::increment(data.nilai_perwira_hitam, 3));

@@ -1,6 +1,9 @@
 // Faithful translation of header.pas; Delphi source is in original/.
 #include "petir.hpp"
 namespace petir_header {
+void move_list_index_error(std::int64_t i) {
+    throw std::out_of_range("Move list index " + std::to_string(i) + " outside 1..256");
+}
 std::int32_t totaladdhash{};
 std::int32_t collision{};
 std::int32_t futfail{};

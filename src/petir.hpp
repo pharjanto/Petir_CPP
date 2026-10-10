@@ -2,6 +2,10 @@
 #pragma once
 #include "pascal_runtime.hpp"
 #include "time_manager.hpp"
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <intrin.h>
+#include <xmmintrin.h>
+#endif
 namespace petir_header {
 inline constexpr auto version = 1;
 inline constexpr auto a1 = 0;
@@ -123,6 +127,13 @@ inline constexpr auto promosi_kuda = 2;
 inline constexpr auto promosi_gajah = 3;
 inline constexpr auto promosi_benteng = 4;
 inline pas::Array<std::uint16_t, 0, 12> bit8mask = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
+// bit8mask[i] as the int it promotes to; checked builds keep the table's range check.
+inline std::int32_t bit8(std::int64_t i) {
+#ifdef PETIR_CHECK_BOUNDS
+    (void)bit8mask[i];
+#endif
+    return std::int32_t(1) << i;
+}
 inline constexpr auto level_nm = 3;
 inline constexpr auto _hashmove = 0;
 inline constexpr auto _goodcaps = 1;
@@ -159,13 +170,19 @@ struct tmoverecord {
 using pmoverecord = petir_header::tmoverecord*;
 // Move generation can exceed the legacy 100-entry limit after promotions.
 // Keep this capacity guard even when general Pascal bounds checks are off.
+// The throw lives out of line so each access is one compare and branch.
+#if defined(_MSC_VER)
+[[noreturn]] __declspec(noinline) void move_list_index_error(std::int64_t i);
+#else
+[[noreturn]] __attribute__((noinline)) void move_list_index_error(std::int64_t i);
+#endif
 struct tmovelist : pas::Array<petir_header::tmoverecord, 1, 256> {
     tmoverecord& operator[](std::int64_t i) {
-        if(i<1 || i>256)throw std::out_of_range("Move list index " + std::to_string(i) + " outside 1..256");
+        if(static_cast<std::uint64_t>(i-1)>=256) [[unlikely]] move_list_index_error(i);
         return values[i-1];
     }
     const tmoverecord& operator[](std::int64_t i) const {
-        if(i<1 || i>256)throw std::out_of_range("Move list index " + std::to_string(i) + " outside 1..256");
+        if(static_cast<std::uint64_t>(i-1)>=256) [[unlikely]] move_list_index_error(i);
         return values[i-1];
     }
 };
@@ -326,6 +343,35 @@ inline pas::Array<std::uint8_t, 0, 63> a8h1shiftmask = {0, 1, 3, 6, 10, 15, 21, 
 inline pas::Array<std::uint8_t, 0, 63> vershiftmask = {57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1};
 extern pas::Array<std::uint64_t, 0, 63> bit2nmask;
 extern pas::Array<std::uint64_t, 0, 63> bit2nmasknot;
+// bit2nmask[sq] and bit2nmasknot[sq] computed with a shift. Unlike table loads,
+// these stay in registers across the position stores in move making; checked
+// builds keep the tables' range check.
+inline std::uint64_t bit(std::int64_t sq) {
+#ifdef PETIR_CHECK_BOUNDS
+    (void)bit2nmask[sq];
+#endif
+    return UINT64_C(1) << sq;
+}
+inline std::uint64_t bitnot(std::int64_t sq) {
+#ifdef PETIR_CHECK_BOUNDS
+    (void)bit2nmasknot[sq];
+#endif
+    return ~(UINT64_C(1) << sq);
+}
+// Square of a king bitboard. A king board holds exactly one bit, so firstbitp
+// and lastbitp agree; one forward scan replaces lastbitp's two scans.
+inline std::int32_t king_square(std::uint64_t king) {
+#ifdef PETIR_CHECK_BOUNDS
+    if (!king || (king & (king - 1))) throw std::out_of_range("King bitboard does not hold exactly one king");
+#endif
+#if defined(_MSC_VER) && defined(_M_X64)
+    unsigned long square;
+    _BitScanForward64(&square, king);
+    return static_cast<std::int32_t>(square);
+#else
+    return std::countr_zero(king);
+#endif
+}
 extern pas::Array<std::uint64_t, 0, 63> bit2nmask90;
 extern pas::Array<std::uint64_t, 0, 63> bit2nmaska8h1;
 extern pas::Array<std::uint64_t, 0, 63> bit2nmaskh8a1;
@@ -442,7 +488,11 @@ namespace petir_hashing {
 extern std::int32_t anu;
 }
 namespace petir_repetition {
-inline constexpr auto maxhashdraw = pas::mul(32768, 2);
+// Lookups compare full keys and search adds/removes entries in stack order, so
+// counts do not depend on table size while a free slot remains. 16384 slots per
+// side exceed the positions of any legal game plus the search path, and keep
+// the table cache-resident (originally 65536 slots, 1.25 MiB in total).
+inline constexpr auto maxhashdraw = 16384;
 #pragma pack(push, 1)
 struct treprecord {
     bool used;
@@ -747,6 +797,18 @@ void coba();
 namespace petir_hashing {
 void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::int32_t moves, std::int32_t nilai, std::int32_t tipe, std::uint8_t move50count);
 bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t level, std::int32_t giliran, std::int32_t& nilai, std::int32_t& moves, bool& avoidnm, std::uint8_t move50count);
+// Cache hint only: starts loading the entry searchhash will read for this key.
+inline void prefetch(std::uint64_t key, std::int32_t giliran) {
+    if (giliran == petir_header::_sisihitam) key = ~key;
+    const auto* entry = petir_hashing_header::hashtable.data() + (key & pas::sub(petir_header::maxhash, 1));
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    _mm_prefetch(reinterpret_cast<const char*>(entry), _MM_HINT_T0);
+#elif defined(__GNUC__)
+    __builtin_prefetch(entry);
+#else
+    (void)entry;
+#endif
+}
 }
 namespace petir_repetition {
 void initrepdata();

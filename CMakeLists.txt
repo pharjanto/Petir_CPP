@@ -33,6 +33,8 @@ if(PETIR_CHECK_BOUNDS)
 endif()
 if(MSVC)
     target_compile_options(petir PRIVATE /utf-8 /W3 /permissive-)
+    # Release omits stack-cookie checks; search results are unaffected.
+    target_compile_options(petir PRIVATE $<$<CONFIG:Release>:/GS->)
 else()
     target_compile_options(petir PRIVATE -fwrapv -fno-strict-aliasing)
     if(PETIR_SANITIZERS)

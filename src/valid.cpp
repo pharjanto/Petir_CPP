@@ -41,7 +41,7 @@ bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran
     }
     piece2 = pas::abs(piece);
     if ((sto <= 63)) {
-        bitto = petir_bitboard_mask::bit2nmask[sto];
+        bitto = petir_bitboard_mask::bit(sto);
     }
     if ((piece == petir_header::_pionputih)) {
         d = pas::sub(sto, sfrom);

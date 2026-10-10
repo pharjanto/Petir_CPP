@@ -123,7 +123,7 @@ bool white_checked(petir_header::tdata& data) {
     bool return_value{};
     std::uint64_t attack{};
     std::int32_t pos{};
-    pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    pos = petir_bitboard_mask::king_square(data.kingwhite);
     if (((petir_bitboard_mask::knightmask[pos] & data.knightblack) != 0)) {
         return_value = true;
         return return_value;
@@ -157,7 +157,7 @@ bool black_checked(petir_header::tdata& data) {
     bool return_value{};
     std::uint64_t attack{};
     std::int32_t pos{};
-    pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    pos = petir_bitboard_mask::king_square(data.kingblack);
     if (((petir_bitboard_mask::knightmask[pos] & data.knightwhite) != 0)) {
         return_value = true;
         return return_value;
@@ -207,7 +207,7 @@ bool white_open_check(petir_header::tdata& data, std::uint16_t moves) {
     std::int32_t posraja{};
     std::uint64_t temp{};
     pos2 = (moves & 127);
-    posraja = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    posraja = petir_bitboard_mask::king_square(data.kingwhite);
     dn = petir_bitboard_mask::direction[posraja][pos2];
     if ((dn == 0)) {
         return_value = false;
@@ -253,7 +253,7 @@ bool white_open_check(petir_header::tdata& data, std::uint16_t moves) {
                 }
             } else {
                 if ((adn == 1)) {
-                    temp = (data.allpieces & (~petir_bitboard_mask::bit2nmask[pos2]));
+                    temp = (data.allpieces & (~petir_bitboard_mask::bit(pos2)));
                     if (((petir_bitboard_mask::horzmask2[posraja][(pas::shr(temp, pas::add((posraja & 56), 1)) & 63)] & (data.queenblack | data.rookblack)) != 0)) {
                         return_value = true;
                         return return_value;
@@ -304,7 +304,7 @@ bool white_open_check2(petir_header::tdata& data, std::uint16_t pos2, std::uint1
                 }
             } else {
                 if ((adn == 1)) {
-                    temp = (data.allpieces & (~petir_bitboard_mask::bit2nmask[pos2]));
+                    temp = (data.allpieces & (~petir_bitboard_mask::bit(pos2)));
                     if (((petir_bitboard_mask::horzmask2[posraja][(pas::shr(temp, pas::add((posraja & 56), 1)) & 63)] & (data.queenwhite | data.rookwhite)) != 0)) {
                         return_value = true;
                         return return_value;
@@ -355,7 +355,7 @@ bool black_open_check2(petir_header::tdata& data, std::uint16_t pos2, std::uint1
                 }
             } else {
                 if ((adn == 1)) {
-                    temp = (data.allpieces & (~petir_bitboard_mask::bit2nmask[pos2]));
+                    temp = (data.allpieces & (~petir_bitboard_mask::bit(pos2)));
                     if (((petir_bitboard_mask::horzmask2[posraja][(pas::shr(temp, pas::add((posraja & 56), 1)) & 63)] & (data.queenblack | data.rookblack)) != 0)) {
                         return_value = true;
                         return return_value;
@@ -378,7 +378,7 @@ bool black_open_check(petir_header::tdata& data, std::uint16_t moves) {
     std::int32_t posraja{};
     std::uint64_t temp{};
     pos2 = (moves & 127);
-    posraja = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    posraja = petir_bitboard_mask::king_square(data.kingblack);
     dn = petir_bitboard_mask::direction[posraja][pos2];
     if ((dn == 0)) {
         return_value = false;
@@ -424,7 +424,7 @@ bool black_open_check(petir_header::tdata& data, std::uint16_t moves) {
                 }
             } else {
                 if ((adn == 1)) {
-                    temp = (data.allpieces & (~petir_bitboard_mask::bit2nmask[pos2]));
+                    temp = (data.allpieces & (~petir_bitboard_mask::bit(pos2)));
                     if (((petir_bitboard_mask::horzmask2[posraja][(pas::shr(temp, pas::add((posraja & 56), 1)) & 63)] & (data.queenwhite | data.rookwhite)) != 0)) {
                         return_value = true;
                         return return_value;
@@ -627,7 +627,7 @@ bool white_forkandpin(std::int32_t move, petir_header::tdata& data) {
         c = 0;
         while ((t64 != 0)) {
             pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-            t64 = (t64 & petir_bitboard_mask::bit2nmasknot[pos]);
+            t64 = (t64 & petir_bitboard_mask::bitnot(pos));
             if ((data.papan[pos] <= petir_header::_bentenghitam)) {
                 (c = pas::increment(c, 1));
             }
@@ -649,7 +649,7 @@ bool white_forkandpin(std::int32_t move, petir_header::tdata& data) {
                     return_value = true;
                     return return_value;
                 }
-                t64 = (t64 & petir_bitboard_mask::bit2nmasknot[pos]);
+                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
             }
         }
     }
@@ -664,7 +664,7 @@ bool white_forkandpin(std::int32_t move, petir_header::tdata& data) {
                     return_value = true;
                     return return_value;
                 }
-                t64 = (t64 & petir_bitboard_mask::bit2nmasknot[pos]);
+                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
             }
         }
     }
@@ -673,7 +673,7 @@ bool white_forkandpin(std::int32_t move, petir_header::tdata& data) {
             t64 = (petir_bitboard_mask::kingmask[move] & data.pawnblack);
             while ((t64 != 0)) {
                 pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-                t64 = (t64 & petir_bitboard_mask::bit2nmasknot[pos]);
+                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
                 if ((((petir_bitboard_mask::kingmask[pos] & data.kingblack) == 0) && ((petir_bitboard_mask::w_pawn_attack[pos] & data.pawnblack) == 0))) {
                     return_value = true;
                     return return_value;
@@ -715,7 +715,7 @@ bool black_forkandpin(std::int32_t move, petir_header::tdata& data) {
         c = 0;
         while ((t64 != 0)) {
             pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-            t64 = (t64 & petir_bitboard_mask::bit2nmasknot[pos]);
+            t64 = (t64 & petir_bitboard_mask::bitnot(pos));
             if ((data.papan[pos] >= petir_header::_bentengputih)) {
                 (c = pas::increment(c, 1));
             }
@@ -737,7 +737,7 @@ bool black_forkandpin(std::int32_t move, petir_header::tdata& data) {
                     return_value = true;
                     return return_value;
                 }
-                t64 = (t64 & petir_bitboard_mask::bit2nmasknot[pos]);
+                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
             }
         }
     }
@@ -752,7 +752,7 @@ bool black_forkandpin(std::int32_t move, petir_header::tdata& data) {
                     return_value = true;
                     return return_value;
                 }
-                t64 = (t64 & petir_bitboard_mask::bit2nmasknot[pos]);
+                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
             }
         }
     }
@@ -761,7 +761,7 @@ bool black_forkandpin(std::int32_t move, petir_header::tdata& data) {
             t64 = (petir_bitboard_mask::kingmask[move] & data.pawnwhite);
             while ((t64 != 0)) {
                 pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-                t64 = (t64 & petir_bitboard_mask::bit2nmasknot[pos]);
+                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
                 if ((((petir_bitboard_mask::kingmask[pos] & data.kingwhite) == 0) && ((petir_bitboard_mask::b_pawn_attack[pos] & data.pawnwhite) == 0))) {
                     return_value = true;
                     return return_value;
@@ -805,7 +805,7 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
     std::int32_t y{};
     std::int32_t pas_temp_1{};
     threatpiece = 0;
-    posraja = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    posraja = petir_bitboard_mask::king_square(data.kingblack);
     sto = (pas::shr(moves, 7) & 127);
     if ((sto > 63)) {
         if (((sto == petir_header::_rokadependek) || (sto == petir_header::_rokadepanjang))) {
@@ -818,7 +818,7 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
     }
     return_value = false;
     attack = 0;
-    raja = (petir_bitboard_mask::kingmask[posraja] | petir_bitboard_mask::bit2nmask[posraja]);
+    raja = (petir_bitboard_mask::kingmask[posraja] | petir_bitboard_mask::bit(posraja));
     pas_temp_1 = data.papan[sto];
     if (((pas_temp_1 == petir_header::_pionputih))) {
         if ((sto >= petir_header::a7)) {
@@ -838,12 +838,12 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         (y = pas::increment(y, 1));
         while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
             temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if ((data.papan[temp] == petir_header::_pionputih)) {
                 (x = pas::increment(x, 1));
                 (y = pas::increment(y, 1));
                 temp = pas::add(pas::shl(y, 3), x);
-                attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+                attack = (attack | petir_bitboard_mask::bit(temp));
                 break;
             }
             if ((data.papan[temp] == petir_header::_mentriputih)) {
@@ -863,12 +863,12 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         (y = pas::increment(y, 1));
         while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
             temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if ((data.papan[temp] == petir_header::_pionputih)) {
                 (x = pas::decrement(x, 1));
                 (y = pas::increment(y, 1));
                 temp = pas::add(pas::shl(y, 3), x);
-                attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+                attack = (attack | petir_bitboard_mask::bit(temp));
                 break;
             }
             if ((data.papan[temp] == petir_header::_mentriputih)) {
@@ -888,7 +888,7 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         (y = pas::decrement(y, 1));
         while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
             temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if ((data.papan[temp] == petir_header::_mentriputih)) {
                 (x = pas::increment(x, 1));
                 (y = pas::decrement(y, 1));
@@ -906,7 +906,7 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         (y = pas::decrement(y, 1));
         while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
             temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if ((data.papan[temp] == petir_header::_mentriputih)) {
                 (x = pas::decrement(x, 1));
                 (y = pas::decrement(y, 1));
@@ -924,7 +924,7 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(anu, pas::add((sto & 56), 1)) & 63)];
         temp = pas::add(sto, 8);
         while ((temp <= 63)) {
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if (((data.papan[temp] == petir_header::_bentengputih) || (data.papan[temp] == petir_header::_mentriputih))) {
                 temp = pas::add(temp, 8);
                 continue;
@@ -936,7 +936,7 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         }
         temp = pas::sub(sto, 8);
         while ((temp >= 0)) {
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if (((data.papan[temp] == petir_header::_bentengputih) || (data.papan[temp] == petir_header::_mentriputih))) {
                 temp = pas::sub(temp, 8);
                 continue;
@@ -954,7 +954,7 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         attack = (attack | petir_bitboard_mask::horzmask2[sto][(pas::shr(anu, pas::add((sto & 56), 1)) & 63)]);
         temp = pas::add(sto, 8);
         while ((temp <= 63)) {
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if (((data.papan[temp] == petir_header::_bentengputih) || (data.papan[temp] == petir_header::_mentriputih))) {
                 temp = pas::add(temp, 8);
                 continue;
@@ -966,7 +966,7 @@ bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         }
         temp = pas::sub(sto, 8);
         while ((temp >= 0)) {
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if (((data.papan[temp] == petir_header::_bentengputih) || (data.papan[temp] == petir_header::_mentriputih))) {
                 temp = pas::sub(temp, 8);
                 continue;
@@ -1020,7 +1020,7 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
     std::int32_t y{};
     std::int32_t pas_temp_1{};
     threatpiece = 0;
-    posraja = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
+    posraja = petir_bitboard_mask::king_square(data.kingwhite);
     sto = (pas::shr(moves, 7) & 127);
     if ((sto > 63)) {
         if (((sto == petir_header::_rokadependek) || (sto == petir_header::_rokadepanjang))) {
@@ -1033,7 +1033,7 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
     }
     return_value = false;
     attack = 0;
-    raja = (petir_bitboard_mask::kingmask[posraja] | petir_bitboard_mask::bit2nmask[posraja]);
+    raja = (petir_bitboard_mask::kingmask[posraja] | petir_bitboard_mask::bit(posraja));
     pas_temp_1 = data.papan[sto];
     if (((pas_temp_1 == petir_header::_pionhitam))) {
         if ((sto <= petir_header::h2)) {
@@ -1053,7 +1053,7 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         (y = pas::increment(y, 1));
         while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
             temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if ((data.papan[temp] == petir_header::_mentrihitam)) {
                 (x = pas::increment(x, 1));
                 (y = pas::increment(y, 1));
@@ -1071,7 +1071,7 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         (y = pas::increment(y, 1));
         while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
             temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if ((data.papan[temp] == petir_header::_mentrihitam)) {
                 (x = pas::decrement(x, 1));
                 (y = pas::increment(y, 1));
@@ -1089,12 +1089,12 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         (y = pas::decrement(y, 1));
         while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
             temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if ((data.papan[temp] == petir_header::_pionhitam)) {
                 (x = pas::increment(x, 1));
                 (y = pas::decrement(y, 1));
                 temp = pas::add(pas::shl(y, 3), x);
-                attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+                attack = (attack | petir_bitboard_mask::bit(temp));
                 break;
             }
             if ((data.papan[temp] == petir_header::_mentrihitam)) {
@@ -1114,12 +1114,12 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         (y = pas::decrement(y, 1));
         while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
             temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if ((data.papan[temp] == petir_header::_pionhitam)) {
                 (x = pas::decrement(x, 1));
                 (y = pas::decrement(y, 1));
                 temp = pas::add(pas::shl(y, 3), x);
-                attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+                attack = (attack | petir_bitboard_mask::bit(temp));
                 break;
             }
             if ((data.papan[temp] == petir_header::_mentrihitam)) {
@@ -1141,7 +1141,7 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(anu, pas::add((sto & 56), 1)) & 63)];
         temp = pas::add(sto, 8);
         while ((temp <= 63)) {
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if (((data.papan[temp] == petir_header::_bentenghitam) || (data.papan[temp] == petir_header::_mentrihitam))) {
                 temp = pas::add(temp, 8);
                 continue;
@@ -1153,7 +1153,7 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         }
         temp = pas::sub(sto, 8);
         while ((temp >= 0)) {
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if (((data.papan[temp] == petir_header::_bentenghitam) || (data.papan[temp] == petir_header::_mentrihitam))) {
                 temp = pas::sub(temp, 8);
                 continue;
@@ -1171,7 +1171,7 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         attack = (attack | petir_bitboard_mask::horzmask2[sto][(pas::shr(anu, pas::add((sto & 56), 1)) & 63)]);
         temp = pas::add(sto, 8);
         while ((temp <= 63)) {
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if (((data.papan[temp] == petir_header::_bentenghitam) || (data.papan[temp] == petir_header::_mentrihitam))) {
                 temp = pas::add(temp, 8);
                 continue;
@@ -1183,7 +1183,7 @@ bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& 
         }
         temp = pas::sub(sto, 8);
         while ((temp >= 0)) {
-            attack = (attack | petir_bitboard_mask::bit2nmask[temp]);
+            attack = (attack | petir_bitboard_mask::bit(temp));
             if (((data.papan[temp] == petir_header::_bentenghitam) || (data.papan[temp] == petir_header::_mentrihitam))) {
                 temp = pas::sub(temp, 8);
                 continue;
@@ -1498,7 +1498,7 @@ bool white_menskak(petir_header::tdata& data, std::uint16_t moves) {
     std::int32_t pas_temp_3{};
     std::int32_t pas_temp_4{};
     return_value = false;
-    posraja = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    posraja = petir_bitboard_mask::king_square(data.kingblack);
     sfrom = (moves & 127);
     sto = (pas::shr(moves, 7) & 127);
     promosi = (pas::shr(moves, 14) & 7);
@@ -1528,12 +1528,12 @@ bool white_menskak(petir_header::tdata& data, std::uint16_t moves) {
     }
     pas_temp_1 = piece;
     if (((pas_temp_1 == petir_header::_pionputih))) {
-        if (((petir_bitboard_mask::w_pawn_attack[sto] & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+        if (((petir_bitboard_mask::w_pawn_attack[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
             return_value = true;
         }
     }
     else if (((pas_temp_1 == petir_header::_kudaputih))) {
-        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
             return_value = true;
         }
     }
@@ -1541,13 +1541,13 @@ bool white_menskak(petir_header::tdata& data, std::uint16_t moves) {
         pas_temp_2 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_2 == 7))) {
             attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_2 == 9))) {
             attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
@@ -1556,13 +1556,13 @@ bool white_menskak(petir_header::tdata& data, std::uint16_t moves) {
         pas_temp_3 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_3 == 1))) {
             attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_3 == 8))) {
             attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
@@ -1571,25 +1571,25 @@ bool white_menskak(petir_header::tdata& data, std::uint16_t moves) {
         pas_temp_4 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_4 == 1))) {
             attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 8))) {
             attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 7))) {
             attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 9))) {
             attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
@@ -1622,7 +1622,7 @@ bool black_menskak(petir_header::tdata& data, std::uint16_t moves) {
     std::int32_t pas_temp_3{};
     std::int32_t pas_temp_4{};
     return_value = false;
-    posraja = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    posraja = petir_bitboard_mask::king_square(data.kingwhite);
     sfrom = (moves & 127);
     sto = (pas::shr(moves, 7) & 127);
     promosi = (pas::shr(moves, 14) & 7);
@@ -1652,12 +1652,12 @@ bool black_menskak(petir_header::tdata& data, std::uint16_t moves) {
     }
     pas_temp_1 = piece;
     if (((pas_temp_1 == petir_header::_pionhitam))) {
-        if (((petir_bitboard_mask::b_pawn_attack[sto] & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+        if (((petir_bitboard_mask::b_pawn_attack[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
             return_value = true;
         }
     }
     else if (((pas_temp_1 == petir_header::_kudahitam))) {
-        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
             return_value = true;
         }
     }
@@ -1665,13 +1665,13 @@ bool black_menskak(petir_header::tdata& data, std::uint16_t moves) {
         pas_temp_2 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_2 == 7))) {
             attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_2 == 9))) {
             attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
@@ -1680,13 +1680,13 @@ bool black_menskak(petir_header::tdata& data, std::uint16_t moves) {
         pas_temp_3 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_3 == 1))) {
             attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_3 == 8))) {
             attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
@@ -1695,25 +1695,25 @@ bool black_menskak(petir_header::tdata& data, std::uint16_t moves) {
         pas_temp_4 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_4 == 1))) {
             attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 8))) {
             attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 7))) {
             attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 9))) {
             attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
@@ -1734,22 +1734,22 @@ bool black_menskak3(petir_header::tdata& data, std::uint16_t moves, std::int32_t
     std::int32_t pas_temp_3{};
     std::int32_t pas_temp_4{};
     return_value = false;
-    posraja = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    posraja = petir_bitboard_mask::king_square(data.kingwhite);
     sfrom = (moves & 127);
     sto = (pas::shr(moves, 7) & 127);
     if ((sto > 63)) {
         return_value = true;
         return return_value;
     }
-    raja = petir_bitboard_mask::bit2nmask[posraja];
+    raja = petir_bitboard_mask::bit(posraja);
     pas_temp_1 = data.papan[sfrom];
     if (((pas_temp_1 == petir_header::_pionhitam))) {
-        if (((petir_bitboard_mask::b_pawn_attack[sto] & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+        if (((petir_bitboard_mask::b_pawn_attack[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
             return_value = true;
         }
     }
     else if (((pas_temp_1 == petir_header::_kudahitam))) {
-        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
             return_value = true;
         }
     }
@@ -1757,13 +1757,13 @@ bool black_menskak3(petir_header::tdata& data, std::uint16_t moves, std::int32_t
         pas_temp_2 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_2 == 7))) {
             attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_2 == 9))) {
             attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
@@ -1772,13 +1772,13 @@ bool black_menskak3(petir_header::tdata& data, std::uint16_t moves, std::int32_t
         pas_temp_3 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_3 == 1))) {
             attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_3 == 8))) {
             attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
@@ -1787,25 +1787,25 @@ bool black_menskak3(petir_header::tdata& data, std::uint16_t moves, std::int32_t
         pas_temp_4 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
         if (((pas_temp_4 == 1))) {
             attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 8))) {
             attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 7))) {
             attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }
         else if (((pas_temp_4 == 9))) {
             attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit2nmask[posraja]) != 0)) {
+            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
                 return_value = true;
             }
         }

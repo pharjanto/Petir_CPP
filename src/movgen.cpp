@@ -53,7 +53,10 @@ void append_legal_ep_evasions(petir_header::tdata& data, petir_header::tmovelist
 }
 }
 // movgen.pas:687
-void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml) {
+void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::int32_t pos{};
@@ -132,7 +135,7 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             entry.score = petir_header::historyb[petir_header::_bentenghitam][post];
         }
     }
-    pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    pos = petir_bitboard_mask::king_square(data.kingblack);
     attack = (petir_bitboard_mask::kingmask[pos] & (~data.allpieces));
     for(move_bits<true> remaining(attack); remaining; ) {
         post = remaining.pop();
@@ -152,10 +155,14 @@ void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             movelist[jml].score = petir_header::historyb[petir_header::_rajahitam][petir_header::_rokadepanjang];
         }
     }
+    jml_out = jml;
 }
 
 // movgen.pas:868
-void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml) {
+void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::int32_t pos{};
@@ -279,7 +286,7 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
         }
     }
-    pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    pos = petir_bitboard_mask::king_square(data.kingblack);
     attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
     for(move_bits<true> remaining(attack); remaining; ) {
         post = remaining.pop();
@@ -287,10 +294,14 @@ void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
     }
+    jml_out = jml;
 }
 
 // movgen.pas:1041
-void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml) {
+void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::int32_t pos{};
@@ -424,7 +435,7 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
         }
     }
-    pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    pos = petir_bitboard_mask::king_square(data.kingblack);
     attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
     for(move_bits<true> remaining(attack); remaining; ) {
         post = remaining.pop();
@@ -441,10 +452,14 @@ void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
             movelist[jml].score = 0;
         }
     }
+    jml_out = jml;
 }
 
 // movgen.pas:1238
-void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml) {
+void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::uint64_t t64{};
@@ -456,7 +471,7 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
     std::uint64_t attackr{};
     std::uint64_t attackn{};
     jml = 0;
-    posraja = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    posraja = petir_bitboard_mask::king_square(data.kingwhite);
     attackb = petir_bitboard_mask::diaga8h1mask[posraja][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[posraja]) & 255)];
     attackb = (attackb | petir_bitboard_mask::diagh8a1mask[posraja][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[posraja]) & 255)]);
     attackr = petir_bitboard_mask::horzmask2[posraja][(pas::shr(data.allpieces, pas::add((posraja & 56), 1)) & 63)];
@@ -637,7 +652,7 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
         }
     }
-    pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    pos = petir_bitboard_mask::king_square(data.kingblack);
     attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
     for(move_bits<true> remaining(attack); remaining; ) {
         post = remaining.pop();
@@ -654,10 +669,14 @@ void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             movelist[jml].score = 0;
         }
     }
+    jml_out = jml;
 }
 
 // movgen.pas:2080
-void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml) {
+void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::uint64_t t64{};
@@ -670,7 +689,7 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
     std::uint64_t attackn{};
     std::uint64_t target{};
     jml = 0;
-    posraja = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    posraja = petir_bitboard_mask::king_square(data.kingblack);
     attackb = petir_bitboard_mask::diaga8h1mask[posraja][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[posraja]) & 255)];
     attackb = (attackb | petir_bitboard_mask::diagh8a1mask[posraja][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[posraja]) & 255)]);
     attackr = petir_bitboard_mask::horzmask2[posraja][(pas::shr(data.allpieces, pas::add((posraja & 56), 1)) & 63)];
@@ -851,7 +870,7 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
         }
     }
-    pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    pos = petir_bitboard_mask::king_square(data.kingwhite);
     attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
     for(move_bits<false> remaining(attack); remaining; ) {
         post = remaining.pop();
@@ -868,10 +887,14 @@ void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist
             movelist[jml].score = 0;
         }
     }
+    jml_out = jml;
 }
 
 // movgen.pas:1681
-void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml) {
+void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::uint64_t temp{};
@@ -947,7 +970,7 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         attack = (petir_bitboard_mask::knightmask[pos] & data.blackpieces);
         while ((attack != 0)) {
             post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & (~petir_bitboard_mask::bit2nmask[post]));
+            attack = (attack & (~petir_bitboard_mask::bit(post)));
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
@@ -1003,7 +1026,7 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
         }
     }
-    pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    pos = petir_bitboard_mask::king_square(data.kingwhite);
     attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
     for(move_bits<false> remaining(attack); remaining; ) {
         post = remaining.pop();
@@ -1011,10 +1034,14 @@ void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movel
         movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
         movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
     }
+    jml_out = jml;
 }
 
 // movgen.pas:1864
-void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml) {
+void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::uint64_t temp{};
@@ -1102,7 +1129,7 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
         attack = (petir_bitboard_mask::knightmask[pos] & data.blackpieces);
         while ((attack != 0)) {
             post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & (~petir_bitboard_mask::bit2nmask[post]));
+            attack = (attack & (~petir_bitboard_mask::bit(post)));
             (jml = pas::increment(jml, 1));
             movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
             movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
@@ -1158,7 +1185,7 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
             movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
         }
     }
-    pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    pos = petir_bitboard_mask::king_square(data.kingwhite);
     attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
     for(move_bits<false> remaining(attack); remaining; ) {
         post = remaining.pop();
@@ -1175,10 +1202,14 @@ void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& move
             movelist[jml].score = 0;
         }
     }
+    jml_out = jml;
 }
 
 // movgen.pas:1520
-void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml, std::int32_t depth) {
+void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out, std::int32_t depth) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::int32_t pos{};
@@ -1262,7 +1293,7 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             }
         }
     }
-    pos = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    pos = petir_bitboard_mask::king_square(data.kingwhite);
     attack = (petir_bitboard_mask::kingmask[pos] & (~data.allpieces));
     for(move_bits<false> remaining(attack); remaining; ) {
         post = remaining.pop();
@@ -1282,10 +1313,14 @@ void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& mo
             movelist[jml].score = petir_header::historyw[petir_header::_rajaputih][petir_header::_rokadepanjang];
         }
     }
+    jml_out = jml;
 }
 
 // movgen.pas:30
-void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml, std::int32_t& skakcount) {
+void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out, std::int32_t& skakcount) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::uint64_t battack{};
@@ -1306,7 +1341,7 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     jml = 0;
     skakcount = 0;
     battack = 0;
-    posraja = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    posraja = petir_bitboard_mask::king_square(data.kingwhite);
     skakpos = 64;
     piecepos = data.knightblack;
     for(move_bits<true> remaining(piecepos); remaining; ) {
@@ -1366,7 +1401,7 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             skakpos = pos;
         }
     }
-    pos = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    pos = petir_bitboard_mask::king_square(data.kingblack);
     battack = (battack | petir_bitboard_mask::kingmask[pos]);
     piecepos = ((petir_bitboard_mask::kingmask[posraja] & (~battack)) & (~data.whitepieces));
     for(move_bits<true> remaining(piecepos); remaining; ) {
@@ -1383,7 +1418,7 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     // en passant interpositions against a sliding-piece check.
     append_legal_ep_evasions(data,movelist,jml,petir_header::_sisiputih);
     if ((skakcount == 1)) {
-        skak64 = petir_bitboard_mask::bit2nmask[skakpos];
+        skak64 = petir_bitboard_mask::bit(skakpos);
         path = petir_bitboard_mask::pathmask[posraja][skakpos];
         piecepos = data.knightwhite;
         dn = petir_bitboard_mask::direction[posraja][skakpos];
@@ -1436,9 +1471,9 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
             attack2 = 0;
             if ((data.papan[pas::add(pos, 8)] == 0)) {
-                attack2 = (attack2 | petir_bitboard_mask::bit2nmask[pas::add(pos, 8)]);
+                attack2 = (attack2 | petir_bitboard_mask::bit(pas::add(pos, 8)));
                 if (((pas::shr(pos, 3) == 1) && (data.papan[pas::add(pos, 16)] == 0))) {
-                    attack2 = (attack2 | petir_bitboard_mask::bit2nmask[pas::add(pos, 16)]);
+                    attack2 = (attack2 | petir_bitboard_mask::bit(pas::add(pos, 16)));
                 }
             }
             attack2 = (attack2 & path);
@@ -1547,10 +1582,14 @@ void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
     }
+    jml_out = jml;
 }
 
 // movgen.pas:361
-void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml, std::int32_t& skakcount) {
+void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out, std::int32_t& skakcount) {
+    // Count locally: MSVC would otherwise reload the caller's count after
+    // every move-list store. The count is published once on return.
+    std::int32_t jml = jml_out;
     std::uint64_t piecepos{};
     std::uint64_t attack{};
     std::uint64_t battack{};
@@ -1571,7 +1610,7 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     jml = 0;
     skakcount = 0;
     battack = 0;
-    posraja = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+    posraja = petir_bitboard_mask::king_square(data.kingblack);
     skakpos = 64;
     piecepos = data.knightwhite;
     for(move_bits<false> remaining(piecepos); remaining; ) {
@@ -1631,7 +1670,7 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             skakpos = pos;
         }
     }
-    pos = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
+    pos = petir_bitboard_mask::king_square(data.kingwhite);
     battack = (battack | petir_bitboard_mask::kingmask[pos]);
     piecepos = ((petir_bitboard_mask::kingmask[posraja] & (~battack)) & (~data.blackpieces));
     for(move_bits<false> remaining(piecepos); remaining; ) {
@@ -1646,7 +1685,7 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
     }
     append_legal_ep_evasions(data,movelist,jml,petir_header::_sisihitam);
     if ((skakcount == 1)) {
-        skak64 = petir_bitboard_mask::bit2nmask[skakpos];
+        skak64 = petir_bitboard_mask::bit(skakpos);
         path = petir_bitboard_mask::pathmask[posraja][skakpos];
         piecepos = data.knightblack;
         for(move_bits<true> remaining(piecepos); remaining; ) {
@@ -1698,9 +1737,9 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
             attack2 = 0;
             if ((data.papan[pas::sub(pos, 8)] == 0)) {
-                attack2 = (attack2 | petir_bitboard_mask::bit2nmask[pas::sub(pos, 8)]);
+                attack2 = (attack2 | petir_bitboard_mask::bit(pas::sub(pos, 8)));
                 if (((pas::shr(pos, 3) == 6) && (data.papan[pas::sub(pos, 16)] == 0))) {
-                    attack2 = (attack2 | petir_bitboard_mask::bit2nmask[pas::sub(pos, 16)]);
+                    attack2 = (attack2 | petir_bitboard_mask::bit(pas::sub(pos, 16)));
                 }
             }
             attack2 = (attack2 & path);
@@ -1809,6 +1848,7 @@ void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist,
             }
         }
     }
+    jml_out = jml;
 }
 
 }

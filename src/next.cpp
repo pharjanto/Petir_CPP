@@ -8,11 +8,13 @@ void nextbest_max(petir_header::tmovelist& a, std::int32_t cur, std::int32_t tot
     auto* current = &a[cur];
     if(tot<=cur)return;
     // Checked endpoints establish a valid range without a capacity test for
-    // every score. max_element retains the first maximum, preserving ties.
-    auto* end = &a[tot]+1;
-    auto* best = std::max_element(current,end,[](const auto& left,const auto& right) {
-        return left.score<right.score;
-    });
+    // every score. A branch-free maximum, then a scan for its first entry,
+    // selects the same record as the first-maximum rule, preserving ties.
+    auto* const end = &a[tot]+1;
+    int best_score = current->score;
+    for(auto* entry = current+1; entry != end; ++entry) best_score = std::max(best_score, entry->score);
+    auto* best = current;
+    while(best->score != best_score) ++best;
     if(best!=current)std::swap(*current,*best);
 }
 

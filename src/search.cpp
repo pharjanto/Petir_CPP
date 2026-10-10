@@ -246,7 +246,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                         continue;
                     }
                 } else {
-                    if ((pin_mask & petir_bitboard_mask::bit2nmask[moves & 127]) && petir_tools::white_open_check(data, moves)) {
+                    if ((pin_mask & petir_bitboard_mask::bit(moves & 127)) && petir_tools::white_open_check(data, moves)) {
                         continue;
                     }
                 }
@@ -256,7 +256,7 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                         continue;
                     }
                 } else {
-                    if ((pin_mask & petir_bitboard_mask::bit2nmask[moves & 127]) && petir_tools::black_open_check(data, moves)) {
+                    if ((pin_mask & petir_bitboard_mask::bit(moves & 127)) && petir_tools::black_open_check(data, moves)) {
                         continue;
                     }
                 }
@@ -292,6 +292,11 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             petir_makemove::makewhitemove(moves, data);
         } else {
             petir_makemove::makeblackmove(moves, data);
+        }
+        // Children at full depth probe the hash table first; overlap that
+        // memory access with the extension and reduction work below.
+        if (nlev >= petir_header::fractional_ply) {
+            petir_hashing::prefetch(data.hashkey, pas::sub(3, giliran));
         }
         if ((sto == petir_header::_en_passant)) {
             if ((((giliran == petir_header::_sisiputih) && petir_tools::white_checked(data)) || ((giliran == petir_header::_sisihitam) && petir_tools::black_checked(data)))) {

@@ -277,8 +277,8 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
     pawnbattack = 0;
     pionbebasputih = 0;
     pionbebashitam = 0;
-    posrajahitam = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
-    posrajaputih = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
+    posrajahitam = petir_bitboard_mask::king_square(data.kingblack);
+    posrajaputih = petir_bitboard_mask::king_square(data.kingwhite);
     filerajaputih = (posrajaputih & 7);
     filerajahitam = (posrajahitam & 7);
     if (early_endgame) {
@@ -598,21 +598,21 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                 }
             }
         }
-        if ((((petir_bitboard_mask::b_pion_bebas_mask[pos] & data.pawnwhite) == 0) && ((pionbebashitam & petir_header::bit8mask[(pos & 7)]) == 0))) {
+        if ((((petir_bitboard_mask::b_pion_bebas_mask[pos] & data.pawnwhite) == 0) && ((pionbebashitam & petir_header::bit8((pos & 7))) == 0))) {
             (npphitam = pas::increment(npphitam, 1));
             tempx = (pos & 7);
             (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_bebas));
             temp = 0;
-            pionbebashitam = (pionbebashitam | petir_header::bit8mask[tempx]);
-            if (((tempx > 0) && ((pionbebashitam & petir_header::bit8mask[pas::sub(tempx, 1)]) != 0))) {
+            pionbebashitam = (pionbebashitam | petir_header::bit8(tempx));
+            if (((tempx > 0) && ((pionbebashitam & petir_header::bit8(pas::sub(tempx, 1))) != 0))) {
                 (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected2));
             }
-            if (((tempx < 7) && ((pionbebashitam & petir_header::bit8mask[pas::add(tempx, 1)]) != 0))) {
+            if (((tempx < 7) && ((pionbebashitam & petir_header::bit8(pas::add(tempx, 1))) != 0))) {
                 (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected2));
             }
             if ((pas::shr(pos, 3) <= 2)) {
                 if ((tempx > 0)) {
-                    if (((pionbebashitam & petir_header::bit8mask[pas::sub(tempx, 1)]) != 0)) {
+                    if (((pionbebashitam & petir_header::bit8(pas::sub(tempx, 1))) != 0)) {
                         if ((data.papan[pas::sub(pos, 1)] == petir_header::_pionhitam)) {
                             (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected));
                         } else {
@@ -625,7 +625,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                     }
                 }
                 if ((tempx < 7)) {
-                    if (((pionbebashitam & petir_header::bit8mask[pas::add(tempx, 1)]) != 0)) {
+                    if (((pionbebashitam & petir_header::bit8(pas::add(tempx, 1))) != 0)) {
                         if ((data.papan[pas::add(pos, 1)] == petir_header::_pionhitam)) {
                             (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected));
                         } else {
@@ -640,7 +640,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
             } else {
                 if ((pas::shr(pos, 3) <= 3)) {
                     if ((tempx > 0)) {
-                        if (((pionbebashitam & petir_header::bit8mask[pas::sub(tempx, 1)]) != 0)) {
+                        if (((pionbebashitam & petir_header::bit8(pas::sub(tempx, 1))) != 0)) {
                             if ((data.papan[pas::sub(pos, 1)] == petir_header::_pionhitam)) {
                                 (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected3));
                             } else {
@@ -651,7 +651,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                         }
                     }
                     if ((tempx < 7)) {
-                        if (((pionbebashitam & petir_header::bit8mask[pas::add(tempx, 1)]) != 0)) {
+                        if (((pionbebashitam & petir_header::bit8(pas::add(tempx, 1))) != 0)) {
                             if ((data.papan[pas::add(pos, 1)] == petir_header::_pionhitam)) {
                                 (temp = pas::increment(temp, petir_ueval::nilai_pion_bebas_connected3));
                             } else {
@@ -835,22 +835,22 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                 }
             }
         }
-        if ((((petir_bitboard_mask::w_pion_bebas_mask[pos] & data.pawnblack) == 0) && ((pionbebasputih & petir_header::bit8mask[(pos & 7)]) == 0))) {
+        if ((((petir_bitboard_mask::w_pion_bebas_mask[pos] & data.pawnblack) == 0) && ((pionbebasputih & petir_header::bit8((pos & 7))) == 0))) {
             (nppputih = pas::increment(nppputih, 1));
             tempi = 0;
             tempx = (pos & 7);
             (nilai = pas::increment(nilai, petir_ueval::nilai_pion_bebas));
             temp = pas::shr(pos, 3);
-            pionbebasputih = (pionbebasputih | petir_header::bit8mask[tempx]);
-            if (((tempx > 0) && ((pionbebasputih & petir_header::bit8mask[pas::sub(tempx, 1)]) != 0))) {
+            pionbebasputih = (pionbebasputih | petir_header::bit8(tempx));
+            if (((tempx > 0) && ((pionbebasputih & petir_header::bit8(pas::sub(tempx, 1))) != 0))) {
                 (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected2));
             }
-            if (((tempx < 7) && ((pionbebasputih & petir_header::bit8mask[pas::add(tempx, 1)]) != 0))) {
+            if (((tempx < 7) && ((pionbebasputih & petir_header::bit8(pas::add(tempx, 1))) != 0))) {
                 (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected2));
             }
             if ((temp >= 5)) {
                 if ((tempx > 0)) {
-                    if (((pionbebasputih & petir_header::bit8mask[pas::sub(tempx, 1)]) != 0)) {
+                    if (((pionbebasputih & petir_header::bit8(pas::sub(tempx, 1))) != 0)) {
                         if ((data.papan[pas::sub(pos, 1)] == petir_header::_pionputih)) {
                             (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected));
                         } else {
@@ -863,7 +863,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                     }
                 }
                 if ((tempx < 7)) {
-                    if (((pionbebasputih & petir_header::bit8mask[pas::add(tempx, 1)]) != 0)) {
+                    if (((pionbebasputih & petir_header::bit8(pas::add(tempx, 1))) != 0)) {
                         if ((data.papan[pas::add(pos, 1)] == petir_header::_pionputih)) {
                             (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected));
                         } else {
@@ -878,7 +878,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
             } else {
                 if ((temp >= 4)) {
                     if ((tempx > 0)) {
-                        if (((pionbebasputih & petir_header::bit8mask[pas::sub(tempx, 1)]) != 0)) {
+                        if (((pionbebasputih & petir_header::bit8(pas::sub(tempx, 1))) != 0)) {
                             if ((data.papan[pas::sub(pos, 1)] == petir_header::_pionputih)) {
                                 (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected3));
                             }
@@ -888,7 +888,7 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
                         }
                     }
                     if ((tempx < 7)) {
-                        if (((pionbebasputih & petir_header::bit8mask[pas::add(tempx, 1)]) != 0)) {
+                        if (((pionbebasputih & petir_header::bit8(pas::add(tempx, 1))) != 0)) {
                             if ((data.papan[pas::add(pos, 1)] == petir_header::_pionputih)) {
                                 (tempi = pas::increment(tempi, petir_ueval::nilai_pion_bebas_connected3));
                             } else {
@@ -1699,24 +1699,24 @@ bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
         if (((data.pawnblack == 0) && petir_ueval::onlyone(data.pawnwhite))) {
             pos = petir_bitboard_mask::lastbitp(pas::address(data.pawnwhite));
             if (((pos & 7) == 7)) {
-                pos2 = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+                pos2 = petir_bitboard_mask::king_square(data.kingblack);
                 if ((((pos2 & 7) >= 6) && (pas::shr(pos2, 3) >= pas::shr(pos, 3)))) {
                     return_value = true;
                     return return_value;
                 }
-                pos3 = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
+                pos3 = petir_bitboard_mask::king_square(data.kingwhite);
                 if ((((((pos3 & 7) == 7) && (pas::shr(pos3, 3) > pas::shr(pos, 3))) && ((pos2 & 7) == 5)) && (pas::shr(pos2, 3) > pas::shr(pos, 3)))) {
                     return_value = true;
                     return return_value;
                 }
             } else {
                 if (((pos & 7) == 0)) {
-                    pos2 = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+                    pos2 = petir_bitboard_mask::king_square(data.kingblack);
                     if ((((pos2 & 7) <= 1) && (pas::shr(pos2, 3) >= pas::shr(pos, 3)))) {
                         return_value = true;
                         return return_value;
                     }
-                    pos3 = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
+                    pos3 = petir_bitboard_mask::king_square(data.kingwhite);
                     if ((((((pos3 & 7) == 0) && (pas::shr(pos3, 3) > pas::shr(pos, 3))) && ((pos2 & 7) == 2)) && (pas::shr(pos2, 3) > pas::shr(pos, 3)))) {
                         return_value = true;
                         return return_value;
@@ -1724,8 +1724,8 @@ bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
                 }
             }
             return return_value;
-            pos2 = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
-            pos3 = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
+            pos2 = petir_bitboard_mask::king_square(data.kingblack);
+            pos3 = petir_bitboard_mask::king_square(data.kingwhite);
             if ((pos2 >= petir_header::a8)) {
                 return return_value;
             }
@@ -1759,24 +1759,24 @@ bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
             if (((data.pawnwhite == 0) && petir_ueval::onlyone(data.pawnblack))) {
                 pos = petir_bitboard_mask::lastbitp(pas::address(data.pawnblack));
                 if (((pos & 7) == 7)) {
-                    pos2 = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
+                    pos2 = petir_bitboard_mask::king_square(data.kingwhite);
                     if ((((pos2 & 7) >= 6) && (pas::shr(pos2, 3) <= pas::shr(pos, 3)))) {
                         return_value = true;
                         return return_value;
                     }
-                    pos3 = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+                    pos3 = petir_bitboard_mask::king_square(data.kingblack);
                     if ((((((pos3 & 7) == 7) && (pas::shr(pos3, 3) < pas::shr(pos, 3))) && ((pos2 & 7) == 5)) && (pas::shr(pos2, 3) < pas::shr(pos, 3)))) {
                         return_value = true;
                         return return_value;
                     }
                 } else {
                     if (((pos & 7) == 0)) {
-                        pos2 = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
+                        pos2 = petir_bitboard_mask::king_square(data.kingwhite);
                         if ((((pos2 & 7) <= 1) && (pas::shr(pos2, 3) <= pas::shr(pos, 3)))) {
                             return_value = true;
                             return return_value;
                         }
-                        pos3 = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
+                        pos3 = petir_bitboard_mask::king_square(data.kingblack);
                         if ((((((pos3 & 7) == 0) && (pas::shr(pos3, 3) < pas::shr(pos, 3))) && ((pos2 & 7) == 2)) && (pas::shr(pos2, 3) < pas::shr(pos, 3)))) {
                             return_value = true;
                             return return_value;
@@ -1784,8 +1784,8 @@ bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
                     }
                 }
                 return return_value;
-                pos2 = petir_bitboard_mask::lastbitp(pas::address(data.kingblack));
-                pos3 = petir_bitboard_mask::lastbitp(pas::address(data.kingwhite));
+                pos2 = petir_bitboard_mask::king_square(data.kingblack);
+                pos3 = petir_bitboard_mask::king_square(data.kingwhite);
                 if (((pas::sub(pos, pos3) == 8) && (pas::sub(pos2, pos) == 8))) {
                     return_value = true;
                     return return_value;
@@ -1801,8 +1801,8 @@ bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
             if (petir_ueval::onlyone(data.pawnblack)) {
                 if ((data.ngajahputih != 0)) {
                     a = petir_bitboard_mask::firstbitp(pas::address(data.pawnblack));
-                    pos2 = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
-                    pos3 = petir_bitboard_mask::firstbitp(pas::address(data.kingblack));
+                    pos2 = petir_bitboard_mask::king_square(data.kingwhite);
+                    pos3 = petir_bitboard_mask::king_square(data.kingblack);
                     if ((a >= petir_header::a3)) {
                         if ((!(((giliran == petir_header::_sisihitam) && (petir_evalmask::distancemax(a, pos3) == 1)) && (petir_evalmask::distancemax(a, pos2) > 1)))) {
                             return_value = true;
@@ -1829,8 +1829,8 @@ bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
                     if ((data.ngajahhitam != 0)) {
                         a = petir_bitboard_mask::firstbitp(pas::address(data.pawnwhite));
                         if ((a < petir_header::a7)) {
-                            pos2 = petir_bitboard_mask::firstbitp(pas::address(data.kingwhite));
-                            pos3 = petir_bitboard_mask::firstbitp(pas::address(data.kingblack));
+                            pos2 = petir_bitboard_mask::king_square(data.kingwhite);
+                            pos3 = petir_bitboard_mask::king_square(data.kingblack);
                             if ((!(((giliran == petir_header::_sisiputih) && (petir_evalmask::distancemax(a, pos2) == 1)) && (petir_evalmask::distancemax(a, pos3) > 1)))) {
                                 return_value = true;
                                 return return_value;

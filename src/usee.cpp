@@ -19,7 +19,7 @@ std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int
     attack = (attack | (petir_bitboard_mask::kingmask[sto] & (data.kingblack | data.kingwhite)));
     list[0] = petir_usee::nilai_piece[data.papan[sto]];
     petir_usee::xray(attack, sfrom, sto, data);
-    attack = (attack & (~petir_bitboard_mask::bit2nmask[sfrom]));
+    attack = (attack & (~petir_bitboard_mask::bit(sfrom)));
     giliran = pas::sub(3, giliran);
     piece = petir_usee::nilai_piece[data.papan[sfrom]];
     n = 1;
@@ -92,7 +92,7 @@ std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int
         list[n] = pas::add(pas::negate(list[pas::sub(n, 1)]), piece);
         piece = petir_usee::nilai_piece[data.papan[square]];
         petir_usee::xray(attack, square, sto, data);
-        attack = (attack & petir_bitboard_mask::bit2nmasknot[square]);
+        attack = (attack & petir_bitboard_mask::bitnot(square));
         (n = pas::increment(n, 1));
         giliran = pas::sub(3, giliran);
     }
