@@ -1,15 +1,14 @@
 // Faithful translation of hashing.pas; Delphi source is in original/.
 #include "petir.hpp"
 namespace petir_hashing {
-std::int32_t anu = 0;
-static void store(petir_hashing_header::thashrecord& e, std::uint64_t key, std::int32_t level, std::int32_t moves, std::int32_t nilai, std::int32_t tipe, std::uint8_t move50count) {
-    e.moves = moves;
-    e.move50count = move50count;
-    e.key = key;
-    e.nilai = nilai;
-    e.tipe = tipe;
-    e.level = level;
-    e.flag = petir_hashing_header::bit_used|petir_hashing_header::generation;
+static void storeEntry(petir_hashing_header::thashrecord& entry, std::uint64_t key, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter) {
+    entry.move = move;
+    entry.fiftyMoveCounter = fiftyMoveCounter;
+    entry.key = key;
+    entry.score = score;
+    entry.boundType = boundType;
+    entry.depth = depth;
+    entry.flags = petir_hashing_header::usedFlag|petir_hashing_header::generation;
 }
 // hashing.pas:15
 // Each bucket has two entries: the first keeps the deeper or newer result, the
@@ -17,72 +16,72 @@ static void store(petir_hashing_header::thashrecord& e, std::uint64_t key, std::
 // A current first entry pushed out by another position moves to the second.
 // A first entry from the previous search that is deeper than the new result
 // stays, and the new result goes to the second; older entries give way.
-void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::int32_t moves, std::int32_t nilai, std::int32_t tipe, std::uint8_t move50count) {
-    if ((giliran == petir_header::_sisihitam)) {
+void storeHash(std::uint64_t key, std::int32_t sideToMove, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter) {
+    if ((sideToMove == petir_header::blackSide)) {
         key = (~key);
     }
-    level = pas::shr(level, 1);
-    auto* bucket = petir_hashing_header::bucket(key);
-    auto& deep = bucket[0];
-    const bool aged = petir_hashing_header::is_old(deep) && !(petir_hashing_header::is_previous(deep) && (level < deep.level) && (deep.key != key));
-    if (((deep.flag & petir_hashing_header::bit_used) == 0) || aged || level >= deep.level) {
-        if (((deep.flag & petir_hashing_header::bit_used) != 0) && !petir_hashing_header::is_old(deep) && (deep.key != key)) {
-            bucket[1] = deep;
+    depth = pas::shiftRight(depth, 1);
+    auto* bucketEntries = petir_hashing_header::bucket(key);
+    auto& depthEntry = bucketEntries[0];
+    const bool replaceable = petir_hashing_header::isOld(depthEntry) && !(petir_hashing_header::isPreviousGeneration(depthEntry) && (depth < depthEntry.depth) && (depthEntry.key != key));
+    if (((depthEntry.flags & petir_hashing_header::usedFlag) == 0) || replaceable || depth >= depthEntry.depth) {
+        if (((depthEntry.flags & petir_hashing_header::usedFlag) != 0) && !petir_hashing_header::isOld(depthEntry) && (depthEntry.key != key)) {
+            bucketEntries[1] = depthEntry;
         }
-        store(deep, key, level, moves, nilai, tipe, move50count);
-    } else if (deep.key != key) {
-        store(bucket[1], key, level, moves, nilai, tipe, move50count);
+        storeEntry(depthEntry, key, depth, move, score, boundType, fiftyMoveCounter);
+    } else if (depthEntry.key != key) {
+        storeEntry(bucketEntries[1], key, depth, move, score, boundType, fiftyMoveCounter);
     }
 }
 
 // hashing.pas:52
-bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t level, std::int32_t giliran, std::int32_t& nilai, std::int32_t& moves, bool& avoidnm, std::uint8_t move50count) {
-    bool return_value{};
-    petir_hashing_header::thashrecord* temp{};
-    std::int32_t pas_temp_1{};
-    if ((giliran == petir_header::_sisihitam)) {
+bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t depth, std::int32_t sideToMove, std::int32_t& score, std::int32_t& move, bool& avoidNullMove, std::uint8_t fiftyMoveCounter) {
+    bool result{};
+    petir_hashing_header::thashrecord* entry{};
+    std::int32_t boundType{};
+    if ((sideToMove == petir_header::blackSide)) {
         key = (~key);
     }
-    auto* bucket = petir_hashing_header::bucket(key);
-    temp = (((bucket[0].flag & petir_hashing_header::bit_used) != 0) && (bucket[0].key == key)) ? &bucket[0] : &bucket[1];
-    avoidnm = false;
-    if ((((*temp).flag & petir_hashing_header::bit_used) != 0)) {
-        if (((*temp).key == key)) {
-            moves = (*temp).moves;
+    auto* bucketEntries = petir_hashing_header::bucket(key);
+    entry = (((bucketEntries[0].flags & petir_hashing_header::usedFlag) != 0) && (bucketEntries[0].key == key)) ? &bucketEntries[0] : &bucketEntries[1];
+    avoidNullMove = false;
+    if ((((*entry).flags & petir_hashing_header::usedFlag) != 0)) {
+        if (((*entry).key == key)) {
+            move = (*entry).move;
             // The board still supplies a move-ordering hint, but scores and
             // score-dependent pruning require the same halfmove counter.
-            if (((*temp).move50count == move50count) && ((*temp).level >= pas::shr(level, 1))) {
-                pas_temp_1 = (*temp).tipe;
-                if (((pas_temp_1 == petir_header::pv_node))) {
-                    nilai = (*temp).nilai;
-                    return_value = true;
-                    return return_value;
+            if (((*entry).fiftyMoveCounter == fiftyMoveCounter) && ((*entry).depth >= pas::shiftRight(depth, 1))) {
+                boundType = (*entry).boundType;
+                if (((boundType == petir_header::exactBound))) {
+                    score = (*entry).score;
+                    result = true;
+                    return result;
                 }
-                else if (((pas_temp_1 == petir_header::fail_low))) {
-                    if (((*temp).nilai <= alpha)) {
-                        nilai = (*temp).nilai;
-                        return_value = true;
-                        return return_value;
+                else if (((boundType == petir_header::upperBound))) {
+                    if (((*entry).score <= alpha)) {
+                        score = (*entry).score;
+                        result = true;
+                        return result;
                     } else {
-                        if (((*temp).nilai >= beta)) {
-                            if ((pas::mul((*temp).level, 2) >= 16)) {
-                                avoidnm = true;
+                        if (((*entry).score >= beta)) {
+                            if ((pas::mul((*entry).depth, 2) >= 16)) {
+                                avoidNullMove = true;
                             }
                         }
                     }
                 }
-                else if (((pas_temp_1 == petir_header::fail_high))) {
-                    if (((*temp).nilai >= beta)) {
-                        nilai = (*temp).nilai;
-                        return_value = true;
-                        return return_value;
+                else if (((boundType == petir_header::lowerBound))) {
+                    if (((*entry).score >= beta)) {
+                        score = (*entry).score;
+                        result = true;
+                        return result;
                     }
                 }
             }
         }
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 }

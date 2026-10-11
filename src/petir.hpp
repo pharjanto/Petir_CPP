@@ -81,91 +81,90 @@ inline constexpr auto rank5 = 4;
 inline constexpr auto rank6 = 5;
 inline constexpr auto rank7 = 6;
 inline constexpr auto rank8 = 7;
-inline constexpr auto _pionputih = 1;
-inline constexpr auto _kudaputih = 2;
-inline constexpr auto _gajahputih = 3;
-inline constexpr auto _bentengputih = 4;
-inline constexpr auto _mentriputih = 5;
-inline constexpr auto _rajaputih = 6;
-inline constexpr auto _pionhitam = pas::negate(1);
-inline constexpr auto _kudahitam = pas::negate(2);
-inline constexpr auto _gajahhitam = pas::negate(3);
-inline constexpr auto _bentenghitam = pas::negate(4);
-inline constexpr auto _mentrihitam = pas::negate(5);
-inline constexpr auto _rajahitam = pas::negate(6);
-inline constexpr auto pv_node = 0;
-inline constexpr auto fail_low = 1;
-inline constexpr auto fail_high = 2;
-inline constexpr auto _sisiputih = 1;
-inline constexpr auto _sisihitam = 2;
-inline constexpr auto _gameover = 3;
-inline constexpr auto _nodemax = 1;
-inline constexpr auto _nodemin = 2;
-inline constexpr auto _no_ep = 10;
-inline constexpr auto _norokade = 64;
-inline constexpr auto _rokadependek = 65;
-inline constexpr auto _rokadepanjang = 66;
-inline constexpr auto _en_passant = 67;
-inline constexpr auto _no_move = 0;
-inline constexpr auto _twoplayers = 0;
-inline constexpr auto _playervscomp = 1;
-inline constexpr auto _compvsplayer = 2;
-inline constexpr auto _compvscomp = 3;
-inline constexpr auto norokade = 0;
-inline constexpr auto rokadependek = 1;
-inline constexpr auto rokadepanjang = 2;
-inline constexpr auto bitputihsc = 1;
-inline constexpr auto bitputihlc = 2;
-inline constexpr auto bithitamsc = 4;
-inline constexpr auto bithitamlc = 8;
-inline constexpr auto bitputihnoc = 3;
-inline constexpr auto bithitamnoc = 12;
-inline constexpr auto result_white_win = 0;
-inline constexpr auto result_draw = 1;
-inline constexpr auto result_black_win = 2;
-inline constexpr auto promosi_mentri = 1;
-inline constexpr auto promosi_kuda = 2;
-inline constexpr auto promosi_gajah = 3;
-inline constexpr auto promosi_benteng = 4;
-inline pas::Array<std::uint16_t, 0, 12> bit8mask = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
-// bit8mask[i] as the int it promotes to; checked builds keep the table's range check.
-inline std::int32_t bit8(std::int64_t i) {
+inline constexpr auto whitePawn = 1;
+inline constexpr auto whiteKnight = 2;
+inline constexpr auto whiteBishop = 3;
+inline constexpr auto whiteRook = 4;
+inline constexpr auto whiteQueen = 5;
+inline constexpr auto whiteKing = 6;
+inline constexpr auto blackPawn = pas::negate(1);
+inline constexpr auto blackKnight = pas::negate(2);
+inline constexpr auto blackBishop = pas::negate(3);
+inline constexpr auto blackRook = pas::negate(4);
+inline constexpr auto blackQueen = pas::negate(5);
+inline constexpr auto blackKing = pas::negate(6);
+inline constexpr auto exactBound = 0;
+inline constexpr auto upperBound = 1;
+inline constexpr auto lowerBound = 2;
+inline constexpr auto whiteSide = 1;
+inline constexpr auto blackSide = 2;
+inline constexpr auto gameOver = 3;
+inline constexpr auto maxNode = 1;
+inline constexpr auto minNode = 2;
+inline constexpr auto noEnPassant = 10;
+inline constexpr auto noCastleTarget = 64;
+inline constexpr auto shortCastleTarget = 65;
+inline constexpr auto longCastleTarget = 66;
+inline constexpr auto enPassantTarget = 67;
+inline constexpr auto noMove = 0;
+inline constexpr auto twoPlayers = 0;
+inline constexpr auto playerVsComputer = 1;
+inline constexpr auto computerVsPlayer = 2;
+inline constexpr auto computerVsComputer = 3;
+inline constexpr auto notCastled = 0;
+inline constexpr auto castledShort = 1;
+inline constexpr auto castledLong = 2;
+inline constexpr auto whiteShortCastleRight = 1;
+inline constexpr auto whiteLongCastleRight = 2;
+inline constexpr auto blackShortCastleRight = 4;
+inline constexpr auto blackLongCastleRight = 8;
+inline constexpr auto whiteCastleRights = 3;
+inline constexpr auto blackCastleRights = 12;
+inline constexpr auto whiteWinResult = 0;
+inline constexpr auto drawResult = 1;
+inline constexpr auto blackWinResult = 2;
+inline constexpr auto queenPromotion = 1;
+inline constexpr auto knightPromotion = 2;
+inline constexpr auto bishopPromotion = 3;
+inline constexpr auto rookPromotion = 4;
+inline pas::Array<std::uint16_t, 0, 12> powersOfTwo = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
+// powersOfTwo[exponent] as the int it promotes to; checked builds keep the table's range check.
+inline std::int32_t powerOfTwo(std::int64_t exponent) {
 #ifdef PETIR_CHECK_BOUNDS
-    (void)bit8mask[i];
+    (void)powersOfTwo[exponent];
 #endif
-    return std::int32_t(1) << i;
+    return std::int32_t(1) << exponent;
 }
-inline constexpr auto level_nm = 3;
-inline constexpr auto _hashmove = 0;
-inline constexpr auto _goodcaps = 1;
-inline constexpr auto _killermoves1 = 2;
-inline constexpr auto _killermoves2 = 3;
-inline constexpr auto _killermoves3 = 4;
-inline constexpr auto _killermoves4 = 5;
-inline constexpr auto _othermoves = 6;
-inline constexpr auto _badcaps = 7;
-inline constexpr auto _finish = 8;
-inline constexpr auto minutes_game = 0;
-inline constexpr auto seconds_move = 1;
-inline constexpr auto moves_minutes = 2;
-inline constexpr auto minutes_game_increment = 3;
-inline constexpr auto fixed_depth = 4;
-inline constexpr auto ponder_off = 0;
-inline constexpr auto ponder_fill_hash = 1;
-inline constexpr auto ponder_guess = 2;
-inline constexpr auto ponder_combine = 3;
-inline constexpr auto _nilai_pion = 90;
-inline constexpr auto _nilai_gajah = 319;
-inline constexpr auto _nilai_kuda = 312;
-inline constexpr auto _nilai_benteng = 500;
-inline constexpr auto _nilai_mentri = 975;
-inline constexpr auto _nilai_raja = 20000;
-inline pas::Array<std::uint16_t, pas::negate(6), 6> nilai_piece = {petir_header::_nilai_raja, petir_header::_nilai_mentri, petir_header::_nilai_benteng, petir_header::_nilai_gajah, petir_header::_nilai_kuda, petir_header::_nilai_pion, 0, petir_header::_nilai_pion, petir_header::_nilai_kuda, petir_header::_nilai_gajah, petir_header::_nilai_benteng, petir_header::_nilai_mentri, petir_header::_nilai_raja};
-inline constexpr auto _infinity = 20000;
-inline constexpr auto hist_size = 65536;
+inline constexpr auto hashMovePhase = 0;
+inline constexpr auto goodCapturesPhase = 1;
+inline constexpr auto killerMove1Phase = 2;
+inline constexpr auto killerMove2Phase = 3;
+inline constexpr auto killerMove3Phase = 4;
+inline constexpr auto killerMove4Phase = 5;
+inline constexpr auto otherMovesPhase = 6;
+inline constexpr auto badCapturesPhase = 7;
+inline constexpr auto finishedPhase = 8;
+inline constexpr auto minutesPerGame = 0;
+inline constexpr auto secondsPerMove = 1;
+inline constexpr auto movesInMinutes = 2;
+inline constexpr auto minutesPerGameWithIncrement = 3;
+inline constexpr auto fixedDepth = 4;
+inline constexpr auto ponderOff = 0;
+inline constexpr auto ponderFillHash = 1;
+inline constexpr auto ponderGuess = 2;
+inline constexpr auto ponderCombine = 3;
+inline constexpr auto pawnValue = 90;
+inline constexpr auto bishopValue = 319;
+inline constexpr auto knightValue = 312;
+inline constexpr auto rookValue = 500;
+inline constexpr auto queenValue = 975;
+inline constexpr auto kingValue = 20000;
+inline pas::Array<std::uint16_t, pas::negate(6), 6> pieceValue = {petir_header::kingValue, petir_header::queenValue, petir_header::rookValue, petir_header::bishopValue, petir_header::knightValue, petir_header::pawnValue, 0, petir_header::pawnValue, petir_header::knightValue, petir_header::bishopValue, petir_header::rookValue, petir_header::queenValue, petir_header::kingValue};
+inline constexpr auto infinity = 20000;
+inline constexpr auto historySize = 65536;
 using tkillermove = std::int32_t;
 struct tmoverecord {
-    std::int32_t moves;
+    std::int32_t move;
     std::int32_t score;
 };
 using pmoverecord = petir_header::tmoverecord*;
@@ -173,503 +172,496 @@ using pmoverecord = petir_header::tmoverecord*;
 // Keep this capacity guard even when general Pascal bounds checks are off.
 // The throw lives out of line so each access is one compare and branch.
 #if defined(_MSC_VER)
-[[noreturn]] __declspec(noinline) void move_list_index_error(std::int64_t i);
+[[noreturn]] __declspec(noinline) void moveListIndexError(std::int64_t index);
 #else
-[[noreturn]] __attribute__((noinline)) void move_list_index_error(std::int64_t i);
+[[noreturn]] __attribute__((noinline)) void moveListIndexError(std::int64_t index);
 #endif
 struct tmovelist : pas::Array<petir_header::tmoverecord, 1, 256> {
-    tmoverecord& operator[](std::int64_t i) {
-        if(static_cast<std::uint64_t>(i-1)>=256) [[unlikely]] move_list_index_error(i);
-        return values[i-1];
+    tmoverecord& operator[](std::int64_t index) {
+        if(static_cast<std::uint64_t>(index-1)>=256) [[unlikely]] moveListIndexError(index);
+        return values[index-1];
     }
-    const tmoverecord& operator[](std::int64_t i) const {
-        if(static_cast<std::uint64_t>(i-1)>=256) [[unlikely]] move_list_index_error(i);
-        return values[i-1];
+    const tmoverecord& operator[](std::int64_t index) const {
+        if(static_cast<std::uint64_t>(index-1)>=256) [[unlikely]] moveListIndexError(index);
+        return values[index-1];
     }
 };
 using tarr = pas::Array<std::int8_t, 0, 63>;
 struct tdata {
-    petir_header::tarr papan;
-    std::uint8_t ep;
-    std::uint8_t flagrokade;
-    std::uint8_t wc;
-    std::uint8_t bc;
-    std::uint8_t move50count;
-    std::uint8_t cp;
-    std::uint8_t nilai_perwira_putih;
-    std::uint8_t nilai_perwira_hitam;
-    std::uint8_t ngajahhitam;
-    std::uint8_t ngajahputih;
-    bool pawnending;
-    std::int32_t materialscore;
-    std::uint64_t hashkey;
-    std::uint64_t whitepieces;
-    std::uint64_t blackpieces;
-    std::uint64_t allpieces;
-    std::uint64_t allpiecesr90;
-    std::uint64_t allpiecesa8h1;
-    std::uint64_t allpiecesh8a1;
-    std::uint64_t pawnblack;
-    std::uint64_t pawnwhite;
-    std::uint64_t bishopblack;
-    std::uint64_t bishopwhite;
-    std::uint64_t knightblack;
-    std::uint64_t knightwhite;
-    std::uint64_t rookblack;
-    std::uint64_t rookwhite;
-    std::uint64_t queenblack;
-    std::uint64_t queenwhite;
-    std::uint64_t kingblack;
-    std::uint64_t kingwhite;
-    std::uint64_t rookqueen;
-    std::uint64_t bishopqueen;
+    petir_header::tarr board;
+    std::uint8_t enPassantFile;
+    std::uint8_t castleRights;
+    std::uint8_t whiteCastleType;
+    std::uint8_t blackCastleType;
+    std::uint8_t fiftyMoveCounter;
+    std::uint8_t lastCaptureType;
+    std::uint8_t whiteNonPawnMaterial;
+    std::uint8_t blackNonPawnMaterial;
+    std::uint8_t blackBishopCount;
+    std::uint8_t whiteBishopCount;
+    bool pawnEnding;
+    std::int32_t materialScore;
+    std::uint64_t hashKey;
+    std::uint64_t whitePieces;
+    std::uint64_t blackPieces;
+    std::uint64_t allPieces;
+    std::uint64_t allPiecesRotated90;
+    std::uint64_t allPiecesA8H1;
+    std::uint64_t allPiecesH8A1;
+    std::uint64_t blackPawns;
+    std::uint64_t whitePawns;
+    std::uint64_t blackBishops;
+    std::uint64_t whiteBishops;
+    std::uint64_t blackKnights;
+    std::uint64_t whiteKnights;
+    std::uint64_t blackRooks;
+    std::uint64_t whiteRooks;
+    std::uint64_t blackQueens;
+    std::uint64_t whiteQueens;
+    std::uint64_t blackKingBoard;
+    std::uint64_t whiteKingBoard;
+    std::uint64_t rooksAndQueens;
+    std::uint64_t bishopsAndQueens;
 };
-extern std::int32_t totaladdhash;
-extern std::int32_t collision;
-extern std::int32_t futfail;
-extern std::int32_t futtry;
-extern std::int32_t tx;
-extern std::int32_t evalms;
-extern std::int32_t evalsee;
-extern std::int32_t movgenms;
-extern bool futpruningok;
-extern bool lazyok;
-extern bool qpruningok;
-extern bool nullok;
-extern bool etcok;
-extern std::int32_t lazyts;
-extern std::int32_t pawneval;
-extern std::int32_t knighteval;
-extern std::int32_t bishopeval;
-extern std::int32_t rookeval;
-extern std::int32_t queeneval;
-extern std::int32_t kseval;
-extern std::int32_t kpeval;
-extern std::int32_t tropismeval;
-extern std::int32_t q_margin;
-extern std::int32_t futil_margin;
-extern std::int32_t thread_priority;
-extern std::int32_t maxhash;
-extern std::int32_t resign_value;
-extern std::int32_t resign_count;
-extern std::int32_t draw_count;
-extern std::int32_t total_node;
-extern std::int32_t qnode;
-extern bool stalemate;
-extern std::int32_t players;
-extern std::int32_t ai_side;
-extern std::int32_t toplevel;
-extern bool use_mtdf;
-// Quiet-move history stays within +/-history_max (see petir_search::update_history).
-inline constexpr std::int32_t history_max = 16384;
-extern pas::Array<pas::Array<std::int32_t, 0, 67>, pas::negate(6), 6> historyw;
-extern pas::Array<pas::Array<std::int32_t, 0, 67>, pas::negate(6), 6> historyb;
+extern std::int32_t hashStoreCount;
+extern std::int32_t hashCollisionCount;
+extern std::int32_t futilityFailCount;
+extern std::int32_t futilityTryCount;
+extern std::int32_t seeTimeTotal;
+extern std::int32_t evalTimeMs;
+extern std::int32_t seeTimeMs;
+extern std::int32_t moveGenTimeMs;
+extern bool futilityPruningEnabled;
+extern bool lazyEvalEnabled;
+extern bool quiescencePruningEnabled;
+extern bool nullMoveEnabled;
+extern bool etcEnabled;
+extern std::int32_t lazyMarginNodeStamp;
+extern std::int32_t pawnEvalScore;
+extern std::int32_t knightEvalScore;
+extern std::int32_t bishopEvalScore;
+extern std::int32_t rookEvalScore;
+extern std::int32_t queenEvalScore;
+extern std::int32_t kingShelterEvalScore;
+extern std::int32_t kingPressureEvalScore;
+extern std::int32_t tropismEvalScore;
+extern std::int32_t quiescenceMargin;
+extern std::int32_t futilityMargin;
+extern std::int32_t threadPriority;
+extern std::int32_t hashTableSize;
+extern std::int32_t resignThreshold;
+extern std::int32_t resignCounter;
+extern std::int32_t drawCounter;
+extern std::int32_t nodeCount;
+extern std::int32_t quiescenceNodeCount;
+extern bool stalemateFound;
+extern std::int32_t playerMode;
+extern std::int32_t engineSide;
+extern std::int32_t iterationDepth;
+extern bool useMtdf;
+// Quiet-move history stays within +/-historyLimit (see petir_search::updateHistory).
+inline constexpr std::int32_t historyLimit = 16384;
+extern pas::Array<pas::Array<std::int32_t, 0, 67>, pas::negate(6), 6> whiteHistory;
+extern pas::Array<pas::Array<std::int32_t, 0, 67>, pas::negate(6), 6> blackHistory;
 // Continuation history: how a quiet move [piece][to] did right after an
 // earlier move, keyed by that move's [piece][to]; the piece's sign gives the
-// side that made it. Entries stay within +/-history_max.
+// side that made it. Entries stay within +/-historyLimit.
 using piece_to_history = pas::Array<pas::Array<std::int16_t, 0, 67>, pas::negate(6), 6>;
-extern pas::Array<pas::Array<piece_to_history, 0, 67>, pas::negate(6), 6> conthist;
-extern pas::Array<petir_header::tkillermove, pas::negate(2), 63> killer0;
-extern pas::Array<petir_header::tkillermove, pas::negate(2), 63> killer1;
-extern std::int32_t co_hash;
-extern std::int32_t totalco;
-extern std::int32_t hashco;
-extern std::int32_t lazyexit;
-extern std::int32_t fpruning;
-extern std::int32_t efpruning;
-extern std::int32_t razor;
-extern std::int32_t cofirst;
-extern pas::StringList sltemp;
-extern std::int32_t lazy_margin1;
-extern std::int32_t lazy_margin2;
-extern std::int32_t lazy_margin3;
-extern std::int32_t lazy_margin1a;
-extern std::int32_t lazy_margin2a;
-extern std::int32_t lazy_margin3a;
-extern std::int32_t contemp_draw;
-extern std::int32_t hash_hit;
-extern std::int32_t cetc;
-extern std::int32_t maxdepth1;
-extern bool inpondering;
-extern std::atomic_bool stop_process;
-extern bool thread_killed;
-extern std::int32_t maxdepth;
-extern std::int32_t outofbook;
-extern std::int32_t clockwhite;
-extern std::int32_t clockblack;
-extern std::int32_t realclock;
-extern bool usetimer;
-extern std::int32_t timefactor;
-extern std::atomic<std::int32_t> timepassed;
-extern std::int32_t timelimit;
-extern std::int32_t side;
-extern std::int32_t mmoves;
-extern pas::Array<pas::Array<std::uint64_t, 0, 127>, pas::negate(6), 6> hashkey;
-extern pas::Array<pas::Array<std::uint64_t, 0, 127>, pas::negate(6), 6> hk2;
-extern pas::Array<std::uint64_t, 0, 255> rokadehashkey;
-extern pas::Array<std::uint64_t, 0, 255> rhk2;
-extern pas::Array<std::uint64_t, 0, petir_header::_no_ep> enpassanthashkey;
-extern pas::Array<std::uint64_t, 0, petir_header::_no_ep> ephk2;
-extern std::int32_t startclock;
-extern std::int32_t barisitr;
-extern double maxext;
-extern std::int32_t jumlahlangkah;
-extern bool computer_thinking;
-extern bool use_book;
-extern std::uint8_t ponder_type;
-extern std::int32_t amoves;
-extern std::int32_t fractional_ply;
-extern std::int32_t skak_extension;
-extern std::int32_t mate_threat_extension;
-extern std::int32_t recapture_pawn_extension;
-extern std::int32_t recapture_knight_extension;
-extern std::int32_t recapture_rook_extension;
-extern std::int32_t recapture_queen_extension;
-extern std::int32_t single_reply_extension;
-extern std::int32_t two_reply_extension;
-extern std::int32_t double_skak_extension;
-extern std::int32_t pushed_pawn_extension_midgame;
-extern std::int32_t pushed_pawn_extension_endgame;
-extern std::int32_t pushed_pawn_extension_late_endgame;
-extern petir_header::tdata data;
-extern std::int32_t modetime;
-extern std::int32_t rmoves;
-extern std::int32_t rincrement;
-extern bool runningtest;
-extern bool testsolved;
-extern pas::Array<std::int32_t, 1, 5> testanswer;
-extern bool usewinboard;
-extern std::int32_t ref2;
-extern std::int32_t nerror;
-extern std::uint64_t ephashkey;
-extern pas::File ftext;
+extern pas::Array<pas::Array<piece_to_history, 0, 67>, pas::negate(6), 6> continuationHistory;
+extern pas::Array<petir_header::tkillermove, pas::negate(2), 63> firstKillers;
+extern pas::Array<petir_header::tkillermove, pas::negate(2), 63> secondKillers;
+extern std::int32_t cutoffCount;
+extern std::int32_t hashCutoffCount;
+extern std::int32_t lazyEvalExitCount;
+extern std::int32_t futilityPruneCount;
+extern std::int32_t extendedFutilityPruneCount;
+extern std::int32_t razorCount;
+extern std::int32_t firstMoveCutoffCount;
+extern pas::StringList debugStringList;
+extern std::int32_t lazyMargin1;
+extern std::int32_t lazyMargin2;
+extern std::int32_t lazyMargin3;
+extern std::int32_t adjustedLazyMargin1;
+extern std::int32_t adjustedLazyMargin2;
+extern std::int32_t adjustedLazyMargin3;
+extern std::int32_t drawScore;
+extern std::int32_t hashHitCount;
+extern std::int32_t etcCutoffCount;
+extern std::int32_t maxDepthReached;
+extern bool isPondering;
+extern std::atomic_bool stopSearch;
+extern bool threadKilled;
+extern std::int32_t maxSearchPly;
+extern std::int32_t movesOutOfBook;
+extern std::int32_t whiteClock;
+extern std::int32_t blackClock;
+extern std::int32_t fixedMoveTime;
+extern bool useTimer;
+extern std::int32_t timeFactor;
+extern std::atomic<std::int32_t> timeElapsed;
+extern std::int32_t timeLimit;
+extern std::int32_t currentSide;
+extern std::int32_t rootBestMove;
+extern pas::Array<pas::Array<std::uint64_t, 0, 127>, pas::negate(6), 6> zobristPieceKeys;
+extern pas::Array<pas::Array<std::uint64_t, 0, 127>, pas::negate(6), 6> zobristPieceKeys2;
+extern pas::Array<std::uint64_t, 0, 255> zobristCastleKeys;
+extern pas::Array<std::uint64_t, 0, 255> zobristCastleKeys2;
+extern pas::Array<std::uint64_t, 0, petir_header::noEnPassant> zobristEnPassantKeys;
+extern pas::Array<std::uint64_t, 0, petir_header::noEnPassant> zobristEnPassantKeys2;
+extern std::int32_t searchStartTime;
+extern std::int32_t outputLineNumber;
+extern double maxExtensionFactor;
+extern std::int32_t gamePlyCount;
+extern bool computerThinking;
+extern bool useBook;
+extern std::uint8_t ponderMode;
+extern std::int32_t plyUnits;
+extern std::int32_t checkExtension;
+extern std::int32_t mateThreatExtension;
+extern std::int32_t pawnRecaptureExtension;
+extern std::int32_t knightRecaptureExtension;
+extern std::int32_t rookRecaptureExtension;
+extern std::int32_t queenRecaptureExtension;
+extern std::int32_t singleReplyExtension;
+extern std::int32_t twoReplyExtension;
+extern std::int32_t doubleCheckExtension;
+extern std::int32_t pawnPushExtensionMiddlegame;
+extern std::int32_t pawnPushExtensionEndgame;
+extern std::int32_t pawnPushExtensionLateEndgame;
+extern petir_header::tdata gamePosition;
+extern std::int32_t timeMode;
+extern std::int32_t movesPerTimeControl;
+extern std::int32_t timeIncrement;
+extern bool runningTestSuite;
+extern bool testSolved;
+extern pas::Array<std::int32_t, 1, 5> testAnswers;
+extern bool useWinboard;
+extern std::int32_t pvReferenceTime;
+extern std::int32_t errorCount;
+extern std::uint64_t noEnPassantHashKey;
+extern pas::File debugFile;
 }
 namespace petir_bitboard_mask {
 using pword = std::uint16_t*;
-inline pas::Array<std::uint8_t, 0, 63> h8a1shiftmask = {28, 21, 15, 10, 6, 3, 1, 0, 36, 28, 21, 15, 10, 6, 3, 1, 43, 36, 28, 21, 15, 10, 6, 3, 49, 43, 36, 28, 21, 15, 10, 6, 54, 49, 43, 36, 28, 21, 15, 10, 58, 54, 49, 43, 36, 28, 21, 15, 61, 58, 54, 49, 43, 36, 28, 21, 63, 61, 58, 54, 49, 43, 36, 28};
-inline pas::Array<std::uint8_t, 0, 63> a8h1shiftmask = {0, 1, 3, 6, 10, 15, 21, 28, 1, 3, 6, 10, 15, 21, 28, 36, 3, 6, 10, 15, 21, 28, 36, 43, 6, 10, 15, 21, 28, 36, 43, 49, 10, 15, 21, 28, 36, 43, 49, 54, 15, 21, 28, 36, 43, 49, 54, 58, 21, 28, 36, 43, 49, 54, 58, 61, 28, 36, 43, 49, 54, 58, 61, 63};
-inline pas::Array<std::uint8_t, 0, 63> vershiftmask = {57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1};
-extern pas::Array<std::uint64_t, 0, 63> bit2nmask;
-extern pas::Array<std::uint64_t, 0, 63> bit2nmasknot;
-// bit2nmask[sq] and bit2nmasknot[sq] computed with a shift. Unlike table loads,
+inline pas::Array<std::uint8_t, 0, 63> diagonalH8A1Shift = {28, 21, 15, 10, 6, 3, 1, 0, 36, 28, 21, 15, 10, 6, 3, 1, 43, 36, 28, 21, 15, 10, 6, 3, 49, 43, 36, 28, 21, 15, 10, 6, 54, 49, 43, 36, 28, 21, 15, 10, 58, 54, 49, 43, 36, 28, 21, 15, 61, 58, 54, 49, 43, 36, 28, 21, 63, 61, 58, 54, 49, 43, 36, 28};
+inline pas::Array<std::uint8_t, 0, 63> diagonalA8H1Shift = {0, 1, 3, 6, 10, 15, 21, 28, 1, 3, 6, 10, 15, 21, 28, 36, 3, 6, 10, 15, 21, 28, 36, 43, 6, 10, 15, 21, 28, 36, 43, 49, 10, 15, 21, 28, 36, 43, 49, 54, 15, 21, 28, 36, 43, 49, 54, 58, 21, 28, 36, 43, 49, 54, 58, 61, 28, 36, 43, 49, 54, 58, 61, 63};
+inline pas::Array<std::uint8_t, 0, 63> verticalShift = {57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1, 57, 49, 41, 33, 25, 17, 9, 1};
+extern pas::Array<std::uint64_t, 0, 63> squareMask;
+extern pas::Array<std::uint64_t, 0, 63> squareMaskInverted;
+// squareMask[square] and squareMaskInverted[square] computed with a shift. Unlike table loads,
 // these stay in registers across the position stores in move making; checked
 // builds keep the tables' range check.
-inline std::uint64_t bit(std::int64_t sq) {
+inline std::uint64_t squareBit(std::int64_t square) {
 #ifdef PETIR_CHECK_BOUNDS
-    (void)bit2nmask[sq];
+    (void)squareMask[square];
 #endif
-    return UINT64_C(1) << sq;
+    return UINT64_C(1) << square;
 }
-inline std::uint64_t bitnot(std::int64_t sq) {
+inline std::uint64_t squareBitInverted(std::int64_t square) {
 #ifdef PETIR_CHECK_BOUNDS
-    (void)bit2nmasknot[sq];
+    (void)squareMaskInverted[square];
 #endif
-    return ~(UINT64_C(1) << sq);
+    return ~(UINT64_C(1) << square);
 }
-// Square of a king bitboard. A king board holds exactly one bit, so firstbitp
-// and lastbitp agree; one forward scan replaces lastbitp's two scans.
-inline std::int32_t king_square(std::uint64_t king) {
+// Square of a king bitboard. A king board holds exactly one bit, so firstBit
+// and lastBit agree; one forward scan replaces lastBit's two scans.
+inline std::int32_t kingSquare(std::uint64_t kingBoard) {
 #ifdef PETIR_CHECK_BOUNDS
-    if (!king || (king & (king - 1))) throw std::out_of_range("King bitboard does not hold exactly one king");
+    if (!kingBoard || (kingBoard & (kingBoard - 1))) throw std::out_of_range("King bitboard does not hold exactly one king");
 #endif
 #if defined(_MSC_VER) && defined(_M_X64)
     unsigned long square;
-    _BitScanForward64(&square, king);
+    _BitScanForward64(&square, kingBoard);
     return static_cast<std::int32_t>(square);
 #else
-    return std::countr_zero(king);
+    return std::countr_zero(kingBoard);
 #endif
 }
-extern pas::Array<std::uint64_t, 0, 63> bit2nmask90;
-extern pas::Array<std::uint64_t, 0, 63> bit2nmaska8h1;
-extern pas::Array<std::uint64_t, 0, 63> bit2nmaskh8a1;
-extern pas::Array<std::uint64_t, 0, 63> w_pion_bebas_mask;
-extern pas::Array<std::uint64_t, 0, 63> b_pion_bebas_mask;
-extern pas::Array<std::uint64_t, 0, 63> knightmask;
-extern pas::Array<std::uint64_t, 0, 63> kingmask;
-extern std::uint64_t mask_left;
-extern std::uint64_t mask_right;
-extern pas::Array<pas::Array<std::uint64_t, 0, 63>, 0, 63> horzmask2;
-extern pas::Array<pas::Array<std::uint64_t, 0, 63>, 0, 63> vertmask2;
-extern pas::Array<pas::Array<std::uint64_t, 0, 255>, 0, 63> diaga8h1mask;
-extern pas::Array<pas::Array<std::uint64_t, 0, 255>, 0, 63> diagh8a1mask;
-extern pas::Array<std::uint8_t, 0, 65535> firstbitmask;
-extern pas::Array<std::uint64_t, 0, 63> w_outpost_mask;
-extern pas::Array<std::uint64_t, 0, 63> b_outpost_mask;
-extern pas::Array<std::uint64_t, 0, 63> w_pawn_attack;
-extern pas::Array<std::uint64_t, 0, 63> b_pawn_attack;
-extern pas::Array<std::uint64_t, 0, 7> file_mask;
-extern pas::Array<std::uint64_t, 0, 7> rank_mask;
-extern pas::Array<pas::Array<std::uint64_t, 0, 63>, 0, 63> pathmask;
-extern pas::Array<pas::Array<std::int8_t, 0, 63>, 0, 63> direction;
-extern pas::Array<pas::Array<std::int8_t, 0, 63>, 0, 63> direction2;
-extern pas::Array<std::uint64_t, 0, 63> rook_attack_up_mask;
-extern pas::Array<std::uint64_t, 0, 63> rook_attack_down_mask;
-extern pas::Array<std::uint64_t, 0, 63> rook_attack_left_mask;
-extern pas::Array<std::uint64_t, 0, 63> rook_attack_right_mask;
-extern pas::Array<std::uint64_t, 0, 63> bishop_attack_plus7_mask;
-extern pas::Array<std::uint64_t, 0, 63> bishop_attack_plus9_mask;
-extern pas::Array<std::uint64_t, 0, 63> bishop_attack_min7_mask;
-extern pas::Array<std::uint64_t, 0, 63> bishop_attack_min9_mask;
-extern pas::Array<std::uint64_t, 0, 63> bishop_attack_up_mask;
-extern pas::Array<std::uint64_t, 0, 63> bishop_attack_down_mask;
+extern pas::Array<std::uint64_t, 0, 63> rotated90SquareMask;
+extern pas::Array<std::uint64_t, 0, 63> rotatedA8H1SquareMask;
+extern pas::Array<std::uint64_t, 0, 63> rotatedH8A1SquareMask;
+extern pas::Array<std::uint64_t, 0, 63> whitePassedPawnMask;
+extern pas::Array<std::uint64_t, 0, 63> blackPassedPawnMask;
+extern pas::Array<std::uint64_t, 0, 63> knightAttacks;
+extern pas::Array<std::uint64_t, 0, 63> kingAttacks;
+extern std::uint64_t notFileAMask;
+extern std::uint64_t notFileHMask;
+extern pas::Array<pas::Array<std::uint64_t, 0, 63>, 0, 63> horizontalAttacks;
+extern pas::Array<pas::Array<std::uint64_t, 0, 63>, 0, 63> verticalAttacks;
+extern pas::Array<pas::Array<std::uint64_t, 0, 255>, 0, 63> diagonalA8H1Attacks;
+extern pas::Array<pas::Array<std::uint64_t, 0, 255>, 0, 63> diagonalH8A1Attacks;
+extern pas::Array<std::uint8_t, 0, 65535> firstBitTable;
+extern pas::Array<std::uint64_t, 0, 63> whiteOutpostMask;
+extern pas::Array<std::uint64_t, 0, 63> blackOutpostMask;
+extern pas::Array<std::uint64_t, 0, 63> whitePawnAttacks;
+extern pas::Array<std::uint64_t, 0, 63> blackPawnAttacks;
+extern pas::Array<std::uint64_t, 0, 7> fileMask;
+extern pas::Array<std::uint64_t, 0, 7> rankMask;
+extern pas::Array<pas::Array<std::uint64_t, 0, 63>, 0, 63> betweenMask;
+extern pas::Array<pas::Array<std::int8_t, 0, 63>, 0, 63> rayDirection;
+extern pas::Array<pas::Array<std::int8_t, 0, 63>, 0, 63> rayDirectionCode;
+extern pas::Array<std::uint64_t, 0, 63> rookRayUpMask;
+extern pas::Array<std::uint64_t, 0, 63> rookRayDownMask;
+extern pas::Array<std::uint64_t, 0, 63> rookRayLeftMask;
+extern pas::Array<std::uint64_t, 0, 63> rookRayRightMask;
+extern pas::Array<std::uint64_t, 0, 63> bishopRayPlus7Mask;
+extern pas::Array<std::uint64_t, 0, 63> bishopRayPlus9Mask;
+extern pas::Array<std::uint64_t, 0, 63> bishopRayMinus7Mask;
+extern pas::Array<std::uint64_t, 0, 63> bishopRayMinus9Mask;
+extern pas::Array<std::uint64_t, 0, 63> bishopRaysUpMask;
+extern pas::Array<std::uint64_t, 0, 63> bishopRaysDownMask;
 }
 namespace petir_bitboard {
-inline pas::Array<std::uint8_t, 0, 63> r90mask = {56, 48, 40, 32, 24, 16, 8, 0, 57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2, 59, 51, 43, 35, 27, 19, 11, 3, 60, 52, 44, 36, 28, 20, 12, 4, 61, 53, 45, 37, 29, 21, 13, 5, 62, 54, 46, 38, 30, 22, 14, 6, 63, 55, 47, 39, 31, 23, 15, 7};
-inline pas::Array<std::uint8_t, 0, 63> a8h1mask = {0, 1, 3, 6, 10, 15, 21, 28, 2, 4, 7, 11, 16, 22, 29, 36, 5, 8, 12, 17, 23, 30, 37, 43, 9, 13, 18, 24, 31, 38, 44, 49, 14, 19, 25, 32, 39, 45, 50, 54, 20, 26, 33, 40, 46, 51, 55, 58, 27, 34, 41, 47, 52, 56, 59, 61, 35, 42, 48, 53, 57, 60, 62, 63};
-inline pas::Array<std::uint8_t, 0, 63> h8a1mask = {35, 27, 20, 14, 9, 5, 2, 0, 42, 34, 26, 19, 13, 8, 4, 1, 48, 41, 33, 25, 18, 12, 7, 3, 53, 47, 40, 32, 24, 17, 11, 6, 57, 52, 46, 39, 31, 23, 16, 10, 60, 56, 51, 45, 38, 30, 22, 15, 62, 59, 55, 50, 44, 37, 29, 21, 63, 61, 58, 54, 49, 43, 36, 28};
-inline pas::Array<std::uint8_t, 0, 63> diag_a8h1_length = {1, 2, 3, 4, 5, 6, 7, 8, 2, 3, 4, 5, 6, 7, 8, 7, 3, 4, 5, 6, 7, 8, 7, 6, 4, 5, 6, 7, 8, 7, 6, 5, 5, 6, 7, 8, 7, 6, 5, 4, 6, 7, 8, 7, 6, 5, 4, 3, 7, 8, 7, 6, 5, 4, 3, 2, 8, 7, 6, 5, 4, 3, 2, 1};
-inline pas::Array<std::uint8_t, 0, 63> diag_h8a1_length = {8, 7, 6, 5, 4, 3, 2, 1, 7, 8, 7, 6, 5, 4, 3, 2, 6, 7, 8, 7, 6, 5, 4, 3, 5, 6, 7, 8, 7, 6, 5, 4, 4, 5, 6, 7, 8, 7, 6, 5, 3, 4, 5, 6, 7, 8, 7, 6, 2, 3, 4, 5, 6, 7, 8, 7, 1, 2, 3, 4, 5, 6, 7, 8};
-inline pas::Array<std::uint8_t, 0, 63> diag_a8h1_posx = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 2, 2, 2, 1, 0, 3, 3, 3, 3, 3, 2, 1, 0, 4, 4, 4, 4, 3, 2, 1, 0, 5, 5, 5, 4, 3, 2, 1, 0, 6, 6, 5, 4, 3, 2, 1, 0, 7, 6, 5, 4, 3, 2, 1, 0};
-inline pas::Array<std::uint8_t, 0, 63> diag_h8a1_posx = {0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 2, 2, 2, 2, 2, 2, 0, 1, 2, 3, 3, 3, 3, 3, 0, 1, 2, 3, 4, 4, 4, 4, 0, 1, 2, 3, 4, 5, 5, 5, 0, 1, 2, 3, 4, 5, 6, 6, 0, 1, 2, 3, 4, 5, 6, 7};
-inline pas::Array<std::int32_t, 1, 8> x_kuda_direction = {1, 2, 2, 1, pas::negate(1), pas::negate(2), pas::negate(2), pas::negate(1)};
-inline pas::Array<std::int32_t, 1, 8> y_kuda_direction = {2, 1, pas::negate(1), pas::negate(2), pas::negate(2), pas::negate(1), 1, 2};
-inline pas::Array<std::int32_t, 1, 8> x_king_direction = {0, 1, 1, 1, 0, pas::negate(1), pas::negate(1), pas::negate(1)};
-inline pas::Array<std::int32_t, 1, 8> y_king_direction = {pas::negate(1), pas::negate(1), 0, 1, 1, 1, 0, pas::negate(1)};
+inline pas::Array<std::uint8_t, 0, 63> rotated90Index = {56, 48, 40, 32, 24, 16, 8, 0, 57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2, 59, 51, 43, 35, 27, 19, 11, 3, 60, 52, 44, 36, 28, 20, 12, 4, 61, 53, 45, 37, 29, 21, 13, 5, 62, 54, 46, 38, 30, 22, 14, 6, 63, 55, 47, 39, 31, 23, 15, 7};
+inline pas::Array<std::uint8_t, 0, 63> rotatedA8H1Index = {0, 1, 3, 6, 10, 15, 21, 28, 2, 4, 7, 11, 16, 22, 29, 36, 5, 8, 12, 17, 23, 30, 37, 43, 9, 13, 18, 24, 31, 38, 44, 49, 14, 19, 25, 32, 39, 45, 50, 54, 20, 26, 33, 40, 46, 51, 55, 58, 27, 34, 41, 47, 52, 56, 59, 61, 35, 42, 48, 53, 57, 60, 62, 63};
+inline pas::Array<std::uint8_t, 0, 63> rotatedH8A1Index = {35, 27, 20, 14, 9, 5, 2, 0, 42, 34, 26, 19, 13, 8, 4, 1, 48, 41, 33, 25, 18, 12, 7, 3, 53, 47, 40, 32, 24, 17, 11, 6, 57, 52, 46, 39, 31, 23, 16, 10, 60, 56, 51, 45, 38, 30, 22, 15, 62, 59, 55, 50, 44, 37, 29, 21, 63, 61, 58, 54, 49, 43, 36, 28};
+inline pas::Array<std::uint8_t, 0, 63> diagonalA8H1Length = {1, 2, 3, 4, 5, 6, 7, 8, 2, 3, 4, 5, 6, 7, 8, 7, 3, 4, 5, 6, 7, 8, 7, 6, 4, 5, 6, 7, 8, 7, 6, 5, 5, 6, 7, 8, 7, 6, 5, 4, 6, 7, 8, 7, 6, 5, 4, 3, 7, 8, 7, 6, 5, 4, 3, 2, 8, 7, 6, 5, 4, 3, 2, 1};
+inline pas::Array<std::uint8_t, 0, 63> diagonalH8A1Length = {8, 7, 6, 5, 4, 3, 2, 1, 7, 8, 7, 6, 5, 4, 3, 2, 6, 7, 8, 7, 6, 5, 4, 3, 5, 6, 7, 8, 7, 6, 5, 4, 4, 5, 6, 7, 8, 7, 6, 5, 3, 4, 5, 6, 7, 8, 7, 6, 2, 3, 4, 5, 6, 7, 8, 7, 1, 2, 3, 4, 5, 6, 7, 8};
+inline pas::Array<std::uint8_t, 0, 63> diagonalA8H1Position = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 2, 2, 2, 1, 0, 3, 3, 3, 3, 3, 2, 1, 0, 4, 4, 4, 4, 3, 2, 1, 0, 5, 5, 5, 4, 3, 2, 1, 0, 6, 6, 5, 4, 3, 2, 1, 0, 7, 6, 5, 4, 3, 2, 1, 0};
+inline pas::Array<std::uint8_t, 0, 63> diagonalH8A1Position = {0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 2, 2, 2, 2, 2, 2, 0, 1, 2, 3, 3, 3, 3, 3, 0, 1, 2, 3, 4, 4, 4, 4, 0, 1, 2, 3, 4, 5, 5, 5, 0, 1, 2, 3, 4, 5, 6, 6, 0, 1, 2, 3, 4, 5, 6, 7};
+inline pas::Array<std::int32_t, 1, 8> knightFileDelta = {1, 2, 2, 1, pas::negate(1), pas::negate(2), pas::negate(2), pas::negate(1)};
+inline pas::Array<std::int32_t, 1, 8> knightRankDelta = {2, 1, pas::negate(1), pas::negate(2), pas::negate(2), pas::negate(1), 1, 2};
+inline pas::Array<std::int32_t, 1, 8> kingFileDelta = {0, 1, 1, 1, 0, pas::negate(1), pas::negate(1), pas::negate(1)};
+inline pas::Array<std::int32_t, 1, 8> kingRankDelta = {pas::negate(1), pas::negate(1), 0, 1, 1, 1, 0, pas::negate(1)};
 }
 namespace petir_hashing_header {
-inline constexpr auto bit_used = 64;
-inline constexpr auto bit_old = 128;
-inline constexpr std::uint8_t generation_mask = 63;
+inline constexpr auto usedFlag = 64;
+inline constexpr auto oldFlag = 128;
+inline constexpr std::uint8_t generationMask = 63;
 extern std::uint8_t generation;
 #pragma pack(push, 1)
 struct thashrecord {
-    std::uint8_t flag;
-    std::uint8_t tipe;
+    std::uint8_t flags;
+    std::uint8_t boundType;
     std::uint64_t key;
-    std::uint8_t level;
-    std::uint16_t moves;
-    std::int16_t nilai;
-    std::uint8_t move50count; // Uses the former unused byte; entry stays 16 bytes.
+    std::uint8_t depth;
+    std::uint16_t move;
+    std::int16_t score;
+    std::uint8_t fiftyMoveCounter; // Uses the former unused byte; entry stays 16 bytes.
 };
 #pragma pack(pop)
-inline bool is_old(const thashrecord& entry) {return (entry.flag&generation_mask)!=generation;}
+inline bool isOld(const thashrecord& entry) {return (entry.flags&generationMask)!=generation;}
 // From the search just before the current one.
-inline bool is_previous(const thashrecord& entry) {return ((entry.flag+1)&generation_mask)==generation;}
+inline bool isPreviousGeneration(const thashrecord& entry) {return ((entry.flags+1)&generationMask)==generation;}
 // Cache-line aligned, so a two-entry bucket never straddles two lines.
 template<class T> struct line_allocator {
     using value_type = T;
     line_allocator() = default;
     template<class U> line_allocator(const line_allocator<U>&) {}
-    T* allocate(std::size_t n) {return static_cast<T*>(::operator new(n*sizeof(T), std::align_val_t{64}));}
-    void deallocate(T* p, std::size_t) {::operator delete(p, std::align_val_t{64});}
+    T* allocate(std::size_t count) {return static_cast<T*>(::operator new(count*sizeof(T), std::align_val_t{64}));}
+    void deallocate(T* pointer, std::size_t) {::operator delete(pointer, std::align_val_t{64});}
     template<class U> bool operator==(const line_allocator<U>&) const {return true;}
 };
 using thashdata = std::vector<petir_hashing_header::thashrecord, line_allocator<petir_hashing_header::thashrecord>>;
-extern petir_hashing_header::thashdata hashtable;
-// The two-entry bucket a key belongs to (maxhash is a power of two).
-inline thashrecord* bucket(std::uint64_t key) {return hashtable.data() + (key & pas::sub(petir_header::maxhash, 2));}
-extern std::int32_t anu;
+extern petir_hashing_header::thashdata hashTable;
+// The two-entry bucket a key belongs to (hashTableSize is a power of two).
+inline thashrecord* bucket(std::uint64_t key) {return hashTable.data() + (key & pas::sub(petir_header::hashTableSize, 2));}
+extern std::int32_t discardedRandom;
 }
 namespace petir_udata {
 }
 namespace petir_evalmask {
-inline pas::Array<std::uint8_t, 0, 63> onside = {0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1};
-inline pas::Array<std::uint8_t, 0, 8> nilai_badbishop = {0, 1, 3, 8, 25, 40, 55, 70, 100};
-extern pas::Array<std::uint64_t, 0, 63> w_outpost_mask;
-extern pas::Array<std::uint64_t, 0, 63> b_outpost_mask;
-extern std::uint64_t abcd_mask;
-extern std::uint64_t efgh_mask;
-extern std::uint64_t abc_mask;
-extern std::uint64_t fgh_mask;
-extern pas::Array<std::uint64_t, 0, 63> pion_gantung_mask;
-extern pas::Array<std::uint8_t, 0, 65535> mobmask;
-extern pas::Array<pas::Array<bool, 0, 63>, 0, 63> dekatbaris;
-extern pas::Array<pas::Array<std::uint8_t, 0, 63>, 0, 63> tabel_edistance;
-extern pas::Array<pas::Array<std::uint8_t, 0, 63>, 0, 63> tabel_edistance2;
-extern pas::Array<pas::Array<std::uint8_t, 0, 63>, 0, 63> tabel_distance_gajah;
+inline pas::Array<std::uint8_t, 0, 63> squareWing = {0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1};
+inline pas::Array<std::uint8_t, 0, 8> badBishopPenalty = {0, 1, 3, 8, 25, 40, 55, 70, 100};
+extern pas::Array<std::uint64_t, 0, 63> whiteOutpostMask;
+extern pas::Array<std::uint64_t, 0, 63> blackOutpostMask;
+extern std::uint64_t filesABCDMask;
+extern std::uint64_t filesEFGHMask;
+extern std::uint64_t filesABMask;
+extern std::uint64_t filesGHMask;
+extern pas::Array<std::uint64_t, 0, 63> adjacentFilesMask;
+extern pas::Array<std::uint8_t, 0, 65535> bitCountTable;
+extern pas::Array<pas::Array<bool, 0, 63>, 0, 63> sameOrAdjacentFile;
+extern pas::Array<pas::Array<std::uint8_t, 0, 63>, 0, 63> closenessHalfTable;
+extern pas::Array<pas::Array<std::uint8_t, 0, 63>, 0, 63> closenessTable;
+extern pas::Array<pas::Array<std::uint8_t, 0, 63>, 0, 63> bishopProximityTable;
 }
 namespace petir_makemove {
 }
 namespace petir_movgen {
-inline constexpr auto _nilai_pion = 1;
-inline constexpr auto _nilai_gajah = 3;
-inline constexpr auto _nilai_kuda = 3;
-inline constexpr auto _nilai_benteng = 5;
-inline constexpr auto _nilai_mentri = 9;
-inline constexpr auto _nilai_raja = 99;
-inline pas::Array<std::uint8_t, pas::negate(6), 6> nilai_piece = {petir_movgen::_nilai_raja, petir_movgen::_nilai_mentri, petir_movgen::_nilai_benteng, petir_movgen::_nilai_gajah, petir_movgen::_nilai_kuda, petir_movgen::_nilai_pion, 0, petir_movgen::_nilai_pion, petir_movgen::_nilai_kuda, petir_movgen::_nilai_gajah, petir_movgen::_nilai_benteng, petir_movgen::_nilai_mentri, petir_movgen::_nilai_raja};
+inline constexpr auto pawnOrderValue = 1;
+inline constexpr auto bishopOrderValue = 3;
+inline constexpr auto knightOrderValue = 3;
+inline constexpr auto rookOrderValue = 5;
+inline constexpr auto queenOrderValue = 9;
+inline constexpr auto kingOrderValue = 99;
+inline pas::Array<std::uint8_t, pas::negate(6), 6> pieceOrderValue = {petir_movgen::kingOrderValue, petir_movgen::queenOrderValue, petir_movgen::rookOrderValue, petir_movgen::bishopOrderValue, petir_movgen::knightOrderValue, petir_movgen::pawnOrderValue, 0, petir_movgen::pawnOrderValue, petir_movgen::knightOrderValue, petir_movgen::bishopOrderValue, petir_movgen::rookOrderValue, petir_movgen::queenOrderValue, petir_movgen::kingOrderValue};
 }
 namespace petir_tools {
 using pinteger = std::int32_t*;
-extern std::int32_t anu;
 }
 namespace petir_usee {
-inline constexpr auto _nilai_pion = 1;
-inline constexpr auto _nilai_gajah = 3;
-inline constexpr auto _nilai_kuda = 3;
-inline constexpr auto _nilai_benteng = 5;
-inline constexpr auto _nilai_mentri = 9;
-inline constexpr auto _nilai_raja = 99;
-inline pas::Array<std::uint8_t, pas::negate(6), 6> nilai_piece = {petir_usee::_nilai_raja, petir_usee::_nilai_mentri, petir_usee::_nilai_benteng, petir_usee::_nilai_gajah, petir_usee::_nilai_kuda, petir_usee::_nilai_pion, 0, petir_usee::_nilai_pion, petir_usee::_nilai_kuda, petir_usee::_nilai_gajah, petir_usee::_nilai_benteng, petir_usee::_nilai_mentri, petir_usee::_nilai_raja};
+inline constexpr auto pawnSeeValue = 1;
+inline constexpr auto bishopSeeValue = 3;
+inline constexpr auto knightSeeValue = 3;
+inline constexpr auto rookSeeValue = 5;
+inline constexpr auto queenSeeValue = 9;
+inline constexpr auto kingSeeValue = 99;
+inline pas::Array<std::uint8_t, pas::negate(6), 6> pieceSeeValue = {petir_usee::kingSeeValue, petir_usee::queenSeeValue, petir_usee::rookSeeValue, petir_usee::bishopSeeValue, petir_usee::knightSeeValue, petir_usee::pawnSeeValue, 0, petir_usee::pawnSeeValue, petir_usee::knightSeeValue, petir_usee::bishopSeeValue, petir_usee::rookSeeValue, petir_usee::queenSeeValue, petir_usee::kingSeeValue};
 }
 namespace petir_valid {
 }
 namespace petir_hashing {
-extern std::int32_t anu;
 }
 namespace petir_repetition {
 // Lookups compare full keys and search adds/removes entries in stack order, so
 // counts do not depend on table size while a free slot remains. 16384 slots per
 // side exceed the positions of any legal game plus the search path, and keep
 // the table cache-resident (originally 65536 slots, 1.25 MiB in total).
-inline constexpr auto maxhashdraw = 16384;
+inline constexpr auto repetitionTableSize = 16384;
 #pragma pack(push, 1)
 struct treprecord {
     bool used;
     std::uint64_t key;
-    std::int8_t jumlah;
+    std::int8_t count;
 };
 #pragma pack(pop)
-using tarrreprecord = pas::Array<pas::Array<petir_repetition::treprecord, 0, pas::sub(petir_repetition::maxhashdraw, 1)>, 0, 1>;
-extern petir_repetition::tarrreprecord repdata;
+using tarrreprecord = pas::Array<pas::Array<petir_repetition::treprecord, 0, pas::sub(petir_repetition::repetitionTableSize, 1)>, 0, 1>;
+extern petir_repetition::tarrreprecord repetitionTable;
 }
 namespace petir_next {
-extern std::int32_t t1;
 }
 namespace petir_ueval {
-inline constexpr auto queenside = 1;
-inline constexpr auto kingside = 2;
-inline constexpr auto no_majorities = 0;
-inline pas::Array<std::uint8_t, 0, 63> nilai_gajah_outpost_w = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::uint8_t, 0, 63> nilai_gajah_outpost_b = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::uint8_t, 0, 63> nilai_kuda_outpost_w = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 8, 12, 12, 8, 0, 0, 0, 0, 8, 16, 16, 8, 0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::uint8_t, 0, 63> nilai_kuda_outpost_b = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 8, 16, 16, 8, 0, 0, 0, 0, 8, 12, 12, 8, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_kuda_w = {pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(10), pas::negate(8), pas::negate(16), pas::negate(8), pas::negate(6), 0, 0, 0, 0, pas::negate(6), pas::negate(8), pas::negate(8), 2, 2, 2, 2, 2, 2, pas::negate(8), pas::negate(8), 2, 6, 8, 8, 6, 2, pas::negate(8), pas::negate(8), 2, 6, 10, 10, 6, 2, pas::negate(8), pas::negate(8), 2, 6, 10, 10, 6, 2, pas::negate(8), pas::negate(24), pas::negate(12), 4, 4, 4, 4, pas::negate(12), pas::negate(24), pas::negate(32), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(16), pas::negate(32)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_kuda_b = {pas::negate(32), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(16), pas::negate(32), pas::negate(24), pas::negate(12), 4, 4, 4, 4, pas::negate(12), pas::negate(24), pas::negate(8), 2, 6, 10, 10, 6, 2, pas::negate(8), pas::negate(8), 2, 6, 10, 10, 6, 2, pas::negate(8), pas::negate(8), 2, 6, 8, 8, 6, 2, pas::negate(8), pas::negate(8), 2, 2, 2, 2, 2, 2, pas::negate(8), pas::negate(8), pas::negate(6), 0, 0, 0, 0, pas::negate(6), pas::negate(8), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(10), pas::negate(8), pas::negate(16)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_gajah_w = {pas::negate(24), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(10), pas::negate(16), pas::negate(24), pas::negate(4), 4, 0, 0, 0, 0, 4, pas::negate(4), pas::negate(4), 3, 2, 2, 2, 2, 3, pas::negate(4), pas::negate(4), 2, 4, 4, 4, 4, 2, pas::negate(4), pas::negate(4), 2, 6, 6, 6, 6, 2, pas::negate(4), pas::negate(2), 2, 6, 6, 6, 6, 2, pas::negate(2), pas::negate(16), 2, 4, 4, 4, 4, 2, pas::negate(16), pas::negate(16), pas::negate(16), 0, 0, 0, 0, pas::negate(16), pas::negate(16)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_gajah_b = {pas::negate(16), pas::negate(16), 0, 0, 0, 0, pas::negate(16), pas::negate(16), pas::negate(16), 2, 4, 4, 4, 4, 2, pas::negate(16), pas::negate(2), 2, 6, 6, 6, 6, 2, pas::negate(2), pas::negate(4), 2, 6, 6, 6, 6, 2, pas::negate(4), pas::negate(4), 2, 4, 4, 4, 4, 2, pas::negate(4), pas::negate(4), 3, 2, 2, 2, 2, 3, pas::negate(4), pas::negate(4), 4, 0, 0, 0, 0, 4, pas::negate(4), pas::negate(24), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(10), pas::negate(16), pas::negate(24)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_benteng = {0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0};
-inline pas::Array<std::uint8_t, 0, 63> nilai_pos_raja_w = {1, 0, 1, 12, 12, 1, 0, 1, 2, 3, 8, 15, 15, 8, 3, 2, 12, 12, 15, 22, 22, 15, 12, 12, 18, 18, 22, 25, 25, 22, 18, 18, 25, 25, 27, 30, 30, 27, 25, 25, 30, 30, 33, 35, 35, 33, 30, 30, 45, 45, 48, 50, 50, 48, 45, 45, 60, 60, 65, 70, 70, 65, 60, 60};
-inline pas::Array<std::uint8_t, 0, 63> nilai_pos_raja_b = {60, 60, 65, 70, 70, 65, 60, 60, 45, 45, 48, 50, 50, 48, 45, 45, 30, 30, 33, 35, 35, 33, 30, 30, 25, 25, 27, 30, 30, 27, 25, 25, 18, 18, 22, 25, 25, 22, 18, 18, 12, 12, 15, 22, 22, 15, 12, 12, 2, 3, 8, 15, 15, 8, 3, 2, 1, 0, 1, 12, 12, 1, 0, 1};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_pion_w = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, pas::negate(1), pas::negate(6), pas::negate(6), pas::negate(1), 0, 0, 0, 1, 2, pas::negate(2), pas::negate(2), 2, 1, 0, 3, 4, 5, 7, 7, 5, 4, 3, 4, 5, 6, 9, 9, 6, 5, 4, 7, 8, 9, 11, 11, 9, 8, 7, 8, 10, 12, 15, 15, 12, 10, 8, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_pion_b = {0, 0, 0, 0, 0, 0, 0, 0, 8, 10, 12, 15, 15, 12, 10, 8, 7, 8, 9, 11, 11, 9, 8, 7, 4, 5, 6, 9, 9, 6, 5, 4, 3, 4, 5, 7, 7, 5, 4, 3, 0, 1, 2, pas::negate(2), pas::negate(2), 2, 1, 0, 0, 0, pas::negate(1), pas::negate(6), pas::negate(6), pas::negate(1), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_raja_endk_w = {pas::negate(35), pas::negate(25), pas::negate(20), pas::negate(20), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(10), pas::negate(30), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(5), pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 10, 10, 10, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(15), pas::negate(10), 0, 0, 0, pas::negate(5), pas::negate(35), pas::negate(25), pas::negate(20), pas::negate(15), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(10)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_raja_endq_w = {pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(20), pas::negate(20), pas::negate(25), pas::negate(35), pas::negate(5), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(30), 0, 10, 10, 10, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), pas::negate(5), 0, 0, 0, pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(30), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(20), pas::negate(25), pas::negate(35)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_raja_endq_b = {pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(20), pas::negate(25), pas::negate(35), pas::negate(5), 0, 0, 0, pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 10, 10, 10, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), pas::negate(5), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(30), pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(20), pas::negate(20), pas::negate(25), pas::negate(35)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_raja_endk_b = {pas::negate(35), pas::negate(25), pas::negate(20), pas::negate(15), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(30), pas::negate(15), pas::negate(15), pas::negate(10), 0, 0, 0, pas::negate(5), pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 10, 10, 10, 0, pas::negate(30), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(5), pas::negate(35), pas::negate(25), pas::negate(20), pas::negate(20), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(10)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_raja_endn_w = {pas::negate(25), pas::negate(20), pas::negate(15), pas::negate(20), pas::negate(20), pas::negate(30), pas::negate(20), pas::negate(25), pas::negate(15), pas::negate(10), pas::negate(5), 0, 0, pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(5), 0, 5, 5, 0, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 10, 20, 20, 10, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 20, 30, 30, 20, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 20, 30, 30, 20, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(15), 0, 0, 0, 0, pas::negate(15), pas::negate(15), pas::negate(25), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(25)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_raja_endn_b = {pas::negate(25), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(25), pas::negate(15), pas::negate(15), 0, 0, 0, 0, pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(5), 20, 30, 30, 20, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 20, 30, 30, 20, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 10, 20, 20, 10, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 0, 5, 5, 0, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(5), 0, 0, pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(25), pas::negate(20), pas::negate(15), pas::negate(20), pas::negate(20), pas::negate(30), pas::negate(20), pas::negate(25)};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_mentri_w = {pas::negate(5), pas::negate(8), 0, 0, 0, 0, pas::negate(8), pas::negate(5), pas::negate(3), 2, 4, 4, 4, 4, 2, pas::negate(3), pas::negate(1), 2, 3, 6, 6, 3, 2, pas::negate(1), pas::negate(0), 2, 6, 8, 8, 6, 2, pas::negate(0), 0, 2, 6, 8, 8, 6, 2, 0, 0, 2, 6, 6, 6, 6, 2, 0, 0, 3, 5, 5, 5, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::int8_t, 0, 63> nilai_pos_mentri_b = {0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 5, 5, 5, 5, 3, 0, 0, 2, 6, 6, 6, 6, 2, 0, 0, 2, 6, 8, 8, 6, 2, 0, pas::negate(0), 2, 6, 8, 8, 6, 2, pas::negate(0), pas::negate(1), 2, 3, 6, 6, 3, 2, pas::negate(1), pas::negate(3), 2, 4, 4, 4, 4, 2, pas::negate(3), pas::negate(5), pas::negate(8), 0, 0, 0, 0, pas::negate(8), pas::negate(5)};
-inline pas::Array<std::uint8_t, 0, 64> color = {0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 2};
-inline constexpr auto nilai_2bishop_attack_king = 10;
-inline constexpr auto nilai_nggakbisarokade = 40;
-inline constexpr auto nilai_rokade = 10;
-inline constexpr auto nilai_rokade_wrong_side = 10;
-inline constexpr auto nilai_bishop_trapped = 155;
-inline constexpr auto nilai_bishop_trapped2 = 30;
-inline constexpr auto nilai_kuda_trapped = 200;
-inline constexpr auto nilai_pion_pusat_belum_berkembang = 10;
-inline constexpr auto nilai_pion_pusat_blocked = 25;
-inline constexpr auto nilai_benteng_semi_open_file_dekat_raja = 6;
-inline constexpr auto nilai_benteng_tumpuk_kolom_semi_open_file_dekat_raja = 11;
-inline constexpr auto nilai_benteng_open_file_dekat_raja = 8;
-inline constexpr auto nilai_benteng_tumpuk_kolom = 8;
-inline constexpr auto nilai_benteng_tumpuk_kolom_dekat_raja = 6;
-inline constexpr auto nilai_benteng_mentri_open = 3;
-inline constexpr auto nilai_benteng_mentri_semi_open = 1;
-inline constexpr auto nilai_benteng_mentri_semi_open_dekat_raja = 12;
-inline constexpr auto nilai_benteng_tumpuk_kolom_open = 12;
-inline pas::Array<std::uint8_t, 0, 6> nilai_pion_tumpuk = {0, 6, 20, 40, 65, 90, 120};
-inline constexpr auto nilai_pion_backward = 3;
-inline pas::Array<std::uint8_t, 0, 7> nilai_pion_terisolasi = {2, 4, 4, 4, 4, 4, 4, 2};
-inline constexpr auto nilai_pion_hilang = 45;
-inline pas::Array<std::uint8_t, 0, 7> nilai_potential_pp_white = {0, 0, 3, 4, 5, 6, 6, 6};
-inline pas::Array<std::uint8_t, 0, 7> nilai_potential_pp_black = {6, 6, 6, 5, 4, 3, 0, 0};
-inline pas::Array<std::uint8_t, 0, 8> nilai_pion_terisolasi_ak = {0, 0, 2, 5, 10, 30, 50, 50, 65};
-inline constexpr auto nilai_benteng_baris7 = 18;
-inline constexpr auto nilai_benteng_baris8 = 4;
-inline constexpr auto nilai_can_advance = 40;
-inline constexpr auto nilai_benteng_tumpuk_baris7 = 25;
-inline constexpr auto nilai_benteng_mentri_tumpuk_baris7 = 33;
-inline constexpr auto nilai_benteng_blocked = 9;
-inline constexpr auto nilai_pion_bebas = 16;
-inline constexpr auto nilai_mobility = 2;
-inline constexpr auto nilai_tropism_mentri = 2;
-inline constexpr auto nilai_tropism_gajah = 1;
-inline constexpr auto nilai_tropism_kuda = 2;
-inline constexpr auto nilai_blocked_pawn = 7;
-inline constexpr auto nilai_pion_bebas_connected2 = 7;
-inline constexpr auto nilai_pion_bebas_connected3 = 45;
-inline constexpr auto nilai_pion_bebas_connected = 120;
-inline pas::Array<std::uint8_t, 0, 8> nilai_bishop_pair0 = {10, 80, 75, 70, 60, 50, 30, 15, 5};
-inline constexpr auto nilai_no_pawn = 40;
-inline constexpr auto nilai_no_fianchetto = 4;
-inline constexpr auto nilai_king_blocked = 8;
-inline constexpr auto nilai_safe_promote = 225;
-inline constexpr auto nilai_safe_promote1 = 125;
-inline constexpr auto nilai_another_weak_structure = 6;
-inline constexpr auto nilai_bishop_over_knight_endgame = 12;
-inline pas::Array<std::int8_t, 0, 8> nilai_knight_lack_mobility = {pas::negate(25), pas::negate(5), 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::int8_t, 0, 8> mobil_knight = {pas::negate(20), pas::negate(5), 0, 2, 6, 10, 14, 16, 18};
-inline pas::Array<std::int8_t, 0, 15> mobil_bishop = {pas::negate(20), pas::negate(10), 0, 4, 8, 12, 16, 20, 24, 28, 31, 34, 35, 36, 37, 38};
-inline pas::Array<std::int8_t, 0, 15> mobil_rook = {pas::negate(12), pas::negate(8), pas::negate(4), 0, 4, 8, 11, 14, 16, 18, 19, 20, 21, 22, 23, 24};
-inline pas::Array<std::int8_t, 0, 31> mobil_queen = {pas::negate(10), pas::negate(8), pas::negate(6), pas::negate(4), pas::negate(2), 0, 2, 4, 6, 8, 10, 12, 13, 14, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16};
-inline constexpr auto nilai_can_promote = 550;
-inline constexpr auto nilai_potential_passer = 45;
-inline constexpr auto nilai_blocked_rook = 35;
-inline pas::Array<std::uint8_t, 0, 7> nilai_semi_open_file = {2, 2, 3, 4, 4, 3, 2, 2};
-inline pas::Array<std::uint8_t, 0, 7> nilai_open_file = {3, 3, 4, 5, 5, 4, 3, 3};
-inline pas::Array<std::uint8_t, 1, 7> w_nilai_pion_advance_bebas = {0, 2, 5, 25, 55, 120, 0};
-inline pas::Array<std::uint8_t, 0, 6> b_nilai_pion_advance_bebas = {0, 120, 55, 25, 5, 2, 0};
-inline constexpr auto nilai_benteng_dibelakang_pion_bebas = 25;
-inline constexpr auto nilai_pion_advance_bebas_blocked = 15;
-inline pas::Array<std::uint8_t, 1, 7> w_nilai_pion_bebas_didukung_raja = {0, 0, 0, 10, 20, 40, 0};
-inline pas::Array<std::uint8_t, 0, 6> b_nilai_pion_bebas_didukung_raja = {0, 40, 20, 10, 0, 0, 0};
-inline constexpr auto nilai_bishop_blocked2 = 5;
-inline constexpr auto nilai_bishop_offside = 20;
-inline pas::Array<std::uint8_t, 0, 8> nilai_bishop_blocked = {0, 2, 5, 12, 30, 50, 70, 100, 100};
-inline pas::Array<std::uint8_t, 0, 14> nilai_pawn_shield = {0, 5, 10, 15, 20, 30, 40, 60, 70, 80, 90, 100, 120, 180, 200};
-inline pas::Array<std::int32_t, 0, 63> nilai_king_pressure = {0, 1, 5, 15, 35, 70, 125, 145, 150, 160, 170, 170, 175, 200, 225, 250, 300, 325, 350, 400, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500};
-inline pas::Array<std::uint8_t, 0, 41> nilai_endgame_scale = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 90, 80, 70, 60, 50, 40, 30, 20, 20, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::uint8_t, 0, 41> nilai_rook_scale = {0, 0, 0, 0, 0, 0, 0, 0, 20, 20, 20, 20, 20, 20, 20, 20, 50, 60, 70, 70, 80, 90, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
-inline constexpr auto nilai_qb_endgame = 5;
-inline constexpr auto nilai_pawn_endgame = 10;
-inline constexpr auto nilai_pawn_endgame2 = 5;
+inline constexpr auto queensideMajority = 1;
+inline constexpr auto kingsideMajority = 2;
+inline constexpr auto noMajority = 0;
+inline pas::Array<std::uint8_t, 0, 63> whiteBishopOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::uint8_t, 0, 63> blackBishopOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::uint8_t, 0, 63> whiteKnightOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 8, 12, 12, 8, 0, 0, 0, 0, 8, 16, 16, 8, 0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::uint8_t, 0, 63> blackKnightOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 8, 16, 16, 8, 0, 0, 0, 0, 8, 12, 12, 8, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::int8_t, 0, 63> whiteKnightSquareBonus = {pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(10), pas::negate(8), pas::negate(16), pas::negate(8), pas::negate(6), 0, 0, 0, 0, pas::negate(6), pas::negate(8), pas::negate(8), 2, 2, 2, 2, 2, 2, pas::negate(8), pas::negate(8), 2, 6, 8, 8, 6, 2, pas::negate(8), pas::negate(8), 2, 6, 10, 10, 6, 2, pas::negate(8), pas::negate(8), 2, 6, 10, 10, 6, 2, pas::negate(8), pas::negate(24), pas::negate(12), 4, 4, 4, 4, pas::negate(12), pas::negate(24), pas::negate(32), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(16), pas::negate(32)};
+inline pas::Array<std::int8_t, 0, 63> blackKnightSquareBonus = {pas::negate(32), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(16), pas::negate(32), pas::negate(24), pas::negate(12), 4, 4, 4, 4, pas::negate(12), pas::negate(24), pas::negate(8), 2, 6, 10, 10, 6, 2, pas::negate(8), pas::negate(8), 2, 6, 10, 10, 6, 2, pas::negate(8), pas::negate(8), 2, 6, 8, 8, 6, 2, pas::negate(8), pas::negate(8), 2, 2, 2, 2, 2, 2, pas::negate(8), pas::negate(8), pas::negate(6), 0, 0, 0, 0, pas::negate(6), pas::negate(8), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(10), pas::negate(8), pas::negate(16)};
+inline pas::Array<std::int8_t, 0, 63> whiteBishopSquareBonus = {pas::negate(24), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(10), pas::negate(16), pas::negate(24), pas::negate(4), 4, 0, 0, 0, 0, 4, pas::negate(4), pas::negate(4), 3, 2, 2, 2, 2, 3, pas::negate(4), pas::negate(4), 2, 4, 4, 4, 4, 2, pas::negate(4), pas::negate(4), 2, 6, 6, 6, 6, 2, pas::negate(4), pas::negate(2), 2, 6, 6, 6, 6, 2, pas::negate(2), pas::negate(16), 2, 4, 4, 4, 4, 2, pas::negate(16), pas::negate(16), pas::negate(16), 0, 0, 0, 0, pas::negate(16), pas::negate(16)};
+inline pas::Array<std::int8_t, 0, 63> blackBishopSquareBonus = {pas::negate(16), pas::negate(16), 0, 0, 0, 0, pas::negate(16), pas::negate(16), pas::negate(16), 2, 4, 4, 4, 4, 2, pas::negate(16), pas::negate(2), 2, 6, 6, 6, 6, 2, pas::negate(2), pas::negate(4), 2, 6, 6, 6, 6, 2, pas::negate(4), pas::negate(4), 2, 4, 4, 4, 4, 2, pas::negate(4), pas::negate(4), 3, 2, 2, 2, 2, 3, pas::negate(4), pas::negate(4), 4, 0, 0, 0, 0, 4, pas::negate(4), pas::negate(24), pas::negate(16), pas::negate(8), pas::negate(8), pas::negate(8), pas::negate(10), pas::negate(16), pas::negate(24)};
+inline pas::Array<std::int8_t, 0, 63> rookSquareBonus = {0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0, 0, 0, 2, 4, 4, 2, 0, 0};
+inline pas::Array<std::uint8_t, 0, 63> whiteKingSquarePenalty = {1, 0, 1, 12, 12, 1, 0, 1, 2, 3, 8, 15, 15, 8, 3, 2, 12, 12, 15, 22, 22, 15, 12, 12, 18, 18, 22, 25, 25, 22, 18, 18, 25, 25, 27, 30, 30, 27, 25, 25, 30, 30, 33, 35, 35, 33, 30, 30, 45, 45, 48, 50, 50, 48, 45, 45, 60, 60, 65, 70, 70, 65, 60, 60};
+inline pas::Array<std::uint8_t, 0, 63> blackKingSquarePenalty = {60, 60, 65, 70, 70, 65, 60, 60, 45, 45, 48, 50, 50, 48, 45, 45, 30, 30, 33, 35, 35, 33, 30, 30, 25, 25, 27, 30, 30, 27, 25, 25, 18, 18, 22, 25, 25, 22, 18, 18, 12, 12, 15, 22, 22, 15, 12, 12, 2, 3, 8, 15, 15, 8, 3, 2, 1, 0, 1, 12, 12, 1, 0, 1};
+inline pas::Array<std::int8_t, 0, 63> whitePawnSquareBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, pas::negate(1), pas::negate(6), pas::negate(6), pas::negate(1), 0, 0, 0, 1, 2, pas::negate(2), pas::negate(2), 2, 1, 0, 3, 4, 5, 7, 7, 5, 4, 3, 4, 5, 6, 9, 9, 6, 5, 4, 7, 8, 9, 11, 11, 9, 8, 7, 8, 10, 12, 15, 15, 12, 10, 8, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::int8_t, 0, 63> blackPawnSquareBonus = {0, 0, 0, 0, 0, 0, 0, 0, 8, 10, 12, 15, 15, 12, 10, 8, 7, 8, 9, 11, 11, 9, 8, 7, 4, 5, 6, 9, 9, 6, 5, 4, 3, 4, 5, 7, 7, 5, 4, 3, 0, 1, 2, pas::negate(2), pas::negate(2), 2, 1, 0, 0, 0, pas::negate(1), pas::negate(6), pas::negate(6), pas::negate(1), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::int8_t, 0, 63> whiteKingEndgameKingsideBonus = {pas::negate(35), pas::negate(25), pas::negate(20), pas::negate(20), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(10), pas::negate(30), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(5), pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 10, 10, 10, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(15), pas::negate(10), 0, 0, 0, pas::negate(5), pas::negate(35), pas::negate(25), pas::negate(20), pas::negate(15), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(10)};
+inline pas::Array<std::int8_t, 0, 63> whiteKingEndgameQueensideBonus = {pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(20), pas::negate(20), pas::negate(25), pas::negate(35), pas::negate(5), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(30), 0, 10, 10, 10, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), pas::negate(5), 0, 0, 0, pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(30), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(20), pas::negate(25), pas::negate(35)};
+inline pas::Array<std::int8_t, 0, 63> blackKingEndgameQueensideBonus = {pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(20), pas::negate(25), pas::negate(35), pas::negate(5), 0, 0, 0, pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 20, 20, 20, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), 0, 10, 10, 10, pas::negate(5), pas::negate(10), pas::negate(15), pas::negate(30), pas::negate(5), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(30), pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(20), pas::negate(20), pas::negate(25), pas::negate(35)};
+inline pas::Array<std::int8_t, 0, 63> blackKingEndgameKingsideBonus = {pas::negate(35), pas::negate(25), pas::negate(20), pas::negate(15), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(10), pas::negate(30), pas::negate(15), pas::negate(15), pas::negate(10), 0, 0, 0, pas::negate(5), pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 20, 20, 20, 0, pas::negate(30), pas::negate(15), pas::negate(10), pas::negate(5), 10, 10, 10, 0, pas::negate(30), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(10), pas::negate(5), pas::negate(5), pas::negate(5), pas::negate(35), pas::negate(25), pas::negate(20), pas::negate(20), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(10)};
+inline pas::Array<std::int8_t, 0, 63> whiteKingEndgameBothWingsBonus = {pas::negate(25), pas::negate(20), pas::negate(15), pas::negate(20), pas::negate(20), pas::negate(30), pas::negate(20), pas::negate(25), pas::negate(15), pas::negate(10), pas::negate(5), 0, 0, pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(15), pas::negate(5), 0, 5, 5, 0, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 10, 20, 20, 10, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 20, 30, 30, 20, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 20, 30, 30, 20, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(15), 0, 0, 0, 0, pas::negate(15), pas::negate(15), pas::negate(25), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(25)};
+inline pas::Array<std::int8_t, 0, 63> blackKingEndgameBothWingsBonus = {pas::negate(25), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(25), pas::negate(15), pas::negate(15), 0, 0, 0, 0, pas::negate(15), pas::negate(15), pas::negate(15), pas::negate(5), 20, 30, 30, 20, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 20, 30, 30, 20, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 10, 20, 20, 10, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(5), 0, 5, 5, 0, pas::negate(5), pas::negate(15), pas::negate(15), pas::negate(10), pas::negate(5), 0, 0, pas::negate(10), pas::negate(10), pas::negate(15), pas::negate(25), pas::negate(20), pas::negate(15), pas::negate(20), pas::negate(20), pas::negate(30), pas::negate(20), pas::negate(25)};
+inline pas::Array<std::int8_t, 0, 63> whiteQueenSquareBonus = {pas::negate(5), pas::negate(8), 0, 0, 0, 0, pas::negate(8), pas::negate(5), pas::negate(3), 2, 4, 4, 4, 4, 2, pas::negate(3), pas::negate(1), 2, 3, 6, 6, 3, 2, pas::negate(1), pas::negate(0), 2, 6, 8, 8, 6, 2, pas::negate(0), 0, 2, 6, 8, 8, 6, 2, 0, 0, 2, 6, 6, 6, 6, 2, 0, 0, 3, 5, 5, 5, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::int8_t, 0, 63> blackQueenSquareBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 5, 5, 5, 5, 3, 0, 0, 2, 6, 6, 6, 6, 2, 0, 0, 2, 6, 8, 8, 6, 2, 0, pas::negate(0), 2, 6, 8, 8, 6, 2, pas::negate(0), pas::negate(1), 2, 3, 6, 6, 3, 2, pas::negate(1), pas::negate(3), 2, 4, 4, 4, 4, 2, pas::negate(3), pas::negate(5), pas::negate(8), 0, 0, 0, 0, pas::negate(8), pas::negate(5)};
+inline pas::Array<std::uint8_t, 0, 64> squareColor = {0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 2};
+inline constexpr auto twoBishopsKingAttackBonus = 10;
+inline constexpr auto lostCastlingPenalty = 40;
+inline constexpr auto castledBonus = 10;
+inline constexpr auto castledWrongSideBonus = 10;
+inline constexpr auto trappedBishopPenalty = 155;
+inline constexpr auto trappedBishopPenalty2 = 30;
+inline constexpr auto trappedKnightPenalty = 200;
+inline constexpr auto undevelopedCenterPawnPenalty = 10;
+inline constexpr auto blockedCenterPawnPenalty = 25;
+inline constexpr auto rookSemiOpenFileNearKingBonus = 6;
+inline constexpr auto doubledRooksSemiOpenNearKingBonus = 11;
+inline constexpr auto rookOpenFileNearKingBonus = 8;
+inline constexpr auto doubledRooksBonus = 8;
+inline constexpr auto doubledRooksNearKingBonus = 6;
+inline constexpr auto rookQueenOpenFileBonus = 3;
+inline constexpr auto rookQueenSemiOpenFileBonus = 1;
+inline constexpr auto rookQueenSemiOpenNearKingBonus = 12;
+inline constexpr auto doubledRooksOpenFileBonus = 12;
+inline pas::Array<std::uint8_t, 0, 6> doubledPawnPenalty = {0, 6, 20, 40, 65, 90, 120};
+inline constexpr auto backwardPawnPenalty = 3;
+inline pas::Array<std::uint8_t, 0, 7> isolatedPawnPenalty = {2, 4, 4, 4, 4, 4, 4, 2};
+inline constexpr auto missingPawnPenalty = 45;
+inline pas::Array<std::uint8_t, 0, 7> whitePotentialPasserBonus = {0, 0, 3, 4, 5, 6, 6, 6};
+inline pas::Array<std::uint8_t, 0, 7> blackPotentialPasserBonus = {6, 6, 6, 5, 4, 3, 0, 0};
+inline pas::Array<std::uint8_t, 0, 8> isolatedPawnCountPenalty = {0, 0, 2, 5, 10, 30, 50, 50, 65};
+inline constexpr auto rookOnSeventhBonus = 18;
+inline constexpr auto rookOnEighthBonus = 4;
+inline constexpr auto safeAdvanceBonus = 40;
+inline constexpr auto doubledRooksSeventhBonus = 25;
+inline constexpr auto rookQueenSeventhBonus = 33;
+inline constexpr auto blockedRookPenalty = 9;
+inline constexpr auto passedPawnBonus = 16;
+inline constexpr auto mobilityBonus = 2;
+inline constexpr auto queenTropismBonus = 2;
+inline constexpr auto bishopTropismBonus = 1;
+inline constexpr auto knightTropismBonus = 2;
+inline constexpr auto blockedPawnPenalty = 7;
+inline constexpr auto connectedPassersBonus = 7;
+inline constexpr auto connectedPassersAdvancedBonus = 45;
+inline constexpr auto connectedPassersFarAdvancedBonus = 120;
+inline pas::Array<std::uint8_t, 0, 8> bishopPairBonus = {10, 80, 75, 70, 60, 50, 30, 15, 5};
+inline constexpr auto noPawnPenalty = 40;
+inline constexpr auto missingFianchettoPenalty = 4;
+inline constexpr auto blockedKingPenalty = 8;
+inline constexpr auto safePromotionBonus = 225;
+inline constexpr auto safePromotionBonus1 = 125;
+inline constexpr auto weakStructurePenalty = 6;
+inline constexpr auto bishopOverKnightEndgameBonus = 12;
+inline pas::Array<std::int8_t, 0, 8> knightLowMobilityBonus = {pas::negate(25), pas::negate(5), 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::int8_t, 0, 8> knightMobilityBonus = {pas::negate(20), pas::negate(5), 0, 2, 6, 10, 14, 16, 18};
+inline pas::Array<std::int8_t, 0, 15> bishopMobilityBonus = {pas::negate(20), pas::negate(10), 0, 4, 8, 12, 16, 20, 24, 28, 31, 34, 35, 36, 37, 38};
+inline pas::Array<std::int8_t, 0, 15> rookMobilityBonus = {pas::negate(12), pas::negate(8), pas::negate(4), 0, 4, 8, 11, 14, 16, 18, 19, 20, 21, 22, 23, 24};
+inline pas::Array<std::int8_t, 0, 31> queenMobilityBonus = {pas::negate(10), pas::negate(8), pas::negate(6), pas::negate(4), pas::negate(2), 0, 2, 4, 6, 8, 10, 12, 13, 14, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16};
+inline constexpr auto assuredPromotionBonus = 550;
+inline constexpr auto potentialPasserBonus = 45;
+inline constexpr auto rookBlockedByKingPenalty = 35;
+inline pas::Array<std::uint8_t, 0, 7> semiOpenFileBonus = {2, 2, 3, 4, 4, 3, 2, 2};
+inline pas::Array<std::uint8_t, 0, 7> openFileBonus = {3, 3, 4, 5, 5, 4, 3, 3};
+inline pas::Array<std::uint8_t, 1, 7> whitePassedPawnRankBonus = {0, 2, 5, 25, 55, 120, 0};
+inline pas::Array<std::uint8_t, 0, 6> blackPassedPawnRankBonus = {0, 120, 55, 25, 5, 2, 0};
+inline constexpr auto rookBehindPassedPawnBonus = 25;
+inline constexpr auto blockedPassedPawnPenalty = 15;
+inline pas::Array<std::uint8_t, 1, 7> whiteKingSupportedPasserBonus = {0, 0, 0, 10, 20, 40, 0};
+inline pas::Array<std::uint8_t, 0, 6> blackKingSupportedPasserBonus = {0, 40, 20, 10, 0, 0, 0};
+inline constexpr auto blockedBishopPenalty2 = 5;
+inline constexpr auto offsideBishopPenalty = 20;
+inline pas::Array<std::uint8_t, 0, 8> blockedBishopPenalty = {0, 2, 5, 12, 30, 50, 70, 100, 100};
+inline pas::Array<std::uint8_t, 0, 14> pawnShieldPenalty = {0, 5, 10, 15, 20, 30, 40, 60, 70, 80, 90, 100, 120, 180, 200};
+inline pas::Array<std::int32_t, 0, 63> kingPressurePenalty = {0, 1, 5, 15, 35, 70, 125, 145, 150, 160, 170, 170, 175, 200, 225, 250, 300, 325, 350, 400, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500};
+inline pas::Array<std::uint8_t, 0, 41> endgameScale = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 90, 80, 70, 60, 50, 40, 30, 20, 20, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::uint8_t, 0, 41> rookScale = {0, 0, 0, 0, 0, 0, 0, 0, 20, 20, 20, 20, 20, 20, 20, 20, 50, 60, 70, 70, 80, 90, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
+inline constexpr auto queenKnightEndgameBonus = 5;
+inline constexpr auto pawnEndgameBonus = 10;
+inline constexpr auto pawnEndgameBonus2 = 5;
 }
 namespace petir_search {
 struct anonymous_record_1 {
-    std::int32_t fase;
-    std::int32_t legalmove;
-    bool mte;
-    bool ext;
+    std::int32_t phase;
+    std::int32_t legalMoveCount;
+    bool mateThreatExtended;
+    bool checkExtended;
     bool evaluated;
-    std::int32_t evalvalue;
+    std::int32_t staticEval;
 };
-extern pas::Array<std::int32_t, 0, 63> curr_move;
-// The piece that made curr_move, for the continuation-history key.
-extern pas::Array<std::int32_t, 0, 63> curr_piece;
-inline constexpr auto min_try = pas::mul(50, 6);
-inline constexpr auto min_threshold = 0.10;
-inline constexpr auto node_all = pas::negate(1);
-inline constexpr auto node_pv = 0;
-inline constexpr auto node_cut = 1;
-extern pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> hist_tried;
-extern pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> hist_succ;
-extern pas::Array<petir_search::anonymous_record_1, 0, 63> stack;
-extern std::int32_t rs;
-inline pas::Array<std::int32_t, 2, 8> margin = {16, 22, 30, 37, 55, 92, 142};
-inline pas::Array<std::int32_t, 0, 15> margingc = {5000, 90, 50, 10, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline constexpr auto noval = pas::negate(200000);
+extern pas::Array<std::int32_t, 0, 63> currentMove;
+// The piece that made currentMove, for the continuation-history key.
+extern pas::Array<std::int32_t, 0, 63> currentPiece;
+inline constexpr auto minHistoryTries = pas::mul(50, 6);
+inline constexpr auto minHistoryThreshold = 0.10;
+inline constexpr auto allNode = pas::negate(1);
+inline constexpr auto pvNode = 0;
+inline constexpr auto cutNode = 1;
+extern pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> historyTried;
+extern pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> historySucceeded;
+extern pas::Array<petir_search::anonymous_record_1, 0, 63> searchStack;
+extern std::int32_t researchCount;
+inline pas::Array<std::int32_t, 2, 8> futilityMargins = {16, 22, 30, 37, 55, 92, 142};
+inline constexpr auto noValue = pas::negate(200000);
 }
 namespace petir_root {
-extern std::int32_t bmoves;
-extern std::int32_t ntimelimit;
-extern std::int32_t rtl;
-extern bool newpv;
+extern std::int32_t stableBestMove;
+extern std::int32_t earlyStopTimeLimit;
+extern std::int32_t originalTimeLimit;
+extern bool newPvFound;
 }
 namespace petir_uiterative {
-extern std::int32_t completed_move,completed_depth,completed_score;
-extern std::string completed_pv;
-inline pas::Array<std::int32_t, 2, 12> timereducement = {1, 5, 15, 20, 20, 25, 30, 30, 30, 30, 30};
-extern std::int32_t retime;
+extern std::int32_t completedMove,completedDepth,completedScore;
+extern std::string completedPv;
+inline pas::Array<std::int32_t, 2, 12> timeReductionPercent = {1, 5, 15, 20, 20, 25, 30, 30, 30, 30, 30};
+extern std::int32_t extendedTimeLimit;
 }
 namespace petir_customboard {
-extern std::int32_t a;
-extern std::int32_t b;
-extern std::int32_t pos;
-extern std::int32_t kar;
+extern std::int32_t fenIndex;
+extern std::int32_t scanIndex;
+extern std::int32_t fenSquare;
 }
 namespace petir_notation {
 }
@@ -677,153 +669,151 @@ namespace petir_pv {
 }
 namespace petir_opening_book {
 struct anonymous_record_1 {
-    std::uint16_t moves;
+    std::uint16_t move;
     std::int32_t weight;
 };
-inline constexpr auto maxhashbook = (262144 / 2);
-inline constexpr auto minimum_elo = 2540;
-inline constexpr auto thr_min = pas::negate(25);
-inline constexpr auto depth_check = 5;
+inline constexpr auto bookTableSize = (262144 / 2);
+inline constexpr auto minimumElo = 2540;
 #pragma pack(push, 1)
 struct tbook {
     std::uint64_t key;
-    std::uint16_t bobot;
+    std::uint16_t weight;
 };
 #pragma pack(pop)
 #pragma pack(push, 1)
 struct thashbook {
-    petir_opening_book::tbook book;
+    petir_opening_book::tbook entry;
     bool used;
 };
 #pragma pack(pop)
-using hashbook = pas::Array<pas::Array<petir_opening_book::thashbook, 0, pas::sub(petir_opening_book::maxhashbook, 1)>, 0, 1>;
-extern petir_opening_book::hashbook book;
-extern std::int32_t no;
-extern std::int32_t a;
+using hashbook = pas::Array<pas::Array<petir_opening_book::thashbook, 0, pas::sub(petir_opening_book::bookTableSize, 1)>, 0, 1>;
+extern petir_opening_book::hashbook bookTable;
+extern std::int32_t entryCount;
+extern std::int32_t moveIndex;
 }
 namespace petir_etc {
 }
 namespace petir_undoredo {
 struct tundomoves {
-    petir_header::tdata data;
-    std::int32_t whiteclock;
-    std::int32_t blackclock;
+    petir_header::tdata position;
+    std::int32_t whiteClock;
+    std::int32_t blackClock;
 };
 struct tundo {
     std::int32_t count;
-    std::int32_t max;
-    pas::Array<petir_undoredo::tundomoves, 1, 400> moves;
+    std::int32_t maxCount;
+    pas::Array<petir_undoredo::tundomoves, 1, 400> entries;
 };
 }
 namespace petir_header {
 }
 namespace petir_bitboard_mask {
-std::int32_t firstbitp(const std::uint16_t* p);
-std::int32_t lastbitp(const std::uint16_t* p);
-std::uint64_t attackbishop(const petir_header::tdata& data, std::int32_t pos);
-std::uint64_t attackrook(petir_header::tdata& data, std::int32_t pos);
+std::int32_t firstBit(const std::uint16_t* bitboard);
+std::int32_t lastBit(const std::uint16_t* bitboard);
+std::uint64_t bishopAttacks(const petir_header::tdata& position, std::int32_t square);
+std::uint64_t rookAttacks(petir_header::tdata& position, std::int32_t square);
 }
 namespace petir_bitboard {
-void init_mask();
+void initMasks();
 }
 namespace petir_udata {
-std::uint8_t map(std::uint8_t y, std::uint8_t x);
-void initstate(petir_header::tdata& data);
+std::uint8_t squareAt(std::uint8_t rank, std::uint8_t file);
+void setInitialPosition(petir_header::tdata& position);
 }
 namespace petir_evalmask {
-void initevalmask();
-std::int32_t distancemax(std::int32_t p, std::int32_t q);
-std::int32_t distance_gajah(std::int32_t p, std::int32_t q);
-std::int32_t distance(std::int32_t p, std::int32_t q);
-void initevaltable();
+void initEvalMasks();
+std::int32_t chebyshevDistance(std::int32_t firstSquare, std::int32_t secondSquare);
+std::int32_t bishopDistance(std::int32_t firstSquare, std::int32_t secondSquare);
+std::int32_t closenessScore(std::int32_t firstSquare, std::int32_t secondSquare);
+void initDistanceTables();
 }
 namespace petir_makemove {
-void makewhitemove(std::int32_t moves, petir_header::tdata& data);
-void makeblackmove(std::int32_t moves, petir_header::tdata& data);
-void cekerror(petir_header::tdata data);
-void whiterokadependek(petir_header::tdata& data);
-void whiterokadepanjang(petir_header::tdata& data);
-void blackrokadependek(petir_header::tdata& data);
-void blackrokadepanjang(petir_header::tdata& data);
-void black_ep(petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto);
-void white_ep(petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto);
-void promosi_putih(petir_header::tdata& data, std::int32_t sto, std::int32_t promosi);
-void promosi_hitam(petir_header::tdata& data, std::int32_t sto, std::int32_t promosi);
+void makeWhiteMove(std::int32_t move, petir_header::tdata& position);
+void makeBlackMove(std::int32_t move, petir_header::tdata& position);
+void checkPositionConsistency(petir_header::tdata position);
+void castleWhiteShort(petir_header::tdata& position);
+void castleWhiteLong(petir_header::tdata& position);
+void castleBlackShort(petir_header::tdata& position);
+void castleBlackLong(petir_header::tdata& position);
+void makeBlackEnPassant(petir_header::tdata& position, std::int32_t fromSquare, std::int32_t toSquare);
+void makeWhiteEnPassant(petir_header::tdata& position, std::int32_t fromSquare, std::int32_t toSquare);
+void promoteWhitePawn(petir_header::tdata& position, std::int32_t square, std::int32_t promotion);
+void promoteBlackPawn(petir_header::tdata& position, std::int32_t square, std::int32_t promotion);
 }
 namespace petir_movgen {
-void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml);
-void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml);
-void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml);
-void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml);
-void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml);
-void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml);
-void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml);
-void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml);
-void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml, std::int32_t& skakcount);
-void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml, std::int32_t& skakcount);
+void generateBlackQuietMoves(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut);
+void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut);
+void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut);
+void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut);
+void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut);
+void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut);
+void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut);
+void generateWhiteQuietMoves(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut);
+void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut, std::int32_t& checkerCount);
+void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut, std::int32_t& checkerCount);
 }
 namespace petir_tools {
-std::uint64_t pinned_pieces(const petir_header::tdata& data, int side);
-bool white_attacked(petir_header::tdata& data, std::int32_t pos);
-bool black_attacked(petir_header::tdata& data, std::int32_t pos);
-bool white_checked(petir_header::tdata& data);
-bool black_checked(petir_header::tdata& data);
-void clearkiller();
-bool white_open_check(petir_header::tdata& data, std::uint16_t moves);
-bool white_open_check2(petir_header::tdata& data, std::uint16_t pos2, std::uint16_t post, std::uint16_t posraja);
-bool black_open_check2(petir_header::tdata& data, std::uint16_t pos2, std::uint16_t post, std::uint16_t posraja);
-bool black_open_check(petir_header::tdata& data, std::uint16_t moves);
-bool isextension(petir_header::tdata& data, std::int32_t& newlevel, std::int32_t giliran, std::int32_t moves, std::int32_t& cext);
-bool winningmaterial(std::int32_t ms, std::uint8_t giliran);
-bool losingmaterial(std::int32_t ms, std::uint8_t giliran);
-bool menskak(petir_header::tdata& data, std::int32_t giliran);
-bool menskak2(petir_header::tdata& data, std::uint16_t giliran, std::uint16_t moves);
-bool pawnpush(petir_header::tdata& data, std::uint16_t giliran, std::uint16_t moves);
-bool capture(petir_header::tdata& data, std::uint16_t moves);
-bool white_forkandpin(std::int32_t move, petir_header::tdata& data);
-bool black_forkandpin(std::int32_t move, petir_header::tdata& data);
-std::int32_t captured_value(std::int32_t sto, petir_header::tdata& data);
-bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece);
-bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece);
-bool pawn_7_rank(std::int32_t giliran, petir_header::tdata& data);
-bool pawn_7_rankw(petir_header::tdata& data);
-bool pawn_7_rankb(petir_header::tdata& data);
-bool pawn_6_rank(std::int32_t giliran, petir_header::tdata& data);
-bool good_move_white(petir_header::tdata& data, std::int32_t move);
-bool good_move_black(petir_header::tdata& data, std::int32_t move);
-bool wb_threat(std::uint8_t giliran, petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece);
-std::int32_t material(petir_header::tdata& data, std::int32_t giliran);
-pas::String getfen(petir_header::tdata data, std::int32_t giliran);
-bool good_move(petir_header::tdata& data, std::int32_t move, std::int32_t giliran);
-bool white_menskak(petir_header::tdata& data, std::uint16_t moves);
-std::uint8_t ipopcount(std::uint64_t p);
-bool black_menskak(petir_header::tdata& data, std::uint16_t moves);
-bool black_menskak3(petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece);
+std::uint64_t pinnedPieces(const petir_header::tdata& position, int side);
+bool attackedByBlack(petir_header::tdata& position, std::int32_t square);
+bool attackedByWhite(petir_header::tdata& position, std::int32_t square);
+bool whiteInCheck(petir_header::tdata& position);
+bool blackInCheck(petir_header::tdata& position);
+void clearKillers();
+bool exposesWhiteKing(petir_header::tdata& position, std::uint16_t move);
+bool exposesWhiteKingFrom(petir_header::tdata& position, std::uint16_t fromSquare, std::uint16_t toSquare, std::uint16_t kingSquare);
+bool exposesBlackKingFrom(petir_header::tdata& position, std::uint16_t fromSquare, std::uint16_t toSquare, std::uint16_t kingSquare);
+bool exposesBlackKing(petir_header::tdata& position, std::uint16_t move);
+bool extendPassedPawnPush(petir_header::tdata& position, std::int32_t& newDepth, std::int32_t sideToMove, std::int32_t move, std::int32_t& extensionCredit);
+bool isWinningMaterial(std::int32_t materialScore, std::uint8_t sideToMove);
+bool isLosingMaterial(std::int32_t materialScore, std::uint8_t sideToMove);
+bool opponentInCheck(petir_header::tdata& position, std::int32_t sideToMove);
+bool moveGivesCheck(petir_header::tdata& position, std::uint16_t sideToMove, std::uint16_t move);
+bool isPawnPush(petir_header::tdata& position, std::uint16_t sideToMove, std::uint16_t move);
+bool isCapture(petir_header::tdata& position, std::uint16_t move);
+bool whiteForksOrWinsPawn(std::int32_t square, petir_header::tdata& position);
+bool blackForksOrWinsPawn(std::int32_t square, petir_header::tdata& position);
+std::int32_t capturedValue(std::int32_t toSquare, petir_header::tdata& position);
+bool whiteMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, std::int32_t& threatenedValue);
+bool blackMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, std::int32_t& threatenedValue);
+bool hasPawnOnSeventh(std::int32_t sideToMove, petir_header::tdata& position);
+bool whiteHasPawnOnSeventh(petir_header::tdata& position);
+bool blackHasPawnOnSeventh(petir_header::tdata& position);
+bool hasFreeSixthRankPawn(std::int32_t sideToMove, petir_header::tdata& position);
+bool isGoodWhiteMove(petir_header::tdata& position, std::int32_t square);
+bool isGoodBlackMove(petir_header::tdata& position, std::int32_t square);
+bool moveThreatensKing(std::uint8_t sideToMove, petir_header::tdata& position, std::uint16_t move, std::int32_t& threatenedValue);
+std::int32_t nonPawnMaterial(petir_header::tdata& position, std::int32_t side);
+pas::String getFen(petir_header::tdata position, std::int32_t sideToMove);
+bool isGoodMove(petir_header::tdata& position, std::int32_t square, std::int32_t sideToMove);
+bool whiteMoveGivesCheck(petir_header::tdata& position, std::uint16_t move);
+std::uint8_t popCount(std::uint64_t bits);
+bool blackMoveGivesCheck(petir_header::tdata& position, std::uint16_t move);
+bool blackMoveGivesCheckOrSpecial(petir_header::tdata& position, std::uint16_t move, std::int32_t& threatenedValue);
 }
 namespace petir_usee {
-std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto);
-void xray(std::uint64_t& attack, std::int32_t square, std::int32_t target, const petir_header::tdata& data);
-void init_xray();
+std::int32_t staticExchange(std::int32_t sideToMove, const petir_header::tdata& position, std::int32_t fromSquare, std::int32_t toSquare);
+void addXray(std::uint64_t& attackers, std::int32_t square, std::int32_t target, const petir_header::tdata& position);
+void initXray();
 }
 namespace petir_valid {
-bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran);
+bool isValidMove(petir_header::tdata& position, std::int32_t move, std::int32_t sideToMove);
 }
 namespace petir_hashing_header {
-void inithashkey();
-std::uint64_t hashvalue(petir_header::tdata& data, std::int32_t giliran);
-void cleartable();
-void cleartable2();
-void inittable();
-void clearreversetable();
-void reversetable();
+void initHashKeys();
+std::uint64_t computeHashKey(petir_header::tdata& position, std::int32_t sideToMove);
+void clearHashTable();
+void advanceHashGeneration();
+void allocateHashTable();
+void clearReverseTable();
+void reverseTable();
 void coba();
 }
 namespace petir_hashing {
-void addtable(std::uint64_t key, std::int32_t giliran, std::int32_t level, std::int32_t moves, std::int32_t nilai, std::int32_t tipe, std::uint8_t move50count);
-bool searchhash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t level, std::int32_t giliran, std::int32_t& nilai, std::int32_t& moves, bool& avoidnm, std::uint8_t move50count);
-// Cache hint only: starts loading the entry searchhash will read for this key.
-inline void prefetch(std::uint64_t key, std::int32_t giliran) {
-    if (giliran == petir_header::_sisihitam) key = ~key;
+void storeHash(std::uint64_t key, std::int32_t sideToMove, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter);
+bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t depth, std::int32_t sideToMove, std::int32_t& score, std::int32_t& move, bool& avoidNullMove, std::uint8_t fiftyMoveCounter);
+// Cache hint only: starts loading the entry probeHash will read for this key.
+inline void prefetchHash(std::uint64_t key, std::int32_t sideToMove) {
+    if (sideToMove == petir_header::blackSide) key = ~key;
     const auto* entry = petir_hashing_header::bucket(key);
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
     _mm_prefetch(reinterpret_cast<const char*>(entry), _MM_HINT_T0);
@@ -835,94 +825,94 @@ inline void prefetch(std::uint64_t key, std::int32_t giliran) {
 }
 }
 namespace petir_repetition {
-void initrepdata();
-std::int32_t addrephash(std::uint64_t key, std::int32_t giliran);
-void delrephash(std::uint64_t key, std::int32_t giliran);
-bool isrep(std::uint64_t key, std::int32_t giliran);
+void clearRepetitionTable();
+std::int32_t addRepetition(std::uint64_t key, std::int32_t side);
+void removeRepetition(std::uint64_t key, std::int32_t side);
+bool isRepetition(std::uint64_t key, std::int32_t side);
 }
 namespace petir_next {
-void nextbest_max(petir_header::tmovelist& a, std::int32_t cur, std::int32_t tot);
-bool nextevasion(std::int32_t giliran, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t& hmoves, std::int32_t& curmove, std::int32_t& jml, std::int32_t& skakcount, petir_header::tmovelist& ml);
-bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t hmoves, std::int32_t& curmovecap, std::int32_t& curmovenoncap, std::int32_t& jmlcap, std::int32_t& jmlnoncap, petir_header::tmovelist& ml, petir_header::tmovelist& mlcap, std::int32_t& goodcap, petir_header::piece_to_history* const* cont);
-bool nextroot(std::int32_t giliran, std::int32_t& moves, std::int32_t& fase, std::int32_t& hmoves, std::int32_t& curmove, std::int32_t& jml, petir_header::tmovelist ml);
-bool nextq(std::int32_t giliran, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t& curmove, std::int32_t& jml, std::int32_t& score, std::int32_t ply, petir_header::tmovelist& ml);
+void selectBestMove(petir_header::tmovelist& moveList, std::int32_t currentIndex, std::int32_t lastIndex);
+bool nextEvasionMove(std::int32_t sideToMove, petir_header::tdata& position, std::int32_t& move, std::int32_t& phase, std::int32_t& hashMove, std::int32_t& currentIndex, std::int32_t& moveCount, std::int32_t& checkerCount, petir_header::tmovelist& moveList);
+bool nextMove(std::int32_t sideToMove, std::int32_t ply, petir_header::tdata& position, std::int32_t& move, std::int32_t& phase, std::int32_t hashMove, std::int32_t& captureIndex, std::int32_t& quietIndex, std::int32_t& captureCount, std::int32_t& quietCount, petir_header::tmovelist& quietList, petir_header::tmovelist& captureList, std::int32_t& bestCaptureGain, petir_header::piece_to_history* const* continuationTables);
+bool nextRootMove(std::int32_t sideToMove, std::int32_t& move, std::int32_t& phase, std::int32_t& hashMove, std::int32_t& currentIndex, std::int32_t& moveCount, petir_header::tmovelist moveList);
+bool nextQuiescenceMove(std::int32_t sideToMove, petir_header::tdata& position, std::int32_t& move, std::int32_t& phase, std::int32_t& currentIndex, std::int32_t& moveCount, std::int32_t& score, std::int32_t checkPlies, petir_header::tmovelist& moveList);
 }
 namespace petir_ueval {
-std::int32_t eval(const petir_header::tdata& data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr = false);
+std::int32_t evaluate(const petir_header::tdata& position, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, bool opponentPerspective = false);
 // Pawn-owner perspective; caller supplies a frontmost passed pawn.
-int passed_pawn_activity(const petir_header::tdata& data, int pos, bool white);
+int passedPawnActivity(const petir_header::tdata& position, int pawnSquare, bool isWhite);
 // Unscaled owner-perspective bonus for neighboring foremost passed pawns.
-int connected_passed_pawns(const petir_header::tdata& data, bool white);
+int connectedPassedPawns(const petir_header::tdata& position, bool isWhite);
 // Piece-owner perspective; caller supplies its rook or knight square.
-int endgame_piece_activity(const petir_header::tdata& data, int pos, bool white);
-// Soft KRP-KR percentage; pass the actual side to move (also for infhr).
-int rook_pawn_scale(const petir_header::tdata& data, int side_to_move);
-std::int32_t materialvalue(std::int32_t giliran, std::int32_t ms);
-bool isdraw(const petir_header::tdata& data, bool& draw2);
-bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran);
-std::uint8_t ipopcount(std::uint64_t p);
-std::int32_t popcount_w(petir_bitboard_mask::pword p);
-std::int32_t popcount_b(petir_bitboard_mask::pword p);
-std::uint8_t popcount(petir_bitboard_mask::pword p);
-bool onlyone(std::uint64_t p);
-std::int32_t dynamiclazy(const petir_header::tdata& data);
+int endgamePieceActivity(const petir_header::tdata& position, int pieceSquare, bool isWhite);
+// Soft KRP-KR percentage; pass the actual side to move (also for opponentPerspective).
+int rookPawnScale(const petir_header::tdata& position, int sideToMove);
+std::int32_t materialForSide(std::int32_t sideToMove, std::int32_t materialScore);
+bool isMaterialDraw(const petir_header::tdata& position, bool& likelyDraw);
+bool isTheoreticalDraw(const petir_header::tdata& position, std::uint8_t sideToMove);
+std::uint8_t popCount(std::uint64_t bits);
+std::int32_t popCountUpperWords(petir_bitboard_mask::pword wordPointer);
+std::int32_t popCountLowerWords(petir_bitboard_mask::pword wordPointer);
+std::uint8_t popCountWords(petir_bitboard_mask::pword wordPointer);
+bool hasSingleBit(std::uint64_t bits);
+std::int32_t lazyMarginAdjustment(const petir_header::tdata& position);
 }
 namespace petir_search {
-void empty_historytable();
-std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, petir_header::tdata& data, bool nullmove, std::int32_t depth, std::int32_t cext, bool nmtree, std::int32_t reduced, std::int32_t nodetype);
-std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t beta, petir_header::tdata& data, std::int32_t ply, std::int32_t depth, std::int32_t cext, std::int32_t neval, std::int32_t nodetype);
-void addhistory(std::int32_t rlevel, std::int32_t depth, std::int32_t moves, std::int32_t giliran, std::int32_t piece);
-void update_history(std::int32_t giliran, std::int32_t piece, std::int32_t sto, std::int32_t bonus);
-void update_continuation(petir_header::piece_to_history* const* cont, std::int32_t piece, std::int32_t sto, std::int32_t bonus);
-void penalise_quiets(std::int32_t rlevel, std::int32_t giliran, const petir_header::tdata& data, petir_header::piece_to_history* const* cont, const std::int32_t* quiets, std::int32_t count, std::int32_t best);
+void clearHistoryTables();
+std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit, bool inNullMoveTree, std::int32_t reduced, std::int32_t nodeType);
+std::int32_t quiescenceSearch(std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, std::int32_t checkPlies, std::int32_t ply, std::int32_t extensionCredit, std::int32_t staticEval, std::int32_t nodeType);
+void addHistory(std::int32_t plies, std::int32_t ply, std::int32_t move, std::int32_t sideToMove, std::int32_t piece);
+void updateHistory(std::int32_t sideToMove, std::int32_t piece, std::int32_t toSquare, std::int32_t bonus);
+void updateContinuation(petir_header::piece_to_history* const* continuationTables, std::int32_t piece, std::int32_t toSquare, std::int32_t bonus);
+void penaliseQuiets(std::int32_t plies, std::int32_t sideToMove, const petir_header::tdata& position, petir_header::piece_to_history* const* continuationTables, const std::int32_t* quietMoves, std::int32_t quietCount, std::int32_t bestMove);
 }
 namespace petir_root {
-std::int32_t searchroot(std::int32_t level, std::int32_t giliran, std::int32_t tipe, std::int32_t alpha, std::int32_t beta, petir_header::tdata data, bool nullmove, std::int32_t depth, std::int32_t cext);
+std::int32_t searchRoot(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t rootNodeType, std::int32_t alpha, std::int32_t beta, petir_header::tdata position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit);
 }
 namespace petir_uiterative {
-std::int32_t iterative(std::int32_t level, std::int32_t giliran, std::int32_t tipe, petir_header::tdata data);
-std::int32_t mtdf(petir_header::tdata data, std::uint8_t level, std::uint8_t giliran, std::int32_t firstguess);
-std::int32_t aspiration(std::int32_t level, std::int32_t giliran, std::int32_t tipe, std::int32_t nilai, petir_header::tdata data);
-bool timemanage(std::int32_t giliran, petir_header::tdata data);
+std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideToMove, std::int32_t rootNodeType, petir_header::tdata position);
+std::int32_t mtdfSearch(petir_header::tdata position, std::uint8_t searchDepth, std::uint8_t sideToMove, std::int32_t firstGuess);
+std::int32_t aspirationSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t rootNodeType, std::int32_t previousScore, petir_header::tdata position);
+bool hasForcedMove(std::int32_t sideToMove, petir_header::tdata position);
 }
 namespace petir_customboard {
-void fillbitboard(petir_header::tdata& data);
-void readnotation(pas::String n, petir_header::tdata& data, bool& wtm);
+void rebuildBitboards(petir_header::tdata& position);
+void readFen(pas::String fen, petir_header::tdata& position, bool& whiteToMove);
 }
 namespace petir_notation {
-pas::String movetonotation(std::int32_t move, std::int32_t ep, std::int32_t giliran);
-std::int32_t notationtomove(pas::String notasi, petir_header::tdata data, std::uint8_t giliran);
-pas::String shortnotationtolong(pas::String notasi, petir_header::tdata data, std::uint8_t giliran);
-pas::String getnotasi(std::int32_t square);
-std::int32_t squaretobinary(pas::String s);
+pas::String moveToNotation(std::int32_t move, std::int32_t enPassantFile, std::int32_t sideToMove);
+std::int32_t notationToMove(pas::String notation, petir_header::tdata position, std::uint8_t sideToMove);
+pas::String shortToLongNotation(pas::String notation, petir_header::tdata position, std::uint8_t sideToMove);
+pas::String squareName(std::int32_t square);
+std::int32_t squareFromName(pas::String name);
 }
 namespace petir_pv {
-pas::String getpv(petir_header::tdata data, std::int32_t giliran, std::int32_t maxdepth);
-void printpv(std::int32_t& n, pas::String spv, std::int32_t l, std::int32_t t, std::int32_t nilai3);
-pas::String strtime(std::int32_t time);
+pas::String getPv(petir_header::tdata position, std::int32_t sideToMove, std::int32_t maxLength);
+void printPv(std::int32_t& lineNumber, pas::String pvText, std::int32_t depth, std::int32_t seconds, std::int32_t score);
+pas::String formatTime(std::int32_t seconds);
 }
 namespace petir_opening_book {
-void learn_pgn(pas::String a);
-void initbook();
-void loadbook();
-std::int32_t searchbook(petir_header::tdata data, std::int32_t giliran);
-bool searchhashbook(std::uint64_t key, std::uint8_t giliran, std::int32_t& weight);
-bool searchhashbook2(std::uint64_t key, std::uint8_t giliran, std::int32_t& weight);
-bool edithashbook(std::uint64_t key, std::uint8_t giliran, std::int32_t newbobot);
-void savebook();
+void learnFromPgn(pas::String fileName);
+void clearBook();
+void loadBook();
+std::int32_t findBookMove(petir_header::tdata position, std::int32_t sideToMove);
+bool probeBook(std::uint64_t key, std::uint8_t sideToMove, std::int32_t& weight);
+bool probeBookAnyWeight(std::uint64_t key, std::uint8_t sideToMove, std::int32_t& weight);
+bool setBookWeight(std::uint64_t key, std::uint8_t sideToMove, std::int32_t newWeight);
+void saveBook();
 void learn();
-bool addhashbook(std::uint64_t key, std::uint8_t hasil, std::uint8_t giliran, std::int32_t whiteelo, std::int32_t blackelo);
-bool storebook(petir_opening_book::tbook b, std::int32_t giliran);
-void make(pas::String notasi, petir_header::tdata& data, std::uint8_t giliran);
+bool addBookPosition(std::uint64_t key, std::uint8_t gameResult, std::uint8_t sideToMove, std::int32_t whiteElo, std::int32_t blackElo);
+bool storeBookEntry(petir_opening_book::tbook newEntry, std::int32_t sideToMove);
+void playNotation(pas::String notation, petir_header::tdata& position, std::uint8_t sideToMove);
 }
 namespace petir_etc {
-void updateblackkey(std::int32_t moves, petir_header::tdata& data);
-void updatewhitekey(std::int32_t moves, petir_header::tdata& data);
-void updatekey(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran);
+void updateBlackHashKey(std::int32_t move, petir_header::tdata& position);
+void updateWhiteHashKey(std::int32_t move, petir_header::tdata& position);
+void updateHashKey(petir_header::tdata& position, std::int32_t move, std::int32_t sideToMove);
 }
 namespace petir_undoredo {
-void resetundo(petir_undoredo::tundo& undo);
-void addundo(petir_undoredo::tundo& undo, petir_header::tdata data, std::int32_t whiteclock, std::int32_t blackclock);
-bool takeback(petir_undoredo::tundo& undo, petir_header::tdata& data, std::int32_t& wc, std::int32_t& bc, std::uint8_t& giliran);
-bool moveforward(petir_undoredo::tundo& undo, petir_header::tdata& data, std::int32_t& wc, std::int32_t& bc, std::uint8_t& giliran);
+void resetUndo(petir_undoredo::tundo& undo);
+void addUndo(petir_undoredo::tundo& undo, petir_header::tdata position, std::int32_t whiteClock, std::int32_t blackClock);
+bool takeBack(petir_undoredo::tundo& undo, petir_header::tdata& position, std::int32_t& whiteClock, std::int32_t& blackClock, std::uint8_t& sideToMove);
+bool moveForward(petir_undoredo::tundo& undo, petir_header::tdata& position, std::int32_t& whiteClock, std::int32_t& blackClock, std::uint8_t& sideToMove);
 }

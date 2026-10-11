@@ -2,77 +2,75 @@
 #include "petir.hpp"
 namespace petir_pv {
 // pv.pas:52
-pas::String getpv(petir_header::tdata data, std::int32_t giliran, std::int32_t maxdepth) {
-    pas::String return_value{};
-    std::int32_t nilai{};
-    std::int32_t hmoves{};
-    std::int32_t l{};
-    bool ab{};
-    bool pp{};
-    bool found{};
-    std::int32_t a{};
-    std::int32_t b{};
-    hmoves = petir_header::_no_move;
-    return_value = pas::String("");
-    a = pas::add(petir_header::_infinity, 50000);
-    b = 0;
-    if ((!petir_hashing::searchhash(data.hashkey, a, b, 0, giliran, nilai, hmoves, found, data.move50count))) {
-        hmoves = petir_header::_no_move;
+pas::String getPv(petir_header::tdata position, std::int32_t sideToMove, std::int32_t maxLength) {
+    pas::String result{};
+    std::int32_t score{};
+    std::int32_t hashMove{};
+    std::int32_t length{};
+    bool avoidNullMove{};
+    std::int32_t alpha{};
+    std::int32_t beta{};
+    hashMove = petir_header::noMove;
+    result = pas::String("");
+    alpha = pas::add(petir_header::infinity, 50000);
+    beta = 0;
+    if ((!petir_hashing::probeHash(position.hashKey, alpha, beta, 0, sideToMove, score, hashMove, avoidNullMove, position.fiftyMoveCounter))) {
+        hashMove = petir_header::noMove;
     }
-    l = 0;
-    while ((hmoves != petir_header::_no_move)) {
-        (l = pas::increment(l, 1));
-        return_value = (return_value + petir_notation::movetonotation(hmoves, data.ep, giliran));
-        if ((l >= pas::add(maxdepth, 1))) {
-            return return_value;
+    length = 0;
+    while ((hashMove != petir_header::noMove)) {
+        (length = pas::increment(length, 1));
+        result = (result + petir_notation::moveToNotation(hashMove, position.enPassantFile, sideToMove));
+        if ((length >= pas::add(maxLength, 1))) {
+            return result;
         }
-        if ((giliran == petir_header::_sisihitam)) {
-            petir_makemove::makeblackmove(hmoves, data);
+        if ((sideToMove == petir_header::blackSide)) {
+            petir_makemove::makeBlackMove(hashMove, position);
         } else {
-            petir_makemove::makewhitemove(hmoves, data);
+            petir_makemove::makeWhiteMove(hashMove, position);
         }
-        giliran = pas::sub(3, giliran);
-        if ((!petir_hashing::searchhash(data.hashkey, a, b, 0, giliran, nilai, hmoves, found, data.move50count))) {
-            hmoves = petir_header::_no_move;
+        sideToMove = pas::sub(3, sideToMove);
+        if ((!petir_hashing::probeHash(position.hashKey, alpha, beta, 0, sideToMove, score, hashMove, avoidNullMove, position.fiftyMoveCounter))) {
+            hashMove = petir_header::noMove;
         }
-        return_value = (return_value + ' ');
+        result = (result + ' ');
     }
-    return return_value;
+    return result;
 }
 
 // pv.pas:24
-void printpv(std::int32_t& n, pas::String spv, std::int32_t l, std::int32_t t, std::int32_t nilai3) {
-    pas::String s{};
-    if ((!petir_header::usewinboard)) {
+void printPv(std::int32_t& lineNumber, pas::String pvText, std::int32_t depth, std::int32_t seconds, std::int32_t score) {
+    pas::String line{};
+    if ((!petir_header::useWinboard)) {
     } else {
-        if (petir_header::usewinboard) {
-            s = pas::inttostr(l) + ' ' + pas::inttostr(nilai3) + ' ' + pas::inttostr(static_cast<std::int32_t>(petir::search_time.elapsed_ms()/10)) + ' ' + pas::inttostr(petir_header::total_node) + ' ' + spv;
+        if (petir_header::useWinboard) {
+            line = pas::intToStr(depth) + ' ' + pas::intToStr(score) + ' ' + pas::intToStr(static_cast<std::int32_t>(petir::searchTime.elapsedMs()/10)) + ' ' + pas::intToStr(petir_header::nodeCount) + ' ' + pvText;
             ;
-            pas::send_winboard(s);
+            pas::sendWinboard(line);
         }
     }
 }
 
 // pv.pas:12
-pas::String strtime(std::int32_t time) {
-    pas::String return_value{};
-    pas::String st1{};
-    pas::String st2{};
-    pas::String st3{};
-    st1 = pas::inttostr((time / 3600));
-    if ((pas::strtoint(st1) < 10)) {
-        st1 = ('0' + st1);
+pas::String formatTime(std::int32_t seconds) {
+    pas::String result{};
+    pas::String hoursText{};
+    pas::String minutesText{};
+    pas::String secondsText{};
+    hoursText = pas::intToStr((seconds / 3600));
+    if ((pas::strToInt(hoursText) < 10)) {
+        hoursText = ('0' + hoursText);
     }
-    st2 = pas::inttostr(((time % 3600) / 60));
-    if ((pas::strtoint(st2) < 10)) {
-        st2 = ('0' + st2);
+    minutesText = pas::intToStr(((seconds % 3600) / 60));
+    if ((pas::strToInt(minutesText) < 10)) {
+        minutesText = ('0' + minutesText);
     }
-    st3 = pas::inttostr((time % 60));
-    if ((pas::strtoint(st3) < 10)) {
-        st3 = ('0' + st3);
+    secondsText = pas::intToStr((seconds % 60));
+    if ((pas::strToInt(secondsText) < 10)) {
+        secondsText = ('0' + secondsText);
     }
-    return_value = ((((st1 + ':') + st2) + ':') + st3);
-    return return_value;
+    result = ((((hoursText + ':') + minutesText) + ':') + secondsText);
+    return result;
 }
 
 }

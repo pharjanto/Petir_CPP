@@ -1,83 +1,83 @@
 // Faithful translation of repetition.pas; Delphi source is in original/.
 #include "petir.hpp"
 namespace petir_repetition {
-petir_repetition::tarrreprecord repdata{};
+petir_repetition::tarrreprecord repetitionTable{};
 // repetition.pas:22
-void initrepdata() {
-    std::int32_t a{};
-    std::int32_t b{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    pas_temp_1 = 1;
-    for (b = 0; b <= pas_temp_1; ++b) {
-        pas_temp_2 = pas::sub(petir_repetition::maxhashdraw, 1);
-        for (a = 0; a <= pas_temp_2; ++a) {
-            petir_repetition::repdata[b][a].used = false;
-            petir_repetition::repdata[b][a].jumlah = 0;
+void clearRepetitionTable() {
+    std::int32_t slot{};
+    std::int32_t side{};
+    std::int32_t lastSide{};
+    std::int32_t lastSlot{};
+    lastSide = 1;
+    for (side = 0; side <= lastSide; ++side) {
+        lastSlot = pas::sub(petir_repetition::repetitionTableSize, 1);
+        for (slot = 0; slot <= lastSlot; ++slot) {
+            petir_repetition::repetitionTable[side][slot].used = false;
+            petir_repetition::repetitionTable[side][slot].count = 0;
         }
     }
 }
 
 // repetition.pas:53
-std::int32_t addrephash(std::uint64_t key, std::int32_t giliran) {
-    std::int32_t return_value{};
-    std::uint64_t hkey{};
-    petir_repetition::treprecord* p{};
-    hkey = (key & pas::sub(petir_repetition::maxhashdraw, 1));
-    return_value = pas::negate(1);
-    while ((petir_repetition::repdata[giliran][hkey].used && (petir_repetition::repdata[giliran][hkey].key != key))) {
-        if ((hkey == pas::sub(petir_repetition::maxhashdraw, 1))) {
-            hkey = pas::negate(1);
+std::int32_t addRepetition(std::uint64_t key, std::int32_t side) {
+    std::int32_t result{};
+    std::uint64_t slot{};
+    petir_repetition::treprecord* record{};
+    slot = (key & pas::sub(petir_repetition::repetitionTableSize, 1));
+    result = pas::negate(1);
+    while ((petir_repetition::repetitionTable[side][slot].used && (petir_repetition::repetitionTable[side][slot].key != key))) {
+        if ((slot == pas::sub(petir_repetition::repetitionTableSize, 1))) {
+            slot = pas::negate(1);
         }
-        (hkey = pas::increment(hkey, 1));
+        (slot = pas::increment(slot, 1));
     }
-    p = pas::address(petir_repetition::repdata[giliran][hkey]);
-    if (((*p).used == false)) {
-        (*p).used = true;
-        (*p).key = key;
-        (*p).jumlah = 0;
-        return_value = 0;
+    record = pas::address(petir_repetition::repetitionTable[side][slot]);
+    if (((*record).used == false)) {
+        (*record).used = true;
+        (*record).key = key;
+        (*record).count = 0;
+        result = 0;
     } else {
-        ((*p).jumlah = pas::increment((*p).jumlah, 1));
-        return_value = (*p).jumlah;
+        ((*record).count = pas::increment((*record).count, 1));
+        result = (*record).count;
     }
-    return return_value;
+    return result;
 }
 
 // repetition.pas:81
-void delrephash(std::uint64_t key, std::int32_t giliran) {
-    std::uint64_t hkey{};
-    hkey = (key & pas::sub(petir_repetition::maxhashdraw, 1));
-    while ((petir_repetition::repdata[giliran][hkey].key != key)) {
-        if ((hkey == pas::sub(petir_repetition::maxhashdraw, 1))) {
-            hkey = pas::negate(1);
+void removeRepetition(std::uint64_t key, std::int32_t side) {
+    std::uint64_t slot{};
+    slot = (key & pas::sub(petir_repetition::repetitionTableSize, 1));
+    while ((petir_repetition::repetitionTable[side][slot].key != key)) {
+        if ((slot == pas::sub(petir_repetition::repetitionTableSize, 1))) {
+            slot = pas::negate(1);
         }
-        (hkey = pas::increment(hkey, 1));
+        (slot = pas::increment(slot, 1));
     }
-    if ((petir_repetition::repdata[giliran][hkey].jumlah == 0)) {
-        petir_repetition::repdata[giliran][hkey].used = false;
+    if ((petir_repetition::repetitionTable[side][slot].count == 0)) {
+        petir_repetition::repetitionTable[side][slot].used = false;
     } else {
-        (petir_repetition::repdata[giliran][hkey].jumlah = pas::decrement(petir_repetition::repdata[giliran][hkey].jumlah, 1));
+        (petir_repetition::repetitionTable[side][slot].count = pas::decrement(petir_repetition::repetitionTable[side][slot].count, 1));
     }
 }
 
 // repetition.pas:34
-bool isrep(std::uint64_t key, std::int32_t giliran) {
-    bool return_value{};
-    std::uint64_t hkey{};
-    hkey = (key & pas::sub(petir_repetition::maxhashdraw, 1));
-    while ((petir_repetition::repdata[giliran][hkey].key != key)) {
-        if ((hkey == pas::sub(petir_repetition::maxhashdraw, 1))) {
-            hkey = pas::negate(1);
+bool isRepetition(std::uint64_t key, std::int32_t side) {
+    bool result{};
+    std::uint64_t slot{};
+    slot = (key & pas::sub(petir_repetition::repetitionTableSize, 1));
+    while ((petir_repetition::repetitionTable[side][slot].key != key)) {
+        if ((slot == pas::sub(petir_repetition::repetitionTableSize, 1))) {
+            slot = pas::negate(1);
         }
-        (hkey = pas::increment(hkey, 1));
+        (slot = pas::increment(slot, 1));
     }
-    if ((petir_repetition::repdata[giliran][hkey].jumlah == 2)) {
-        return_value = true;
-        return return_value;
+    if ((petir_repetition::repetitionTable[side][slot].count == 2)) {
+        result = true;
+        return result;
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 }

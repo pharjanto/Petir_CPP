@@ -7,37 +7,37 @@
 namespace petir {
 struct ClockLimits {
     bool timed=false;
-    std::int64_t remaining_ms=0,increment_ms=0,movetime_ms=-1;
-    int moves_to_go=0,overhead_ms=50;
+    std::int64_t remainingMs=0,incrementMs=0,moveTimeMs=-1;
+    int movesToGo=0,overheadMs=50;
 };
 struct TimeBudget {
     bool timed=false,emergency=false;
-    std::int64_t soft_ms=0,hard_ms=0;
+    std::int64_t softMs=0,hardMs=0;
 };
 class TimeManager {
-    std::atomic<std::int64_t> origin_{0},soft_deadline_{0},hard_deadline_{0},base_soft_{0};
-    unsigned polls_=0; // Search thread only; protocol updates use atomics.
+    std::atomic<std::int64_t> originMs{0},softDeadlineMs{0},hardDeadlineMs{0},baseSoftMs{0};
+    unsigned pollCount=0; // Search thread only; protocol updates use atomics.
 public:
-    static std::int64_t now_ms() {
+    static std::int64_t nowMs() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
     }
     static TimeBudget allocate(const ClockLimits& limits);
-    void reset() {origin_=now_ms();soft_deadline_=0;hard_deadline_=0;base_soft_=0;polls_=0;}
-    void start(const TimeBudget& budget,std::int64_t received_at);
-    void tighten(std::int64_t received_at,std::int64_t remaining_ms,int overhead_ms);
-    std::int64_t elapsed_ms() const {return std::max<std::int64_t>(0,now_ms()-origin_.load());}
-    bool timed() const {return hard_deadline_.load(std::memory_order_relaxed)!=0;}
+    void reset() {originMs=nowMs();softDeadlineMs=0;hardDeadlineMs=0;baseSoftMs=0;pollCount=0;}
+    void start(const TimeBudget& budget,std::int64_t receivedAt);
+    void tighten(std::int64_t receivedAt,std::int64_t remainingMs,int overheadMs);
+    std::int64_t elapsedMs() const {return std::max<std::int64_t>(0,nowMs()-originMs.load());}
+    bool isTimed() const {return hardDeadlineMs.load(std::memory_order_relaxed)!=0;}
     bool expired(bool force=false) {
-        const auto end=hard_deadline_.load(std::memory_order_relaxed);
-        if(!end)return false;
-        const unsigned interval=base_soft_.load(std::memory_order_relaxed)<1000?16:256;
-        if(!force && (++polls_%interval)!=0)return false;
-        return now_ms()>=end;
+        const auto endMs=hardDeadlineMs.load(std::memory_order_relaxed);
+        if(!endMs)return false;
+        const unsigned pollInterval=baseSoftMs.load(std::memory_order_relaxed)<1000?16:256;
+        if(!force && (++pollCount%pollInterval)!=0)return false;
+        return nowMs()>=endMs;
     }
-    bool can_start_iteration(std::int64_t last_iteration_ms) const;
-    void adjust_soft(double fraction);
+    bool canStartIteration(std::int64_t lastIterationMs) const;
+    void adjustSoft(double fraction);
 };
-extern TimeManager search_time;
-bool search_should_stop(bool force=false);
+extern TimeManager searchTime;
+bool searchShouldStop(bool force=false);
 }

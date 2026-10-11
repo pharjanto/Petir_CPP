@@ -1,5 +1,5 @@
 // Faithful translation of usee.pas; Delphi source is in original/.
-// see() is restructured for speed, preserving the original board sources,
+// staticExchange() is restructured for speed, preserving the original board sources,
 // attacker order, signed 8-bit swaps and x-ray behavior.
 #include "petir.hpp"
 #include <algorithm>
@@ -10,137 +10,137 @@
 #endif
 namespace petir_usee {
 namespace {
-// Delphi's firstbitp on a nonzero board: the lowest bit.
-inline std::int32_t first_bit(std::uint64_t bits) {
+// Delphi's firstBit on a nonzero board: the lowest bit.
+inline std::int32_t lowestSetBit(std::uint64_t bits) {
 #if defined(_MSC_VER) && defined(_M_X64)
-    unsigned long index;
-    _BitScanForward64(&index, bits);
-    return static_cast<std::int32_t>(index);
+    unsigned long bitIndex;
+    _BitScanForward64(&bitIndex, bits);
+    return static_cast<std::int32_t>(bitIndex);
 #else
     return std::countr_zero(bits);
 #endif
 }
 
-// Delphi's lastbitp on a nonzero board: the lowest bit of the highest occupied
+// Delphi's lastBit on a nonzero board: the lowest bit of the highest occupied
 // 16-bit word.
-inline std::int32_t last_bit(std::uint64_t bits) {
+inline std::int32_t legacyLastBit(std::uint64_t bits) {
 #if defined(_MSC_VER) && defined(_M_X64)
-    unsigned long highest, lowest;
-    _BitScanReverse64(&highest, bits);
-    const auto word_offset = highest & ~15UL;
-    _BitScanForward64(&lowest, bits >> word_offset);
-    return static_cast<std::int32_t>(word_offset + lowest);
+    unsigned long highestBit, lowestBit;
+    _BitScanReverse64(&highestBit, bits);
+    const auto wordOffset = highestBit & ~15UL;
+    _BitScanForward64(&lowestBit, bits >> wordOffset);
+    return static_cast<std::int32_t>(wordOffset + lowestBit);
 #else
-    const int word_offset = (63 - std::countl_zero(bits)) & ~15;
-    return word_offset + std::countr_zero(bits >> word_offset);
+    const int wordOffset = (63 - std::countl_zero(bits)) & ~15;
+    return wordOffset + std::countr_zero(bits >> wordOffset);
 #endif
 }
 
-// Lookups for xray, filled by init_xray from the bitboard_mask tables: the ray
-// beyond a square for each direction2 value (row 0 is empty, so direction 0
+// Lookups for addXray, filled by initXray from the bitboard_mask tables: the ray
+// beyond a square for each rayDirectionCode value (row 0 is empty, so direction 0
 // finds no candidates), and for each axis the original occupancy board, its
 // shift and the attack table row. Each axis keeps its original occupancy
-// source: the rotated boards need not agree with allpieces during search.
-struct XrayAxis { const std::uint64_t* row; std::uint64_t petir_header::tdata::* occupancy; std::uint8_t shift, mask; };
-std::uint64_t xray_ray[9][64];
-XrayAxis xray_axis[4][64];
+// source: the rotated boards need not agree with allPieces during search.
+struct XrayAxis { const std::uint64_t* attackRow; std::uint64_t petir_header::tdata::* occupancyBoard; std::uint8_t shift, mask; };
+std::uint64_t xrayRays[9][64];
+XrayAxis xrayAxes[4][64];
 
-// usee.pas:21. Forced inline so see() keeps attack in a register; MSVC
+// usee.pas:21. Forced inline so staticExchange() keeps attackers in a register; MSVC
 // otherwise calls it out of line at all three sites.
-PETIR_SEE_INLINE void xray_inline(std::uint64_t& attack, std::int32_t square, std::int32_t target, const petir_header::tdata& data) {
-    const int direction = petir_bitboard_mask::direction2[target][square];
-    const auto candidates = xray_ray[direction][square] & (direction > 4 ? data.bishopqueen : data.rookqueen);
+PETIR_SEE_INLINE void addXrayInline(std::uint64_t& attackers, std::int32_t square, std::int32_t target, const petir_header::tdata& position) {
+    const int direction = petir_bitboard_mask::rayDirectionCode[target][square];
+    const auto candidates = xrayRays[direction][square] & (direction > 4 ? position.bishopsAndQueens : position.rooksAndQueens);
     if (candidates == 0) return;
-    const XrayAxis& axis = xray_axis[(direction - 1) >> 1][square];
-    attack |= candidates & axis.row[((data.*axis.occupancy) >> axis.shift) & axis.mask];
+    const XrayAxis& axis = xrayAxes[(direction - 1) >> 1][square];
+    attackers |= candidates & axis.attackRow[((position.*axis.occupancyBoard) >> axis.shift) & axis.mask];
 }
 
 // One capture of the exchange for one side, exactly as the original loop body
-// did it: the side's least valuable attacker (White scans with lastbitp except
-// for its king, Black with firstbitp except for its king), the swap value, the
-// x-ray behind the attacker and its removal. The value comes from papan and
+// did it: the side's least valuable attacker (White scans with lastBit except
+// for its king, Black with firstBit except for its king), the swap value, the
+// x-ray behind the attacker and its removal. The value comes from board and
 // every attacker is x-rayed, as in the original: search can reach boards where
 // a captured king's bitboard is stale, and SEE must score them as before.
 // Returns false when the side has no attacker left.
 using ExchangeList = pas::Array<std::int8_t, 0, 32>;
 template <bool White>
-inline bool capture(std::uint64_t& attack, ExchangeList& list, std::int32_t& n, std::int32_t& piece, std::int32_t sto, const petir_header::tdata& data) {
-    std::uint64_t temp;
-    std::int32_t square;
-    if ((temp = (attack & (White ? data.pawnwhite : data.pawnblack))) != 0
-        || (temp = (attack & (White ? data.knightwhite : data.knightblack))) != 0
-        || (temp = (attack & (White ? data.bishopwhite : data.bishopblack))) != 0
-        || (temp = (attack & (White ? data.rookwhite : data.rookblack))) != 0
-        || (temp = (attack & (White ? data.queenwhite : data.queenblack))) != 0) {
-        square = White ? last_bit(temp) : first_bit(temp);
-    } else if ((temp = (attack & (White ? data.kingwhite : data.kingblack))) != 0) {
-        square = White ? first_bit(temp) : last_bit(temp);
+inline bool captureStep(std::uint64_t& attackers, ExchangeList& swapList, std::int32_t& swapCount, std::int32_t& targetValue, std::int32_t targetSquare, const petir_header::tdata& position) {
+    std::uint64_t candidates;
+    std::int32_t attackerSquare;
+    if ((candidates = (attackers & (White ? position.whitePawns : position.blackPawns))) != 0
+        || (candidates = (attackers & (White ? position.whiteKnights : position.blackKnights))) != 0
+        || (candidates = (attackers & (White ? position.whiteBishops : position.blackBishops))) != 0
+        || (candidates = (attackers & (White ? position.whiteRooks : position.blackRooks))) != 0
+        || (candidates = (attackers & (White ? position.whiteQueens : position.blackQueens))) != 0) {
+        attackerSquare = White ? legacyLastBit(candidates) : lowestSetBit(candidates);
+    } else if ((candidates = (attackers & (White ? position.whiteKingBoard : position.blackKingBoard))) != 0) {
+        attackerSquare = White ? lowestSetBit(candidates) : legacyLastBit(candidates);
     } else {
         return false;
     }
-    list[n] = static_cast<std::int8_t>(piece - list[n - 1]);
-    piece = petir_usee::nilai_piece[data.papan[square]];
+    swapList[swapCount] = static_cast<std::int8_t>(targetValue - swapList[swapCount - 1]);
+    targetValue = petir_usee::pieceSeeValue[position.board[attackerSquare]];
     // Rays exclude their source square, so removal can overlap the x-ray loads.
-    attack &= ~petir_bitboard_mask::bit(square);
-    xray_inline(attack, square, sto, data);
-    ++n;
+    attackers &= ~petir_bitboard_mask::squareBit(attackerSquare);
+    addXrayInline(attackers, attackerSquare, targetSquare, position);
+    ++swapCount;
     return true;
 }
 }
 
 // usee.pas:83
-std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto) {
+std::int32_t staticExchange(std::int32_t sideToMove, const petir_header::tdata& position, std::int32_t fromSquare, std::int32_t toSquare) {
     using namespace petir_bitboard_mask;
     // Every entry used by the backward pass is assigned during the forward pass.
-    ExchangeList list;
-    std::uint64_t attack = (knightmask[sto] & (data.knightblack | data.knightwhite))
-        | (w_pawn_attack[sto] & data.pawnblack) | (b_pawn_attack[sto] & data.pawnwhite)
-        | (kingmask[sto] & (data.kingblack | data.kingwhite));
-    attack |= (horzmask2[sto][(data.allpieces >> ((sto & 56) + 1)) & 63] | vertmask2[sto][(data.allpiecesr90 >> vershiftmask[sto]) & 63]) & data.rookqueen;
-    attack |= (diaga8h1mask[sto][(data.allpiecesa8h1 >> a8h1shiftmask[sto]) & 255] | diagh8a1mask[sto][(data.allpiecesh8a1 >> h8a1shiftmask[sto]) & 255]) & data.bishopqueen;
-    list[0] = static_cast<std::int8_t>(petir_usee::nilai_piece[data.papan[sto]]);
-    attack &= ~bit(sfrom);
-    xray_inline(attack, sfrom, sto, data);
-    std::int32_t piece = petir_usee::nilai_piece[data.papan[sfrom]];
-    std::int32_t n = 1;
+    ExchangeList swapList;
+    std::uint64_t attackers = (knightAttacks[toSquare] & (position.blackKnights | position.whiteKnights))
+        | (whitePawnAttacks[toSquare] & position.blackPawns) | (blackPawnAttacks[toSquare] & position.whitePawns)
+        | (kingAttacks[toSquare] & (position.blackKingBoard | position.whiteKingBoard));
+    attackers |= (horizontalAttacks[toSquare][(position.allPieces >> ((toSquare & 56) + 1)) & 63] | verticalAttacks[toSquare][(position.allPiecesRotated90 >> verticalShift[toSquare]) & 63]) & position.rooksAndQueens;
+    attackers |= (diagonalA8H1Attacks[toSquare][(position.allPiecesA8H1 >> diagonalA8H1Shift[toSquare]) & 255] | diagonalH8A1Attacks[toSquare][(position.allPiecesH8A1 >> diagonalH8A1Shift[toSquare]) & 255]) & position.bishopsAndQueens;
+    swapList[0] = static_cast<std::int8_t>(petir_usee::pieceSeeValue[position.board[toSquare]]);
+    attackers &= ~squareBit(fromSquare);
+    addXrayInline(attackers, fromSquare, toSquare, position);
+    std::int32_t targetValue = petir_usee::pieceSeeValue[position.board[fromSquare]];
+    std::int32_t swapCount = 1;
     // The opponent recaptures first; the two sides then alternate.
-    if (giliran == petir_header::_sisiputih) goto black;
+    if (sideToMove == petir_header::whiteSide) goto black;
     for (;;) {
-        if (!capture<true>(attack, list, n, piece, sto, data)) break;
+        if (!captureStep<true>(attackers, swapList, swapCount, targetValue, toSquare, position)) break;
         black:
-        if (!capture<false>(attack, list, n, piece, sto, data)) break;
+        if (!captureStep<false>(attackers, swapList, swapCount, targetValue, toSquare, position)) break;
     }
     // Each side may stop capturing. Fold the swaps in a register: earlier
     // entries are read once, and no backward-pass array writes are needed.
     // min(signed byte, -result) stays in [-128, 127], even for result == -128.
-    std::int32_t result = list[n - 1];
-    while (--n > 0) result = std::min<std::int32_t>(list[n - 1], -result);
+    std::int32_t result = swapList[swapCount - 1];
+    while (--swapCount > 0) result = std::min<std::int32_t>(swapList[swapCount - 1], -result);
     return result;
 }
 
 // usee.pas:21
-void xray(std::uint64_t& attack, std::int32_t square, std::int32_t target, const petir_header::tdata& data) {
-    xray_inline(attack, square, target, data);
+void addXray(std::uint64_t& attackers, std::int32_t square, std::int32_t target, const petir_header::tdata& position) {
+    addXrayInline(attackers, square, target, position);
 }
 
-// Called once after petir_bitboard::init_mask and petir_evalmask::initevalmask,
+// Called once after petir_bitboard::initMasks and petir_evalmask::initEvalMasks,
 // which fills the vertical ray masks.
-void init_xray() {
+void initXray() {
     using namespace petir_bitboard_mask;
     using petir_header::tdata;
-    const pas::Array<std::uint64_t, 0, 63>* rays[] = {
-        nullptr, &rook_attack_down_mask, &rook_attack_up_mask,
-        &rook_attack_left_mask, &rook_attack_right_mask,
-        &bishop_attack_min9_mask, &bishop_attack_plus9_mask,
-        &bishop_attack_min7_mask, &bishop_attack_plus7_mask
+    const pas::Array<std::uint64_t, 0, 63>* rayMasks[] = {
+        nullptr, &rookRayDownMask, &rookRayUpMask,
+        &rookRayLeftMask, &rookRayRightMask,
+        &bishopRayMinus9Mask, &bishopRayPlus9Mask,
+        &bishopRayMinus7Mask, &bishopRayPlus7Mask
     };
     for (int square = 0; square < 64; ++square) {
-        xray_ray[0][square] = 0;
-        for (int direction = 1; direction < 9; ++direction) xray_ray[direction][square] = (*rays[direction])[square];
-        xray_axis[0][square] = {&vertmask2[square][0], &tdata::allpiecesr90, vershiftmask[square], 63};
-        xray_axis[1][square] = {&horzmask2[square][0], &tdata::allpieces, static_cast<std::uint8_t>((square & 56) + 1), 63};
-        xray_axis[2][square] = {&diagh8a1mask[square][0], &tdata::allpiecesh8a1, h8a1shiftmask[square], 255};
-        xray_axis[3][square] = {&diaga8h1mask[square][0], &tdata::allpiecesa8h1, a8h1shiftmask[square], 255};
+        xrayRays[0][square] = 0;
+        for (int direction = 1; direction < 9; ++direction) xrayRays[direction][square] = (*rayMasks[direction])[square];
+        xrayAxes[0][square] = {&verticalAttacks[square][0], &tdata::allPiecesRotated90, verticalShift[square], 63};
+        xrayAxes[1][square] = {&horizontalAttacks[square][0], &tdata::allPieces, static_cast<std::uint8_t>((square & 56) + 1), 63};
+        xrayAxes[2][square] = {&diagonalH8A1Attacks[square][0], &tdata::allPiecesH8A1, diagonalH8A1Shift[square], 255};
+        xrayAxes[3][square] = {&diagonalA8H1Attacks[square][0], &tdata::allPiecesA8H1, diagonalA8H1Shift[square], 255};
     }
 }
 

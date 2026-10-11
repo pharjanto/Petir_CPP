@@ -1,247 +1,239 @@
 // Faithful translation of uiterative.pas; Delphi source is in original/.
 #include "petir.hpp"
 namespace petir_uiterative {
-std::int32_t retime{};
-std::int32_t completed_move{},completed_depth{},completed_score{};
-std::string completed_pv;
+std::int32_t extendedTimeLimit{};
+std::int32_t completedMove{},completedDepth{},completedScore{};
+std::string completedPv;
 // uiterative.pas:145
-std::int32_t iterative(std::int32_t level, std::int32_t giliran, std::int32_t tipe, petir_header::tdata data) {
-    std::int32_t return_value{};
-    std::int32_t l{};
-    std::int32_t nilai{};
-    std::int32_t nilai2{};
-    std::int32_t nilai3{};
-    std::int32_t a{};
-    std::int32_t b{};
-    std::uint8_t dummy{};
-    std::int64_t lasttime{},iteration_start{};
-    bool anu{};
-    std::int32_t lastmoves{};
-    std::int32_t counter{};
-    level=std::clamp(level,1,49);
-    l = 1;
-    completed_move=completed_depth=completed_score=0;completed_pv.clear();
-    const auto interrupted=[] {return petir::search_should_stop(true);};
-    const auto complete=[&](int d,int score) {
-        completed_move=petir_header::mmoves;completed_depth=d;completed_score=score;
-        const int search_nodes=petir_header::total_node;
-        try {completed_pv=petir_pv::getpv(data,giliran,d+(petir_header::use_mtdf?3:4)).value;}
-        catch(...) {petir_header::total_node=search_nodes;throw;}
-        petir_header::total_node=search_nodes;
-        const auto best=petir_notation::movetonotation(completed_move,data.ep,giliran).value;
+std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideToMove, std::int32_t rootNodeType, petir_header::tdata position) {
+    std::int32_t result{};
+    std::int32_t currentDepth{};
+    std::int32_t score{};
+    std::int32_t previousScore{};
+    std::int32_t iterationScore{};
+    std::int64_t lastIterationMs{},iterationStartMs{};
+    bool scoreDropExtended{};
+    std::int32_t lastBestMove{};
+    std::int32_t stableIterations{};
+    requestedDepth=std::clamp(requestedDepth,1,49);
+    currentDepth = 1;
+    completedMove=completedDepth=completedScore=0;completedPv.clear();
+    const auto interrupted=[] {return petir::searchShouldStop(true);};
+    const auto recordCompletedIteration=[&](int depth,int score) {
+        completedMove=petir_header::rootBestMove;completedDepth=depth;completedScore=score;
+        const int savedNodeCount=petir_header::nodeCount;
+        try {completedPv=petir_pv::getPv(position,sideToMove,depth+(petir_header::useMtdf?3:4)).text;}
+        catch(...) {petir_header::nodeCount=savedNodeCount;throw;}
+        petir_header::nodeCount=savedNodeCount;
+        const auto bestMoveText=petir_notation::moveToNotation(completedMove,position.enPassantFile,sideToMove).text;
         // The root move is authoritative even if a TT child was replaced.
-        const auto space=completed_pv.find(' ');
-        completed_pv=best+(space==std::string::npos?"":completed_pv.substr(space));
+        const auto firstSpace=completedPv.find(' ');
+        completedPv=bestMoveText+(firstSpace==std::string::npos?"":completedPv.substr(firstSpace));
     };
-    const auto restore=[] {petir_header::mmoves=completed_move;return completed_score;};
-    petir_root::rtl = petir_header::timelimit;
-    petir_header::maxdepth = pas::round((l * 2.00));
-    nilai3 = 0;
-    petir_header::barisitr = 1;
-    anu = false;
-    petir_uiterative::retime = petir_header::timelimit;
-    petir_root::ntimelimit = (petir_header::timelimit / 3);
-    petir_header::maxext = 1.00;
-    if (petir_uiterative::timemanage(giliran, data)) {
-        completed_move=petir_header::mmoves;
-        return return_value;
+    const auto restoreCompleted=[] {petir_header::rootBestMove=completedMove;return completedScore;};
+    petir_root::originalTimeLimit = petir_header::timeLimit;
+    petir_header::maxSearchPly = pas::round((currentDepth * 2.00));
+    iterationScore = 0;
+    petir_header::outputLineNumber = 1;
+    scoreDropExtended = false;
+    petir_uiterative::extendedTimeLimit = petir_header::timeLimit;
+    petir_root::earlyStopTimeLimit = (petir_header::timeLimit / 3);
+    petir_header::maxExtensionFactor = 1.00;
+    if (petir_uiterative::hasForcedMove(sideToMove, position)) {
+        completedMove=petir_header::rootBestMove;
+        return result;
     }
-    iteration_start=petir::TimeManager::now_ms();
-    if ((!petir_header::use_mtdf)) {
-        petir_header::toplevel = l;
-        nilai = petir_root::searchroot(pas::mul(l, petir_header::fractional_ply), giliran, petir_header::_nodemax, pas::sub(pas::negate(petir_header::_infinity), 500), pas::add(petir_header::_infinity, 500), data, false, 0, pas::round(((petir_header::maxext * petir_header::toplevel) * petir_header::fractional_ply)));
+    iterationStartMs=petir::TimeManager::nowMs();
+    if ((!petir_header::useMtdf)) {
+        petir_header::iterationDepth = currentDepth;
+        score = petir_root::searchRoot(pas::mul(currentDepth, petir_header::plyUnits), sideToMove, petir_header::maxNode, pas::sub(pas::negate(petir_header::infinity), 500), pas::add(petir_header::infinity, 500), position, false, 0, pas::round(((petir_header::maxExtensionFactor * petir_header::iterationDepth) * petir_header::plyUnits)));
     } else {
-        petir_header::toplevel = l;
-        nilai = petir_uiterative::mtdf(data, pas::mul(l, petir_header::fractional_ply), giliran, 0);
+        petir_header::iterationDepth = currentDepth;
+        score = petir_uiterative::mtdfSearch(position, pas::mul(currentDepth, petir_header::plyUnits), sideToMove, 0);
     }
-    if(interrupted())return restore();
-    complete(l,nilai);
-    lasttime=petir::TimeManager::now_ms()-iteration_start;
-    if (petir_header::testsolved) {
-        return return_value;
+    if(interrupted())return restoreCompleted();
+    recordCompletedIteration(currentDepth,score);
+    lastIterationMs=petir::TimeManager::nowMs()-iterationStartMs;
+    if (petir_header::testSolved) {
+        return result;
     }
-    lastmoves = petir_header::mmoves;
-    counter = 0;
-    while (l<level && !interrupted() && petir::search_time.can_start_iteration(lasttime)) {
-        (l = pas::increment(l, 1));
-        petir_header::toplevel = l;
-        petir_header::maxdepth = pas::round(pas::mul(l, 2));
-        iteration_start=petir::TimeManager::now_ms();
-        petir_root::newpv = true;
-        if ((!petir_header::use_mtdf)) {
-            nilai3 = petir_uiterative::aspiration(pas::mul(l, petir_header::fractional_ply), giliran, tipe, nilai2, data);
+    lastBestMove = petir_header::rootBestMove;
+    stableIterations = 0;
+    while (currentDepth<requestedDepth && !interrupted() && petir::searchTime.canStartIteration(lastIterationMs)) {
+        (currentDepth = pas::increment(currentDepth, 1));
+        petir_header::iterationDepth = currentDepth;
+        petir_header::maxSearchPly = pas::round(pas::mul(currentDepth, 2));
+        iterationStartMs=petir::TimeManager::nowMs();
+        petir_root::newPvFound = true;
+        if ((!petir_header::useMtdf)) {
+            iterationScore = petir_uiterative::aspirationSearch(pas::mul(currentDepth, petir_header::plyUnits), sideToMove, rootNodeType, previousScore, position);
         } else {
-            nilai3 = petir_uiterative::mtdf(data, pas::mul(l, petir_header::fractional_ply), giliran, nilai2);
+            iterationScore = petir_uiterative::mtdfSearch(position, pas::mul(currentDepth, petir_header::plyUnits), sideToMove, previousScore);
         }
         if (interrupted()) {
-            return restore();
+            return restoreCompleted();
         }
-        complete(l,nilai3);
-        if ((((nilai3 < 0) && (nilai >= 10)) && (!anu))) {
-            petir::search_time.adjust_soft(0.5);
-            anu = true;
+        recordCompletedIteration(currentDepth,iterationScore);
+        if ((((iterationScore < 0) && (score >= 10)) && (!scoreDropExtended))) {
+            petir::searchTime.adjustSoft(0.5);
+            scoreDropExtended = true;
         }
-        if ((((lastmoves == petir_header::mmoves) && petir_root::newpv) && (l > 7))) {
-            (counter = pas::increment(counter, 1));
-            if ((((counter >= 2) && (counter <= 12)) && (nilai3 > pas::negate(20)))) {
-                petir::search_time.adjust_soft(-static_cast<double>(petir_uiterative::timereducement[counter])/100);
+        if ((((lastBestMove == petir_header::rootBestMove) && petir_root::newPvFound) && (currentDepth > 7))) {
+            (stableIterations = pas::increment(stableIterations, 1));
+            if ((((stableIterations >= 2) && (stableIterations <= 12)) && (iterationScore > pas::negate(20)))) {
+                petir::searchTime.adjustSoft(-static_cast<double>(petir_uiterative::timeReductionPercent[stableIterations])/100);
             }
         } else {
-            if ((counter >= 4)) {
-                petir::search_time.adjust_soft(0.125);
+            if ((stableIterations >= 4)) {
+                petir::searchTime.adjustSoft(0.125);
             }
-            counter = 0;
-            lastmoves = petir_header::mmoves;
+            stableIterations = 0;
+            lastBestMove = petir_header::rootBestMove;
         }
-        if (petir_header::testsolved) {
-            return return_value;
+        if (petir_header::testSolved) {
+            return result;
         }
-        lasttime=petir::TimeManager::now_ms()-iteration_start;
-        nilai2 = nilai;
-        nilai = nilai3;
+        lastIterationMs=petir::TimeManager::nowMs()-iterationStartMs;
+        previousScore = score;
+        score = iterationScore;
     }
-    petir_header::toplevel = level;
-    return_value = nilai;
-    return return_value;
+    petir_header::iterationDepth = requestedDepth;
+    result = score;
+    return result;
 }
 
 // uiterative.pas:14
-std::int32_t mtdf(petir_header::tdata data, std::uint8_t level, std::uint8_t giliran, std::int32_t firstguess) {
-    std::int32_t return_value{};
-    std::int32_t oldg{};
+std::int32_t mtdfSearch(petir_header::tdata position, std::uint8_t searchDepth, std::uint8_t sideToMove, std::int32_t firstGuess) {
+    std::int32_t result{};
+    std::int32_t previousScore{};
     std::int32_t beta{};
-    std::int32_t g{};
+    std::int32_t score{};
     double momentum{};
-    pas::String spv{};
-    std::int32_t oldmoves{};
-    std::int32_t globalupper{};
-    std::int32_t globallower{};
-    bool up{};
-    bool down{};
-    std::uint8_t dummy{};
+    pas::String pvText{};
+    std::int32_t previousBestMove{};
+    std::int32_t globalUpper{};
+    std::int32_t globalLower{};
+    bool raisedOnce{};
+    bool loweredOnce{};
     momentum = 1.5;
-    g = firstguess;
-    globalupper = pas::add(petir_header::_infinity, 100);
-    globallower = pas::sub(pas::negate(petir_header::_infinity), 100);
-    beta = g;
-    oldmoves = 0;
-    up = false;
-    down = false;
+    score = firstGuess;
+    globalUpper = pas::add(petir_header::infinity, 100);
+    globalLower = pas::sub(pas::negate(petir_header::infinity), 100);
+    beta = score;
+    previousBestMove = 0;
+    raisedOnce = false;
+    loweredOnce = false;
     do {
-        if(petir::search_should_stop(true))return g;
-        oldg = g;
-        g = petir_root::searchroot(level, giliran, petir_header::_nodemax, pas::sub(beta, 1), beta, data, false, 0, pas::round((petir_header::maxext * level)));
-        if(petir::search_should_stop(true))return g;
-        if ((g < beta)) {
-            globalupper = g;
-            beta = g;
-            if ((!up)) {
-                beta = pas::add(beta, pas::round((momentum * pas::sub(g, oldg))));
+        if(petir::searchShouldStop(true))return score;
+        previousScore = score;
+        score = petir_root::searchRoot(searchDepth, sideToMove, petir_header::maxNode, pas::sub(beta, 1), beta, position, false, 0, pas::round((petir_header::maxExtensionFactor * searchDepth)));
+        if(petir::searchShouldStop(true))return score;
+        if ((score < beta)) {
+            globalUpper = score;
+            beta = score;
+            if ((!raisedOnce)) {
+                beta = pas::add(beta, pas::round((momentum * pas::sub(score, previousScore))));
             }
-            down = true;
+            loweredOnce = true;
         } else {
-            globallower = g;
-            beta = pas::add(g, 1);
-            if ((!down)) {
-                beta = pas::add(beta, pas::round((momentum * pas::sub(g, oldg))));
+            globalLower = score;
+            beta = pas::add(score, 1);
+            if ((!loweredOnce)) {
+                beta = pas::add(beta, pas::round((momentum * pas::sub(score, previousScore))));
             }
-            if ((petir_header::mmoves != oldmoves)) {
-                spv = petir_pv::getpv(data, giliran, pas::add((level / petir_header::fractional_ply), 3));
-                petir_pv::printpv(petir_header::barisitr, spv, (level / petir_header::fractional_ply), pas::floor((static_cast<double>(pas::sub(pas::gettickcount(), petir_header::startclock)) / (1000))), g);
+            if ((petir_header::rootBestMove != previousBestMove)) {
+                pvText = petir_pv::getPv(position, sideToMove, pas::add((searchDepth / petir_header::plyUnits), 3));
+                petir_pv::printPv(petir_header::outputLineNumber, pvText, (searchDepth / petir_header::plyUnits), pas::floor((static_cast<double>(pas::sub(pas::tickCount(), petir_header::searchStartTime)) / (1000))), score);
             }
-            up = true;
-            oldmoves = petir_header::mmoves;
+            raisedOnce = true;
+            previousBestMove = petir_header::rootBestMove;
         }
-    } while (!((globallower >= globalupper)));
-    petir_header::mmoves = oldmoves;
-    return_value = g;
-    return return_value;
+    } while (!((globalLower >= globalUpper)));
+    petir_header::rootBestMove = previousBestMove;
+    result = score;
+    return result;
 }
 
 // uiterative.pas:68
-std::int32_t aspiration(std::int32_t level, std::int32_t giliran, std::int32_t tipe, std::int32_t nilai, petir_header::tdata data) {
-    std::int32_t return_value{};
-    std::int32_t n{};
-    std::int32_t n2{};
-    std::int32_t d{};
-    std::int32_t d2{};
-    std::int32_t z{};
-    d = 35;
-    d2 = 100;
-    z = 80;
-    n = petir_root::searchroot(level, giliran, petir_header::_nodemax, pas::sub(nilai, d), pas::add(nilai, d), data, false, 0, z);
-    if(petir::search_should_stop(true))return n;
-    n2 = n;
-    if (((n >= pas::add(nilai, d)) && (n < petir_header::_infinity))) {
-        n = petir_root::searchroot(level, giliran, petir_header::_nodemax, n2, pas::add(petir_header::_infinity, 500), data, false, 0, z);
-        if(petir::search_should_stop(true))return n;
-        if ((n < n2)) {
-            n = petir_root::searchroot(level, giliran, petir_header::_nodemax, pas::sub(pas::negate(petir_header::_infinity), 500), pas::add(petir_header::_infinity, 500), data, false, 0, z);
+std::int32_t aspirationSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t rootNodeType, std::int32_t previousScore, petir_header::tdata position) {
+    std::int32_t result{};
+    std::int32_t score{};
+    std::int32_t firstScore{};
+    std::int32_t window{};
+    std::int32_t extensionCredit{};
+    window = 35;
+    extensionCredit = 80;
+    score = petir_root::searchRoot(searchDepth, sideToMove, petir_header::maxNode, pas::sub(previousScore, window), pas::add(previousScore, window), position, false, 0, extensionCredit);
+    if(petir::searchShouldStop(true))return score;
+    firstScore = score;
+    if (((score >= pas::add(previousScore, window)) && (score < petir_header::infinity))) {
+        score = petir_root::searchRoot(searchDepth, sideToMove, petir_header::maxNode, firstScore, pas::add(petir_header::infinity, 500), position, false, 0, extensionCredit);
+        if(petir::searchShouldStop(true))return score;
+        if ((score < firstScore)) {
+            score = petir_root::searchRoot(searchDepth, sideToMove, petir_header::maxNode, pas::sub(pas::negate(petir_header::infinity), 500), pas::add(petir_header::infinity, 500), position, false, 0, extensionCredit);
         }
     } else {
-        if ((n <= pas::sub(nilai, d))) {
-            petir::search_time.adjust_soft(0.5);
-            n = petir_root::searchroot(level, giliran, petir_header::_nodemax, pas::sub(pas::negate(petir_header::_infinity), 500), n, data, false, 0, z);
-            if(petir::search_should_stop(true))return n;
-            if ((n > n2)) {
-                n = petir_root::searchroot(level, giliran, petir_header::_nodemax, pas::sub(pas::negate(petir_header::_infinity), 500), pas::add(petir_header::_infinity, 500), data, false, 0, z);
+        if ((score <= pas::sub(previousScore, window))) {
+            petir::searchTime.adjustSoft(0.5);
+            score = petir_root::searchRoot(searchDepth, sideToMove, petir_header::maxNode, pas::sub(pas::negate(petir_header::infinity), 500), score, position, false, 0, extensionCredit);
+            if(petir::searchShouldStop(true))return score;
+            if ((score > firstScore)) {
+                score = petir_root::searchRoot(searchDepth, sideToMove, petir_header::maxNode, pas::sub(pas::negate(petir_header::infinity), 500), pas::add(petir_header::infinity, 500), position, false, 0, extensionCredit);
             }
         }
     }
-    return_value = n;
-    return return_value;
+    result = score;
+    return result;
 }
 
 // uiterative.pas:93
-bool timemanage(std::int32_t giliran, petir_header::tdata data) {
-    bool return_value{};
-    bool incheck{};
-    petir_header::tmovelist ml{};
-    std::int32_t jml{};
-    std::int32_t b{};
-    std::int32_t a{};
-    std::int32_t c{};
-    bool cappion{};
-    std::int32_t pas_temp_1{};
-    incheck = false;
-    petir_root::bmoves = petir_header::_no_move;
-    cappion = false;
-    return_value = false;
-    if ((((giliran == petir_header::_sisiputih) && petir_tools::white_checked(data)) || ((giliran == petir_header::_sisihitam) && petir_tools::black_checked(data)))) {
-        incheck = true;
+bool hasForcedMove(std::int32_t sideToMove, petir_header::tdata position) {
+    bool result{};
+    bool inCheck{};
+    petir_header::tmovelist moveList{};
+    std::int32_t moveCount{};
+    std::int32_t index{};
+    std::int32_t goodCaptureCount{};
+    bool pawnCaptureAvailable{};
+    std::int32_t lastIndex{};
+    inCheck = false;
+    petir_root::stableBestMove = petir_header::noMove;
+    pawnCaptureAvailable = false;
+    result = false;
+    if ((((sideToMove == petir_header::whiteSide) && petir_tools::whiteInCheck(position)) || ((sideToMove == petir_header::blackSide) && petir_tools::blackInCheck(position)))) {
+        inCheck = true;
     }
-    if (incheck) {
-        if ((giliran == petir_header::_sisiputih)) {
-            petir_movgen::white_evasion(data, ml, jml, b);
+    if (inCheck) {
+        if ((sideToMove == petir_header::whiteSide)) {
+            petir_movgen::generateWhiteEvasions(position, moveList, moveCount, index);
         } else {
-            petir_movgen::black_evasion(data, ml, jml, b);
+            petir_movgen::generateBlackEvasions(position, moveList, moveCount, index);
         }
-        if ((jml == 1)) {
-            petir_header::mmoves = ml[1].moves;
-            return_value = true;
-            return return_value;
+        if ((moveCount == 1)) {
+            petir_header::rootBestMove = moveList[1].move;
+            result = true;
+            return result;
         }
     } else {
-        if ((giliran == petir_header::_sisiputih)) {
-            petir_movgen::white_movgen_caps(data, ml, jml);
+        if ((sideToMove == petir_header::whiteSide)) {
+            petir_movgen::generateWhiteCaptures(position, moveList, moveCount);
         } else {
-            petir_movgen::black_movgen_caps(data, ml, jml);
+            petir_movgen::generateBlackCaptures(position, moveList, moveCount);
         }
-        a = 0;
-        pas_temp_1 = jml;
-        for (b = 1; b <= pas_temp_1; ++b) {
-            if ((ml[b].score > 1)) {
-                (a = pas::increment(a, 1));
-                c = a;
+        goodCaptureCount = 0;
+        lastIndex = moveCount;
+        for (index = 1; index <= lastIndex; ++index) {
+            if ((moveList[index].score > 1)) {
+                (goodCaptureCount = pas::increment(goodCaptureCount, 1));
             } else {
-                if ((ml[b].score > 0)) {
-                    cappion = true;
+                if ((moveList[index].score > 0)) {
+                    pawnCaptureAvailable = true;
                 }
             }
         }
         ;
     }
-    return return_value;
+    return result;
 }
 
 }

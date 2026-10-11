@@ -9,1834 +9,1830 @@ namespace {
 // occupied 16-bit word first, least bit first within each word.
 template<bool Legacy>
 class move_bits {
-    std::uint64_t bits_;
+    std::uint64_t remainingBits;
 public:
-    explicit move_bits(std::uint64_t& bits):bits_(bits) {
+    explicit move_bits(std::uint64_t& sourceBits):remainingBits(sourceBits) {
         // Each loop consumes its source mask; its body uses returned squares.
-        bits=0;
+        sourceBits=0;
         if constexpr(Legacy) {
-            bits_=std::rotl(bits_,32);
-            bits_=((bits_ & UINT64_C(0x0000ffff0000ffff))<<16)
-                 |((bits_>>16) & UINT64_C(0x0000ffff0000ffff));
+            remainingBits=std::rotl(remainingBits,32);
+            remainingBits=((remainingBits & UINT64_C(0x0000ffff0000ffff))<<16)
+                 |((remainingBits>>16) & UINT64_C(0x0000ffff0000ffff));
         }
     }
-    explicit operator bool() const {return bits_!=0;}
+    explicit operator bool() const {return remainingBits!=0;}
     int pop() {
         // The surrounding loop guarantees a nonempty bitboard.
 #if defined(_MSC_VER) && defined(_M_X64)
         unsigned long square;
-        _BitScanForward64(&square,bits_);
+        _BitScanForward64(&square,remainingBits);
 #else
-        const int square=std::countr_zero(bits_);
+        const int square=std::countr_zero(remainingBits);
 #endif
-        bits_ &= bits_-1;
+        remainingBits &= remainingBits-1;
         return static_cast<int>(square) ^ (Legacy?48:0);
     }
 };
-void append_legal_ep_evasions(petir_header::tdata& data, petir_header::tmovelist& moves, std::int32_t& count, int side) {
-    if(data.ep>7)return;
-    const bool white=side==petir_header::_sisiputih;
-    const int captured=(white?32:24)+data.ep;
-    const int target=captured+(white?8:-8);
-    if(data.papan[captured]!=(white?-1:1) || data.papan[target]!=0)return;
-    for(int offset:{-1,1}) {
-        const int file=data.ep+offset;
-        if(file<0 || file>7 || data.papan[captured+offset]!=(white?1:-1))continue;
-        const int move=(captured+offset)|(petir_header::_en_passant<<7);
-        auto child=data;
-        const auto nodes=petir_header::total_node;
-        if(white)petir_makemove::makewhitemove(move,child);else petir_makemove::makeblackmove(move,child);
-        petir_header::total_node=nodes; // Legality probes are not search nodes.
-        if(white?petir_tools::white_checked(child):petir_tools::black_checked(child))continue;
-        ++count;moves[count].moves=move;moves[count].score=0;
+void appendLegalEnPassantEvasions(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCount, int side) {
+    if(position.enPassantFile>7)return;
+    const bool isWhite=side==petir_header::whiteSide;
+    const int capturedSquare=(isWhite?32:24)+position.enPassantFile;
+    const int targetSquare=capturedSquare+(isWhite?8:-8);
+    if(position.board[capturedSquare]!=(isWhite?-1:1) || position.board[targetSquare]!=0)return;
+    for(int fileOffset:{-1,1}) {
+        const int captureFile=position.enPassantFile+fileOffset;
+        if(captureFile<0 || captureFile>7 || position.board[capturedSquare+fileOffset]!=(isWhite?1:-1))continue;
+        const int move=(capturedSquare+fileOffset)|(petir_header::enPassantTarget<<7);
+        auto childPosition=position;
+        const auto savedNodeCount=petir_header::nodeCount;
+        if(isWhite)petir_makemove::makeWhiteMove(move,childPosition);else petir_makemove::makeBlackMove(move,childPosition);
+        petir_header::nodeCount=savedNodeCount; // Legality probes are not search nodes.
+        if(isWhite?petir_tools::whiteInCheck(childPosition):petir_tools::blackInCheck(childPosition))continue;
+        ++moveCount;moveList[moveCount].move=move;moveList[moveCount].score=0;
     }
 }
 }
 // movgen.pas:687
-void black_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+void generateBlackQuietMoves(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t move_index=0;
-    jml = 0;
-    piecepos = (data.pawnblack & (~petir_bitboard_mask::rank_mask[1]));
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((data.papan[pas::sub(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            auto& entry = movelist[++move_index];
-            entry.moves = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
-            entry.score = petir_header::historyb[petir_header::_pionhitam][pas::sub(pos, 8)];
-            if (((pos >= petir_header::a7) && (data.papan[pas::sub(pos, 16)] == 0))) {
-                (jml = pas::increment(jml, 1));
-                auto& entry = movelist[++move_index];
-                entry.moves = pas::add(pos, pas::shl(pas::sub(pos, 16), 7));
-                entry.score = petir_header::historyb[petir_header::_pionhitam][pas::sub(pos, 16)];
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t moveIndex=0;
+    moveCount = 0;
+    pieces = (position.blackPawns & (~petir_bitboard_mask::rankMask[1]));
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            auto& entry = moveList[++moveIndex];
+            entry.move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7));
+            entry.score = petir_header::blackHistory[petir_header::blackPawn][pas::sub(fromSquare, 8)];
+            if (((fromSquare >= petir_header::a7) && (position.board[pas::sub(fromSquare, 16)] == 0))) {
+                (moveCount = pas::increment(moveCount, 1));
+                auto& entry = moveList[++moveIndex];
+                entry.move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 16), 7));
+                entry.score = petir_header::blackHistory[petir_header::blackPawn][pas::sub(fromSquare, 16)];
             }
         }
     }
-    piecepos = data.knightblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = (petir_bitboard_mask::knightmask[pos] & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            auto& entry = movelist[++move_index];
-            entry.moves = pas::add(pos, pas::shl(post, 7));
-            entry.score = petir_header::historyb[petir_header::_kudahitam][post];
+    pieces = position.blackKnights;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = (petir_bitboard_mask::knightAttacks[fromSquare] & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            auto& entry = moveList[++moveIndex];
+            entry.move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            entry.score = petir_header::blackHistory[petir_header::blackKnight][toSquare];
         }
     }
-    piecepos = data.queenblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            auto& entry = movelist[++move_index];
-            entry.moves = pas::add(pos, pas::shl(post, 7));
-            entry.score = petir_header::historyb[petir_header::_mentrihitam][post];
-            (jml = pas::increment(jml, 1));
+    pieces = position.blackQueens;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            auto& entry = moveList[++moveIndex];
+            entry.move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            entry.score = petir_header::blackHistory[petir_header::blackQueen][toSquare];
+            (moveCount = pas::increment(moveCount, 1));
         }
     }
-    piecepos = data.bishopblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            auto& entry = movelist[++move_index];
-            entry.moves = pas::add(pos, pas::shl(post, 7));
-            entry.score = petir_header::historyb[petir_header::_gajahhitam][post];
+    pieces = position.blackBishops;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            auto& entry = moveList[++moveIndex];
+            entry.move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            entry.score = petir_header::blackHistory[petir_header::blackBishop][toSquare];
         }
     }
-    piecepos = data.rookblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            auto& entry = movelist[++move_index];
-            entry.moves = pas::add(pos, pas::shl(post, 7));
-            entry.score = petir_header::historyb[petir_header::_bentenghitam][post];
+    pieces = position.blackRooks;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            auto& entry = moveList[++moveIndex];
+            entry.move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            entry.score = petir_header::blackHistory[petir_header::blackRook][toSquare];
         }
     }
-    pos = petir_bitboard_mask::king_square(data.kingblack);
-    attack = (petir_bitboard_mask::kingmask[pos] & (~data.allpieces));
-    for(move_bits<true> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-        movelist[jml].score = petir_header::historyb[petir_header::_rajahitam][post];
+    fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & (~position.allPieces));
+    for(move_bits<true> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+        moveList[moveCount].score = petir_header::blackHistory[petir_header::blackKing][toSquare];
     }
-    if (((((data.flagrokade & petir_header::bithitamnoc) != 0) && (data.papan[petir_header::e8] == petir_header::_rajahitam)) && (!petir_tools::black_attacked(data, petir_header::e8)))) {
-        if (((((((data.papan[petir_header::f8] == 0) && (data.papan[petir_header::g8] == 0)) && (data.papan[petir_header::h8] == petir_header::_bentenghitam)) && (!petir_tools::black_attacked(data, petir_header::f8))) && (!petir_tools::black_attacked(data, petir_header::g8))) && ((data.flagrokade & petir_header::bithitamsc) != 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_rokadependek, 7));
-            movelist[jml].score = petir_header::historyb[petir_header::_rajahitam][petir_header::_rokadependek];
+    if (((((position.castleRights & petir_header::blackCastleRights) != 0) && (position.board[petir_header::e8] == petir_header::blackKing)) && (!petir_tools::attackedByWhite(position, petir_header::e8)))) {
+        if (((((((position.board[petir_header::f8] == 0) && (position.board[petir_header::g8] == 0)) && (position.board[petir_header::h8] == petir_header::blackRook)) && (!petir_tools::attackedByWhite(position, petir_header::f8))) && (!petir_tools::attackedByWhite(position, petir_header::g8))) && ((position.castleRights & petir_header::blackShortCastleRight) != 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::shortCastleTarget, 7));
+            moveList[moveCount].score = petir_header::blackHistory[petir_header::blackKing][petir_header::shortCastleTarget];
         }
-        if ((((((((data.papan[petir_header::d8] == 0) && (data.papan[petir_header::c8] == 0)) && (data.papan[petir_header::b8] == 0)) && ((data.flagrokade & petir_header::bithitamlc) != 0)) && (data.papan[petir_header::a8] == petir_header::_bentenghitam)) && (!petir_tools::black_attacked(data, petir_header::d8))) && (!petir_tools::black_attacked(data, petir_header::c8)))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_rokadepanjang, 7));
-            movelist[jml].score = petir_header::historyb[petir_header::_rajahitam][petir_header::_rokadepanjang];
+        if ((((((((position.board[petir_header::d8] == 0) && (position.board[petir_header::c8] == 0)) && (position.board[petir_header::b8] == 0)) && ((position.castleRights & petir_header::blackLongCastleRight) != 0)) && (position.board[petir_header::a8] == petir_header::blackRook)) && (!petir_tools::attackedByWhite(position, petir_header::d8))) && (!petir_tools::attackedByWhite(position, petir_header::c8)))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::longCastleTarget, 7));
+            moveList[moveCount].score = petir_header::blackHistory[petir_header::blackKing][petir_header::longCastleTarget];
         }
     }
-    jml_out = jml;
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:868
-void black_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t a{};
-    std::int32_t* p{};
-    jml = 0;
-    p = pas::address(movelist);
-    piecepos = (data.pawnblack & petir_bitboard_mask::rank_mask[1]);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((((pos & 7) > 0) && (data.papan[pas::sub(pos, 9)] > 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 9)]], petir_movgen::_nilai_pion), 5);
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 9), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 9)]], petir_movgen::_nilai_pion), 5);
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t file{};
+    std::int32_t* moveListAddress{};
+    moveCount = 0;
+    moveListAddress = pas::address(moveList);
+    pieces = (position.blackPawns & petir_bitboard_mask::rankMask[1]);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((((fromSquare & 7) > 0) && (position.board[pas::sub(fromSquare, 9)] > 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
         }
-        if ((((pos & 7) < 7) && (data.papan[pas::sub(pos, 7)] > 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 7), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 7)]], petir_movgen::_nilai_pion), 5);
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 7), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 7)]], petir_movgen::_nilai_pion), 5);
+        if ((((fromSquare & 7) < 7) && (position.board[pas::sub(fromSquare, 7)] > 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
         }
-        if ((data.papan[pas::sub(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
+        if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
-            }
-        }
-    }
-    piecepos = (data.pawnblack & (~petir_bitboard_mask::rank_mask[1]));
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        a = (pos & 7);
-        if (((data.papan[pas::sub(pos, 9)] > 0) && (a > 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 9), 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 9)]], petir_movgen::_nilai_pion);
-        }
-        if (((data.papan[pas::sub(pos, 7)] > 0) && (a < 7))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 7), 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 7)]], petir_movgen::_nilai_pion);
-        }
-        if (((pas::shr(pos, 3) == 3) && (pas::abs(pas::sub((pos & 7), data.ep)) == 1))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
-            movelist[jml].score = petir_movgen::_nilai_pion;
-        }
-    }
-    piecepos = data.knightblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = (petir_bitboard_mask::knightmask[pos] & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
         }
     }
-    piecepos = data.bishopblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = (position.blackPawns & (~petir_bitboard_mask::rankMask[1]));
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        file = (fromSquare & 7);
+        if (((position.board[pas::sub(fromSquare, 9)] > 0) && (file > 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue);
+        }
+        if (((position.board[pas::sub(fromSquare, 7)] > 0) && (file < 7))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue);
+        }
+        if (((pas::shiftRight(fromSquare, 3) == 3) && (pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
+            moveList[moveCount].score = petir_movgen::pawnOrderValue;
+        }
+    }
+    pieces = position.blackKnights;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
             }
         }
     }
-    piecepos = data.rookblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackBishops;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::bishopOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
             }
         }
     }
-    piecepos = data.queenblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackRooks;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::rookOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
+            }
         }
     }
-    pos = petir_bitboard_mask::king_square(data.kingblack);
-    attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
-    for(move_bits<true> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-        movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackQueens;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
+        }
     }
-    jml_out = jml;
+    fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.whitePieces);
+    for(move_bits<true> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+        moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
+    }
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:1041
-void black_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t a{};
-    jml = 0;
-    piecepos = (data.pawnblack & petir_bitboard_mask::rank_mask[1]);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((((pos & 7) > 0) && (data.papan[pas::sub(pos, 9)] > 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 9)]], petir_movgen::_nilai_pion), 5);
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 9), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 9)]], petir_movgen::_nilai_pion), 5);
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t file{};
+    moveCount = 0;
+    pieces = (position.blackPawns & petir_bitboard_mask::rankMask[1]);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((((fromSquare & 7) > 0) && (position.board[pas::sub(fromSquare, 9)] > 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
         }
-        if ((((pos & 7) < 7) && (data.papan[pas::sub(pos, 7)] > 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 7), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 7)]], petir_movgen::_nilai_pion), 5);
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 7), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 7)]], petir_movgen::_nilai_pion), 5);
+        if ((((fromSquare & 7) < 7) && (position.board[pas::sub(fromSquare, 7)] > 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
         }
-        if ((data.papan[pas::sub(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
+        if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
-            }
-        }
-    }
-    piecepos = (data.pawnblack & (petir_bitboard_mask::rank_mask[2] | petir_bitboard_mask::rank_mask[3]));
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((data.papan[pas::sub(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 1;
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
         }
     }
-    piecepos = (data.pawnblack & (~petir_bitboard_mask::rank_mask[1]));
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        a = (pos & 7);
-        if (((data.papan[pas::sub(pos, 9)] > 0) && (a > 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 9), 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 9)]], petir_movgen::_nilai_pion);
-        }
-        if (((data.papan[pas::sub(pos, 7)] > 0) && (a < 7))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 7), 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 7)]], petir_movgen::_nilai_pion);
-        }
-        if (((pas::shr(pos, 3) == 3) && (pas::abs(pas::sub((pos & 7), data.ep)) == 1))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
-            movelist[jml].score = petir_movgen::_nilai_pion;
-        }
-    }
-    piecepos = data.knightblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = (petir_bitboard_mask::knightmask[pos] & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = (position.blackPawns & (petir_bitboard_mask::rankMask[2] | petir_bitboard_mask::rankMask[3]));
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 1;
             }
         }
     }
-    piecepos = data.bishopblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = (position.blackPawns & (~petir_bitboard_mask::rankMask[1]));
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        file = (fromSquare & 7);
+        if (((position.board[pas::sub(fromSquare, 9)] > 0) && (file > 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue);
+        }
+        if (((position.board[pas::sub(fromSquare, 7)] > 0) && (file < 7))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue);
+        }
+        if (((pas::shiftRight(fromSquare, 3) == 3) && (pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
+            moveList[moveCount].score = petir_movgen::pawnOrderValue;
+        }
+    }
+    pieces = position.blackKnights;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
             }
         }
     }
-    piecepos = data.rookblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackBishops;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::bishopOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
             }
         }
     }
-    piecepos = data.queenblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackRooks;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::rookOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
+            }
         }
     }
-    pos = petir_bitboard_mask::king_square(data.kingblack);
-    attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
-    for(move_bits<true> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-        movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
-    }
-    attack = (petir_bitboard_mask::kingmask[pos] & pas::shl(data.pawnwhite, 8));
-    for(move_bits<false> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        if (((data.papan[post] == 0) && ((petir_bitboard_mask::w_pion_bebas_mask[pas::sub(post, 8)] & data.pawnblack) == 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = 0;
+    pieces = position.blackQueens;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
         }
     }
-    jml_out = jml;
+    fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.whitePieces);
+    for(move_bits<true> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+        moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
+    }
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & pas::shiftLeft(position.whitePawns, 8));
+    for(move_bits<false> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        if (((position.board[toSquare] == 0) && ((petir_bitboard_mask::whitePassedPawnMask[pas::sub(toSquare, 8)] & position.blackPawns) == 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = 0;
+        }
+    }
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:1238
-void q_black_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::uint64_t t64{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t a{};
-    std::int32_t posraja{};
-    std::uint64_t attackb{};
-    std::uint64_t attackr{};
-    std::uint64_t attackn{};
-    jml = 0;
-    posraja = petir_bitboard_mask::king_square(data.kingwhite);
-    attackb = petir_bitboard_mask::diaga8h1mask[posraja][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[posraja]) & 255)];
-    attackb = (attackb | petir_bitboard_mask::diagh8a1mask[posraja][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[posraja]) & 255)]);
-    attackr = petir_bitboard_mask::horzmask2[posraja][(pas::shr(data.allpieces, pas::add((posraja & 56), 1)) & 63)];
-    attackr = (attackr | petir_bitboard_mask::vertmask2[posraja][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[posraja]) & 63)]);
-    attackn = petir_bitboard_mask::knightmask[posraja];
-    piecepos = (pas::shr((data.pawnblack & petir_bitboard_mask::mask_left), 17) & data.kingwhite);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        (pos = pas::increment(pos, 17));
-        if ((data.papan[pas::sub(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::uint64_t allTargets{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t enemyKingSquare{};
+    std::uint64_t diagonalCheckSquares{};
+    std::uint64_t straightCheckSquares{};
+    std::uint64_t knightCheckSquares{};
+    moveCount = 0;
+    enemyKingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    diagonalCheckSquares = petir_bitboard_mask::diagonalA8H1Attacks[enemyKingSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[enemyKingSquare]) & 255)];
+    diagonalCheckSquares = (diagonalCheckSquares | petir_bitboard_mask::diagonalH8A1Attacks[enemyKingSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[enemyKingSquare]) & 255)]);
+    straightCheckSquares = petir_bitboard_mask::horizontalAttacks[enemyKingSquare][(pas::shiftRight(position.allPieces, pas::add((enemyKingSquare & 56), 1)) & 63)];
+    straightCheckSquares = (straightCheckSquares | petir_bitboard_mask::verticalAttacks[enemyKingSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[enemyKingSquare]) & 63)]);
+    knightCheckSquares = petir_bitboard_mask::knightAttacks[enemyKingSquare];
+    pieces = (pas::shiftRight((position.blackPawns & petir_bitboard_mask::notFileAMask), 17) & position.whiteKingBoard);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        (fromSquare = pas::increment(fromSquare, 17));
+        if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
         }
     }
-    piecepos = (pas::shr((data.pawnblack & petir_bitboard_mask::mask_right), 15) & data.kingwhite);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        (pos = pas::increment(pos, 15));
-        if ((data.papan[pas::sub(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
+    pieces = (pas::shiftRight((position.blackPawns & petir_bitboard_mask::notFileHMask), 15) & position.whiteKingBoard);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        (fromSquare = pas::increment(fromSquare, 15));
+        if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
         }
     }
-    piecepos = (pas::shr((data.pawnblack & petir_bitboard_mask::mask_left), 9) & data.whitepieces);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        pos = pas::add(pos, 9);
-        if ((pas::shr(pos, 3) == 1)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 9)]], petir_movgen::_nilai_pion), 3);
+    pieces = (pas::shiftRight((position.blackPawns & petir_bitboard_mask::notFileAMask), 9) & position.whitePieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::add(fromSquare, 9);
+        if ((pas::shiftRight(fromSquare, 3) == 1)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 3);
         } else {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 9), 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 9)]], petir_movgen::_nilai_pion);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue);
         }
     }
-    piecepos = (pas::shr((data.pawnblack & petir_bitboard_mask::mask_right), 7) & data.whitepieces);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        pos = pas::add(pos, 7);
-        if ((pas::shr(pos, 3) == 1)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 7), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 7)]], petir_movgen::_nilai_pion), 3);
+    pieces = (pas::shiftRight((position.blackPawns & petir_bitboard_mask::notFileHMask), 7) & position.whitePieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::add(fromSquare, 7);
+        if ((pas::shiftRight(fromSquare, 3) == 1)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue), 3);
         } else {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 7), 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::sub(pos, 7)]], petir_movgen::_nilai_pion);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue);
         }
     }
-    piecepos = (data.pawnblack & petir_bitboard_mask::rank_mask[1]);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((data.papan[pas::sub(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::sub(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
+    pieces = (position.blackPawns & petir_bitboard_mask::rankMask[1]);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
         }
     }
-    piecepos = (data.pawnblack & (petir_bitboard_mask::rank_mask[2] | petir_bitboard_mask::rank_mask[3]));
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((data.papan[pas::sub(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::sub(pos, 8), 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 1;
+    pieces = (position.blackPawns & (petir_bitboard_mask::rankMask[2] | petir_bitboard_mask::rankMask[3]));
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, pas::sub(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 1;
             }
         }
     }
-    if ((data.ep != petir_header::_no_ep)) {
-        piecepos = (data.pawnblack & petir_bitboard_mask::rank_mask[3]);
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            if ((pas::abs(pas::sub((pos & 7), data.ep)) == 1)) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
-                movelist[jml].score = petir_movgen::_nilai_pion;
+    if ((position.enPassantFile != petir_header::noEnPassant)) {
+        pieces = (position.blackPawns & petir_bitboard_mask::rankMask[3]);
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
+                (moveCount = pas::increment(moveCount, 1));
+                moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
+                moveList[moveCount].score = petir_movgen::pawnOrderValue;
             }
         }
     }
-    piecepos = data.knightblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = (petir_bitboard_mask::knightmask[pos] & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
-            if ((movelist[jml].score < 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackKnights;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue);
+            if ((moveList[moveCount].score < 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
             }
         }
-        attack = ((petir_bitboard_mask::knightmask[pos] & attackn) & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+        targets = ((petir_bitboard_mask::knightAttacks[fromSquare] & knightCheckSquares) & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
         }
     }
-    piecepos = data.bishopblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        t64 = attack;
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
-            if ((movelist[jml].score < 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackBishops;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        allTargets = targets;
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::bishopOrderValue);
+            if ((moveList[moveCount].score < 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
             }
         }
-        attack = ((t64 & attackb) & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+        targets = ((allTargets & diagonalCheckSquares) & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
         }
     }
-    piecepos = data.rookblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        t64 = attack;
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
-            if ((movelist[jml].score < 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackRooks;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        allTargets = targets;
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::rookOrderValue);
+            if ((moveList[moveCount].score < 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
             }
         }
-        attack = ((t64 & attackr) & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+        targets = ((allTargets & straightCheckSquares) & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
         }
     }
-    piecepos = data.queenblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        t64 = attack;
-        attack = (attack & data.whitepieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
+    pieces = position.blackQueens;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        allTargets = targets;
+        targets = (targets & position.whitePieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
         }
-        attack = ((t64 & (attackr | attackb)) & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
-        }
-    }
-    pos = petir_bitboard_mask::king_square(data.kingblack);
-    attack = (petir_bitboard_mask::kingmask[pos] & data.whitepieces);
-    for(move_bits<true> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-        movelist[jml].score = petir_usee::see(petir_header::_sisihitam, data, pos, post);
-    }
-    attack = (petir_bitboard_mask::kingmask[pos] & pas::shl(data.pawnwhite, 8));
-    for(move_bits<false> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        if (((data.papan[post] == 0) && ((petir_bitboard_mask::w_pion_bebas_mask[pas::sub(post, 8)] & data.pawnblack) == 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = 0;
+        targets = ((allTargets & (straightCheckSquares | diagonalCheckSquares)) & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
         }
     }
-    jml_out = jml;
+    fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.whitePieces);
+    for(move_bits<true> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+        moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
+    }
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & pas::shiftLeft(position.whitePawns, 8));
+    for(move_bits<false> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        if (((position.board[toSquare] == 0) && ((petir_bitboard_mask::whitePassedPawnMask[pas::sub(toSquare, 8)] & position.blackPawns) == 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = 0;
+        }
+    }
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:2080
-void q_white_movgen(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::uint64_t t64{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t a{};
-    std::int32_t posraja{};
-    std::uint64_t attackb{};
-    std::uint64_t attackr{};
-    std::uint64_t attackn{};
-    std::uint64_t target{};
-    jml = 0;
-    posraja = petir_bitboard_mask::king_square(data.kingblack);
-    attackb = petir_bitboard_mask::diaga8h1mask[posraja][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[posraja]) & 255)];
-    attackb = (attackb | petir_bitboard_mask::diagh8a1mask[posraja][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[posraja]) & 255)]);
-    attackr = petir_bitboard_mask::horzmask2[posraja][(pas::shr(data.allpieces, pas::add((posraja & 56), 1)) & 63)];
-    attackr = (attackr | petir_bitboard_mask::vertmask2[posraja][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[posraja]) & 63)]);
-    attackn = petir_bitboard_mask::knightmask[posraja];
-    piecepos = (pas::shl((data.pawnwhite & petir_bitboard_mask::mask_left), 15) & data.kingblack);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        (pos = pas::decrement(pos, 15));
-        if ((data.papan[pas::add(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 8), 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::uint64_t allTargets{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t enemyKingSquare{};
+    std::uint64_t diagonalCheckSquares{};
+    std::uint64_t straightCheckSquares{};
+    std::uint64_t knightCheckSquares{};
+    std::uint64_t checkTargets{};
+    moveCount = 0;
+    enemyKingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    diagonalCheckSquares = petir_bitboard_mask::diagonalA8H1Attacks[enemyKingSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[enemyKingSquare]) & 255)];
+    diagonalCheckSquares = (diagonalCheckSquares | petir_bitboard_mask::diagonalH8A1Attacks[enemyKingSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[enemyKingSquare]) & 255)]);
+    straightCheckSquares = petir_bitboard_mask::horizontalAttacks[enemyKingSquare][(pas::shiftRight(position.allPieces, pas::add((enemyKingSquare & 56), 1)) & 63)];
+    straightCheckSquares = (straightCheckSquares | petir_bitboard_mask::verticalAttacks[enemyKingSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[enemyKingSquare]) & 63)]);
+    knightCheckSquares = petir_bitboard_mask::knightAttacks[enemyKingSquare];
+    pieces = (pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileAMask), 15) & position.blackKingBoard);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        (fromSquare = pas::decrement(fromSquare, 15));
+        if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
         }
     }
-    piecepos = (pas::shl((data.pawnwhite & petir_bitboard_mask::mask_right), 17) & data.kingblack);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        (pos = pas::decrement(pos, 17));
-        if ((data.papan[pas::add(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 8), 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
+    pieces = (pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileHMask), 17) & position.blackKingBoard);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        (fromSquare = pas::decrement(fromSquare, 17));
+        if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
         }
     }
-    piecepos = (pas::shl((data.pawnwhite & petir_bitboard_mask::mask_left), 7) & data.blackpieces);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        pos = pas::sub(pos, 7);
-        if ((pas::shr(pos, 3) == 6)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 7), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion), 3);
+    pieces = (pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileAMask), 7) & position.blackPieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::sub(fromSquare, 7);
+        if ((pas::shiftRight(fromSquare, 3) == 6)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 7), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue), 3);
         } else {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 7), 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 7), 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue);
         }
     }
-    piecepos = (pas::shl((data.pawnwhite & petir_bitboard_mask::mask_right), 9) & data.blackpieces);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        pos = pas::sub(pos, 9);
-        if ((pas::shr(pos, 3) == 6)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 9)]], petir_movgen::_nilai_pion), 3);
+    pieces = (pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileHMask), 9) & position.blackPieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::sub(fromSquare, 9);
+        if ((pas::shiftRight(fromSquare, 3) == 6)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 9)]], petir_movgen::pawnOrderValue), 3);
         } else {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 9), 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 9)]], petir_movgen::_nilai_pion);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 9), 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 9)]], petir_movgen::pawnOrderValue);
         }
     }
-    piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[6]);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((data.papan[pas::add(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
+    pieces = (position.whitePawns & petir_bitboard_mask::rankMask[6]);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
         }
     }
-    piecepos = (data.pawnwhite & (petir_bitboard_mask::rank_mask[5] | petir_bitboard_mask::rank_mask[4]));
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((data.papan[pas::add(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 8), 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 1;
+    pieces = (position.whitePawns & (petir_bitboard_mask::rankMask[5] | petir_bitboard_mask::rankMask[4]));
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 1;
             }
         }
     }
-    if ((data.ep != petir_header::_no_ep)) {
-        piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[4]);
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            if ((pas::abs(pas::sub((pos & 7), data.ep)) == 1)) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
-                movelist[jml].score = petir_movgen::_nilai_pion;
+    if ((position.enPassantFile != petir_header::noEnPassant)) {
+        pieces = (position.whitePawns & petir_bitboard_mask::rankMask[4]);
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
+                (moveCount = pas::increment(moveCount, 1));
+                moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
+                moveList[moveCount].score = petir_movgen::pawnOrderValue;
             }
         }
     }
-    piecepos = data.knightwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = (petir_bitboard_mask::knightmask[pos] & data.blackpieces);
-        for(move_bits<false> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
-            if ((movelist[jml].score < 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteKnights;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.blackPieces);
+        for(move_bits<false> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue);
+            if ((moveList[moveCount].score < 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
             }
         }
-        attack = ((petir_bitboard_mask::knightmask[pos] & attackn) & (~data.allpieces));
-        for(move_bits<false> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+        targets = ((petir_bitboard_mask::knightAttacks[fromSquare] & knightCheckSquares) & (~position.allPieces));
+        for(move_bits<false> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
         }
     }
-    piecepos = data.bishopwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        t64 = attack;
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
-            if ((movelist[jml].score < 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteBishops;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        allTargets = targets;
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::bishopOrderValue);
+            if ((moveList[moveCount].score < 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
             }
         }
-        attack = ((t64 & attackb) & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+        targets = ((allTargets & diagonalCheckSquares) & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
         }
     }
-    piecepos = data.rookwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        t64 = attack;
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
-            if ((movelist[jml].score < 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteRooks;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        allTargets = targets;
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::rookOrderValue);
+            if ((moveList[moveCount].score < 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
             }
         }
-        attack = ((t64 & attackr) & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+        targets = ((allTargets & straightCheckSquares) & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
         }
     }
-    piecepos = data.queenwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        t64 = attack;
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteQueens;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        allTargets = targets;
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
         }
-        attack = ((t64 & (attackb | attackr)) & (~data.allpieces));
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
-        }
-    }
-    pos = petir_bitboard_mask::king_square(data.kingwhite);
-    attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
-    for(move_bits<false> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-        movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
-    }
-    attack = (petir_bitboard_mask::kingmask[pos] & pas::shr(data.pawnblack, 8));
-    for(move_bits<false> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        if (((data.papan[post] == 0) && ((petir_bitboard_mask::b_pion_bebas_mask[pas::add(post, 8)] & data.pawnwhite) == 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = 0;
+        targets = ((allTargets & (diagonalCheckSquares | straightCheckSquares)) & (~position.allPieces));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
         }
     }
-    jml_out = jml;
+    fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.blackPieces);
+    for(move_bits<false> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+        moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
+    }
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & pas::shiftRight(position.blackPawns, 8));
+    for(move_bits<false> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        if (((position.board[toSquare] == 0) && ((petir_bitboard_mask::blackPassedPawnMask[pas::add(toSquare, 8)] & position.whitePawns) == 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = 0;
+        }
+    }
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:1681
-void white_movgen_caps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::uint64_t temp{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t a{};
-    jml = 0;
-    piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[6]);
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((((pos & 7) < 7) && (data.papan[pas::add(pos, 9)] < 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 9)]], petir_movgen::_nilai_pion), 5);
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 9), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 9)]], petir_movgen::_nilai_pion), 5);
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::uint64_t unpromotedPawns{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    moveCount = 0;
+    pieces = (position.whitePawns & petir_bitboard_mask::rankMask[6]);
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((((fromSquare & 7) < 7) && (position.board[pas::add(fromSquare, 9)] < 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 9), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
         }
-        if ((((pos & 7) > 0) && (data.papan[pas::add(pos, 7)] < 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 7), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion), 5);
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 7), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion), 5);
+        if ((((fromSquare & 7) > 0) && (position.board[pas::add(fromSquare, 7)] < 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 7), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 7), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
         }
-        if ((data.papan[pas::add(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
+        if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 8), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
-            }
-        }
-    }
-    temp = (data.pawnwhite & (~petir_bitboard_mask::rank_mask[6]));
-    piecepos = (pas::shl((temp & petir_bitboard_mask::mask_left), 7) & data.blackpieces);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        pos = pas::sub(pos, 7);
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 7), 7));
-        movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion);
-    }
-    piecepos = (pas::shl((temp & petir_bitboard_mask::mask_right), 9) & data.blackpieces);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        pos = pas::sub(pos, 9);
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 9), 7));
-        movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 9)]], petir_movgen::_nilai_pion);
-    }
-    if ((data.ep != petir_header::_no_ep)) {
-        piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[4]);
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            if ((pas::abs(pas::sub((pos & 7), data.ep)) == 1)) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
-                movelist[jml].score = petir_movgen::_nilai_pion;
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
         }
     }
-    piecepos = data.knightwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = (petir_bitboard_mask::knightmask[pos] & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & (~petir_bitboard_mask::bit(post)));
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    unpromotedPawns = (position.whitePawns & (~petir_bitboard_mask::rankMask[6]));
+    pieces = (pas::shiftLeft((unpromotedPawns & petir_bitboard_mask::notFileAMask), 7) & position.blackPieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::sub(fromSquare, 7);
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 7), 7));
+        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue);
+    }
+    pieces = (pas::shiftLeft((unpromotedPawns & petir_bitboard_mask::notFileHMask), 9) & position.blackPieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::sub(fromSquare, 9);
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 9), 7));
+        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 9)]], petir_movgen::pawnOrderValue);
+    }
+    if ((position.enPassantFile != petir_header::noEnPassant)) {
+        pieces = (position.whitePawns & petir_bitboard_mask::rankMask[4]);
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
+                (moveCount = pas::increment(moveCount, 1));
+                moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
+                moveList[moveCount].score = petir_movgen::pawnOrderValue;
             }
         }
     }
-    piecepos = data.bishopwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteKnights;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.blackPieces);
+        while ((targets != 0)) {
+            toSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+            targets = (targets & (~petir_bitboard_mask::squareBit(toSquare)));
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
             }
         }
     }
-    piecepos = data.rookwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteBishops;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::bishopOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
             }
         }
     }
-    piecepos = data.queenwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteRooks;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::rookOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
+            }
         }
     }
-    pos = petir_bitboard_mask::king_square(data.kingwhite);
-    attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
-    for(move_bits<false> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-        movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteQueens;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
+        }
     }
-    jml_out = jml;
+    fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.blackPieces);
+    for(move_bits<false> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+        moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
+    }
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:1864
-void white_movgen_caps2(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::uint64_t temp{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t a{};
-    jml = 0;
-    piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[6]);
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((((pos & 7) < 7) && (data.papan[pas::add(pos, 9)] < 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 9), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 9)]], petir_movgen::_nilai_pion), 5);
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 9), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 9)]], petir_movgen::_nilai_pion), 5);
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::uint64_t unpromotedPawns{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    moveCount = 0;
+    pieces = (position.whitePawns & petir_bitboard_mask::rankMask[6]);
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((((fromSquare & 7) < 7) && (position.board[pas::add(fromSquare, 9)] < 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 9), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
         }
-        if ((((pos & 7) > 0) && (data.papan[pas::add(pos, 7)] < 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 7), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion), 5);
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 7), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = pas::add(pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion), 5);
+        if ((((fromSquare & 7) > 0) && (position.board[pas::add(fromSquare, 7)] < 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 7), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 7), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
         }
-        if ((data.papan[pas::add(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 8), 7)), pas::shl(petir_header::promosi_mentri, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
+        if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(pas::add(pos, 8), 7)), pas::shl(petir_header::promosi_kuda, 14));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 3;
-            }
-        }
-    }
-    piecepos = (data.pawnwhite & (petir_bitboard_mask::rank_mask[5] | petir_bitboard_mask::rank_mask[4]));
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((data.papan[pas::add(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 8), 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8));
-            if ((movelist[jml].score == 0)) {
-                movelist[jml].score = 1;
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 3;
             }
         }
     }
-    temp = (data.pawnwhite & (~petir_bitboard_mask::rank_mask[6]));
-    piecepos = (pas::shl((temp & petir_bitboard_mask::mask_left), 7) & data.blackpieces);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        pos = pas::sub(pos, 7);
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 7), 7));
-        movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 7)]], petir_movgen::_nilai_pion);
-    }
-    piecepos = (pas::shl((temp & petir_bitboard_mask::mask_right), 9) & data.blackpieces);
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        pos = pas::sub(pos, 9);
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 9), 7));
-        movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[pas::add(pos, 9)]], petir_movgen::_nilai_pion);
-    }
-    if ((data.ep != petir_header::_no_ep)) {
-        piecepos = (data.pawnwhite & petir_bitboard_mask::rank_mask[4]);
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            if ((pas::abs(pas::sub((pos & 7), data.ep)) == 1)) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_en_passant, 7));
-                movelist[jml].score = petir_movgen::_nilai_pion;
+    pieces = (position.whitePawns & (petir_bitboard_mask::rankMask[5] | petir_bitboard_mask::rankMask[4]));
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, pas::add(fromSquare, 8));
+            if ((moveList[moveCount].score == 0)) {
+                moveList[moveCount].score = 1;
             }
         }
     }
-    piecepos = data.knightwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = (petir_bitboard_mask::knightmask[pos] & data.blackpieces);
-        while ((attack != 0)) {
-            post = petir_bitboard_mask::firstbitp(pas::address(attack));
-            attack = (attack & (~petir_bitboard_mask::bit(post)));
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    unpromotedPawns = (position.whitePawns & (~petir_bitboard_mask::rankMask[6]));
+    pieces = (pas::shiftLeft((unpromotedPawns & petir_bitboard_mask::notFileAMask), 7) & position.blackPieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::sub(fromSquare, 7);
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 7), 7));
+        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue);
+    }
+    pieces = (pas::shiftLeft((unpromotedPawns & petir_bitboard_mask::notFileHMask), 9) & position.blackPieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::sub(fromSquare, 9);
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 9), 7));
+        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 9)]], petir_movgen::pawnOrderValue);
+    }
+    if ((position.enPassantFile != petir_header::noEnPassant)) {
+        pieces = (position.whitePawns & petir_bitboard_mask::rankMask[4]);
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
+                (moveCount = pas::increment(moveCount, 1));
+                moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
+                moveList[moveCount].score = petir_movgen::pawnOrderValue;
             }
         }
     }
-    piecepos = data.bishopwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteKnights;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.blackPieces);
+        while ((targets != 0)) {
+            toSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+            targets = (targets & (~petir_bitboard_mask::squareBit(toSquare)));
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
             }
         }
     }
-    piecepos = data.rookwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng);
-            if ((movelist[jml].score <= 0)) {
-                movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteBishops;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::bishopOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
             }
         }
     }
-    piecepos = data.queenwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & data.blackpieces);
-        for(move_bits<true> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
+    pieces = position.whiteRooks;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::rookOrderValue);
+            if ((moveList[moveCount].score <= 0)) {
+                moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
+            }
         }
     }
-    pos = petir_bitboard_mask::king_square(data.kingwhite);
-    attack = (petir_bitboard_mask::kingmask[pos] & data.blackpieces);
-    for(move_bits<false> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-        movelist[jml].score = petir_usee::see(petir_header::_sisiputih, data, pos, post);
-    }
-    attack = (petir_bitboard_mask::kingmask[pos] & pas::shr(data.pawnblack, 8));
-    for(move_bits<false> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        if (((data.papan[post] == 0) && ((petir_bitboard_mask::b_pion_bebas_mask[pas::add(post, 8)] & data.pawnwhite) == 0))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = 0;
+    pieces = position.whiteQueens;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & position.blackPieces);
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
         }
     }
-    jml_out = jml;
+    fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.blackPieces);
+    for(move_bits<false> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+        moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
+    }
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & pas::shiftRight(position.blackPawns, 8));
+    for(move_bits<false> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        if (((position.board[toSquare] == 0) && ((petir_bitboard_mask::blackPassedPawnMask[pas::add(toSquare, 8)] & position.whitePawns) == 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = 0;
+        }
+    }
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:1520
-void white_movgen_noncaps(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out) {
+void generateWhiteQuietMoves(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    jml = 0;
-    piecepos = (data.pawnwhite & (~petir_bitboard_mask::rank_mask[6]));
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        if ((data.papan[pas::add(pos, 8)] == 0)) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 8), 7));
-            movelist[jml].score = petir_header::historyw[petir_header::_pionputih][pas::add(pos, 8)];
-            if (((pos <= petir_header::h2) && (data.papan[pas::add(pos, 16)] == 0))) {
-                (jml = pas::increment(jml, 1));
-                movelist[jml].moves = pas::add(pos, pas::shl(pas::add(pos, 16), 7));
-                movelist[jml].score = petir_header::historyw[petir_header::_pionputih][pas::add(pos, 16)];
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    moveCount = 0;
+    pieces = (position.whitePawns & (~petir_bitboard_mask::rankMask[6]));
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 8), 7));
+            moveList[moveCount].score = petir_header::whiteHistory[petir_header::whitePawn][pas::add(fromSquare, 8)];
+            if (((fromSquare <= petir_header::h2) && (position.board[pas::add(fromSquare, 16)] == 0))) {
+                (moveCount = pas::increment(moveCount, 1));
+                moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::add(fromSquare, 16), 7));
+                moveList[moveCount].score = petir_header::whiteHistory[petir_header::whitePawn][pas::add(fromSquare, 16)];
             }
         }
     }
-    piecepos = data.knightwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = (petir_bitboard_mask::knightmask[pos] & (~data.allpieces));
-        for(move_bits<false> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_header::historyw[petir_header::_kudaputih][post];
+    pieces = position.whiteKnights;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = (petir_bitboard_mask::knightAttacks[fromSquare] & (~position.allPieces));
+        for(move_bits<false> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteKnight][toSquare];
         }
     }
-    piecepos = data.queenwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & (~data.allpieces));
-        for(move_bits<false> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_header::historyw[petir_header::_mentriputih][post];
+    pieces = position.whiteQueens;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & (~position.allPieces));
+        for(move_bits<false> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteQueen][toSquare];
         }
     }
-    piecepos = data.bishopwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        attack = (attack & (~data.allpieces));
-        for(move_bits<false> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_header::historyw[petir_header::_gajahputih][post];
+    pieces = position.whiteBishops;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        targets = (targets & (~position.allPieces));
+        for(move_bits<false> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteBishop][toSquare];
         }
     }
-    piecepos = data.rookwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack & (~data.allpieces));
-        for(move_bits<false> remaining(attack); remaining; ) {
-            post = remaining.pop();
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-            movelist[jml].score = petir_header::historyw[petir_header::_bentengputih][post];
+    pieces = position.whiteRooks;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets & (~position.allPieces));
+        for(move_bits<false> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+            moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteRook][toSquare];
         }
     }
-    pos = petir_bitboard_mask::king_square(data.kingwhite);
-    attack = (petir_bitboard_mask::kingmask[pos] & (~data.allpieces));
-    for(move_bits<false> remaining(attack); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-        movelist[jml].score = petir_header::historyw[petir_header::_rajaputih][post];
+    fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    targets = (petir_bitboard_mask::kingAttacks[fromSquare] & (~position.allPieces));
+    for(move_bits<false> remaining(targets); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+        moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteKing][toSquare];
     }
-    if (((((data.flagrokade & petir_header::bitputihnoc) != 0) && (data.papan[petir_header::e1] == petir_header::_rajaputih)) && (!petir_tools::white_attacked(data, petir_header::e1)))) {
-        if (((((((data.papan[petir_header::f1] == 0) && (data.papan[petir_header::g1] == 0)) && ((data.flagrokade & petir_header::bitputihsc) != 0)) && (data.papan[petir_header::h1] == petir_header::_bentengputih)) && (!petir_tools::white_attacked(data, petir_header::f1))) && (!petir_tools::white_attacked(data, petir_header::g1)))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_rokadependek, 7));
-            movelist[jml].score = petir_header::historyw[petir_header::_rajaputih][petir_header::_rokadependek];
+    if (((((position.castleRights & petir_header::whiteCastleRights) != 0) && (position.board[petir_header::e1] == petir_header::whiteKing)) && (!petir_tools::attackedByBlack(position, petir_header::e1)))) {
+        if (((((((position.board[petir_header::f1] == 0) && (position.board[petir_header::g1] == 0)) && ((position.castleRights & petir_header::whiteShortCastleRight) != 0)) && (position.board[petir_header::h1] == petir_header::whiteRook)) && (!petir_tools::attackedByBlack(position, petir_header::f1))) && (!petir_tools::attackedByBlack(position, petir_header::g1)))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::shortCastleTarget, 7));
+            moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteKing][petir_header::shortCastleTarget];
         }
-        if ((((((((data.papan[petir_header::d1] == 0) && (data.papan[petir_header::c1] == 0)) && (data.papan[petir_header::b1] == 0)) && ((data.flagrokade & petir_header::bitputihlc) != 0)) && (data.papan[petir_header::a1] == petir_header::_bentengputih)) && (!petir_tools::white_attacked(data, petir_header::d1))) && (!petir_tools::white_attacked(data, petir_header::c1)))) {
-            (jml = pas::increment(jml, 1));
-            movelist[jml].moves = pas::add(pos, pas::shl(petir_header::_rokadepanjang, 7));
-            movelist[jml].score = petir_header::historyw[petir_header::_rajaputih][petir_header::_rokadepanjang];
+        if ((((((((position.board[petir_header::d1] == 0) && (position.board[petir_header::c1] == 0)) && (position.board[petir_header::b1] == 0)) && ((position.castleRights & petir_header::whiteLongCastleRight) != 0)) && (position.board[petir_header::a1] == petir_header::whiteRook)) && (!petir_tools::attackedByBlack(position, petir_header::d1))) && (!petir_tools::attackedByBlack(position, petir_header::c1)))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::longCastleTarget, 7));
+            moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteKing][petir_header::longCastleTarget];
         }
     }
-    jml_out = jml;
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:30
-void white_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out, std::int32_t& skakcount) {
+void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut, std::int32_t& checkerCount) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::uint64_t battack{};
-    std::uint64_t attack2{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t posraja{};
-    std::int32_t dn{};
-    std::int32_t a{};
-    std::uint64_t skak64{};
-    std::int32_t skakpos{};
-    std::uint64_t path{};
-    std::uint64_t allp{};
-    std::uint64_t allp90{};
-    std::uint64_t allpa8{};
-    std::uint64_t allph8{};
-    std::int32_t pas_temp_1{};
-    jml = 0;
-    skakcount = 0;
-    battack = 0;
-    posraja = petir_bitboard_mask::king_square(data.kingwhite);
-    skakpos = 64;
-    piecepos = data.knightblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        battack = (battack | petir_bitboard_mask::knightmask[pos]);
-        if (((petir_bitboard_mask::knightmask[pos] & data.kingwhite) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::uint64_t enemyAttacks{};
+    std::uint64_t answerSquares{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t kingSquare{};
+    std::int32_t checkDirection{};
+    std::int32_t promotionType{};
+    std::uint64_t checkerBit{};
+    std::int32_t checkerSquare{};
+    std::uint64_t blockingSquares{};
+    std::uint64_t occupancyWithoutKing{};
+    std::uint64_t rotated90WithoutKing{};
+    std::uint64_t rotatedA8H1WithoutKing{};
+    std::uint64_t rotatedH8A1WithoutKing{};
+    std::int32_t lastPushPromotionType{};
+    moveCount = 0;
+    checkerCount = 0;
+    enemyAttacks = 0;
+    kingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    checkerSquare = 64;
+    pieces = position.blackKnights;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        enemyAttacks = (enemyAttacks | petir_bitboard_mask::knightAttacks[fromSquare]);
+        if (((petir_bitboard_mask::knightAttacks[fromSquare] & position.whiteKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    piecepos = data.pawnblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::b_pawn_attack[pos];
-        battack = (battack | attack);
-        if (((attack & data.kingwhite) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    pieces = position.blackPawns;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::blackPawnAttacks[fromSquare];
+        enemyAttacks = (enemyAttacks | targets);
+        if (((targets & position.whiteKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    allp = (data.allpieces & (~data.kingwhite));
-    allp90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[posraja]));
-    allpa8 = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[posraja]));
-    allph8 = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[posraja]));
-    piecepos = data.bishopblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(allpa8, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(allph8, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        battack = (battack | attack);
-        if (((attack & data.kingwhite) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    occupancyWithoutKing = (position.allPieces & (~position.whiteKingBoard));
+    rotated90WithoutKing = (position.allPiecesRotated90 & (~petir_bitboard_mask::rotated90SquareMask[kingSquare]));
+    rotatedA8H1WithoutKing = (position.allPiecesA8H1 & (~petir_bitboard_mask::rotatedA8H1SquareMask[kingSquare]));
+    rotatedH8A1WithoutKing = (position.allPiecesH8A1 & (~petir_bitboard_mask::rotatedH8A1SquareMask[kingSquare]));
+    pieces = position.blackBishops;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(rotatedA8H1WithoutKing, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(rotatedH8A1WithoutKing, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        enemyAttacks = (enemyAttacks | targets);
+        if (((targets & position.whiteKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    piecepos = data.rookblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(allp, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(allp90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        battack = (battack | attack);
-        if (((attack & data.kingwhite) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    pieces = position.blackRooks;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(occupancyWithoutKing, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(rotated90WithoutKing, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        enemyAttacks = (enemyAttacks | targets);
+        if (((targets & position.whiteKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    piecepos = data.queenblack;
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(allp, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(allp90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(allpa8, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(allph8, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        battack = (battack | attack);
-        if (((attack & data.kingwhite) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    pieces = position.blackQueens;
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(occupancyWithoutKing, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(rotated90WithoutKing, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(rotatedA8H1WithoutKing, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(rotatedH8A1WithoutKing, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        enemyAttacks = (enemyAttacks | targets);
+        if (((targets & position.whiteKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    pos = petir_bitboard_mask::king_square(data.kingblack);
-    battack = (battack | petir_bitboard_mask::kingmask[pos]);
-    piecepos = ((petir_bitboard_mask::kingmask[posraja] & (~battack)) & (~data.whitepieces));
-    for(move_bits<true> remaining(piecepos); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(posraja, pas::shl(post, 7));
-        if ((data.papan[post] == 0)) {
-            movelist[jml].score = petir_header::historyw[petir_header::_rajaputih][post];
+    fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    enemyAttacks = (enemyAttacks | petir_bitboard_mask::kingAttacks[fromSquare]);
+    pieces = ((petir_bitboard_mask::kingAttacks[kingSquare] & (~enemyAttacks)) & (~position.whitePieces));
+    for(move_bits<true> remaining(pieces); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(kingSquare, pas::shiftLeft(toSquare, 7));
+        if ((position.board[toSquare] == 0)) {
+            moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteKing][toSquare];
         } else {
-            movelist[jml].score = pas::shl(petir_movgen::nilai_piece[data.papan[post]], 14);
+            moveList[moveCount].score = pas::shiftLeft(petir_movgen::pieceOrderValue[position.board[toSquare]], 14);
         }
     }
     // Removing both pawns can uncover an attack; making the move also handles
     // en passant interpositions against a sliding-piece check.
-    append_legal_ep_evasions(data,movelist,jml,petir_header::_sisiputih);
-    if ((skakcount == 1)) {
-        skak64 = petir_bitboard_mask::bit(skakpos);
-        path = petir_bitboard_mask::pathmask[posraja][skakpos];
-        piecepos = data.knightwhite;
-        dn = petir_bitboard_mask::direction[posraja][skakpos];
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::knightmask[pos];
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = pas::shl(pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda), 15);
-                    if ((movelist[jml].score < 0)) {
-                        movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisiputih, data, pos, post), 15);
+    appendLegalEnPassantEvasions(position,moveList,moveCount,petir_header::whiteSide);
+    if ((checkerCount == 1)) {
+        checkerBit = petir_bitboard_mask::squareBit(checkerSquare);
+        blockingSquares = petir_bitboard_mask::betweenMask[kingSquare][checkerSquare];
+        pieces = position.whiteKnights;
+        checkDirection = petir_bitboard_mask::rayDirection[kingSquare][checkerSquare];
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::knightAttacks[fromSquare];
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::firstBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = pas::shiftLeft(pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue), 15);
+                    if ((moveList[moveCount].score < 0)) {
+                        moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare), 15);
                     }
                 }
             }
-            attack2 = (attack & path);
-            for(move_bits<false> remaining(attack2); remaining; ) {
-                post = remaining.pop();
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = petir_header::historyw[petir_header::_kudaputih][post];
+            answerSquares = (targets & blockingSquares);
+            for(move_bits<false> remaining(answerSquares); remaining; ) {
+                toSquare = remaining.pop();
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteKnight][toSquare];
                 }
             }
         }
-        piecepos = data.pawnwhite;
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::w_pawn_attack[pos];
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    if ((pas::shr(pos, 3) == 6)) {
-                        (jml = pas::increment(jml, 1));
-                        movelist[jml].moves = pas::add(pas::add(pos, pas::shl(post, 7)), pas::shl(petir_header::promosi_mentri, 14));
-                        movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_pion);
-                        (jml = pas::increment(jml, 1));
-                        movelist[jml].moves = pas::add(pas::add(pos, pas::shl(post, 7)), pas::shl(petir_header::promosi_kuda, 14));
-                        movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_pion);
+        pieces = position.whitePawns;
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::whitePawnAttacks[fromSquare];
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::firstBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    if ((pas::shiftRight(fromSquare, 3) == 6)) {
+                        (moveCount = pas::increment(moveCount, 1));
+                        moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(toSquare, 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+                        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::pawnOrderValue);
+                        (moveCount = pas::increment(moveCount, 1));
+                        moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(toSquare, 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+                        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::pawnOrderValue);
                     } else {
-                        (jml = pas::increment(jml, 1));
-                        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                        movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_pion);
+                        (moveCount = pas::increment(moveCount, 1));
+                        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::pawnOrderValue);
                     }
                 }
             }
-            attack2 = 0;
-            if ((data.papan[pas::add(pos, 8)] == 0)) {
-                attack2 = (attack2 | petir_bitboard_mask::bit(pas::add(pos, 8)));
-                if (((pas::shr(pos, 3) == 1) && (data.papan[pas::add(pos, 16)] == 0))) {
-                    attack2 = (attack2 | petir_bitboard_mask::bit(pas::add(pos, 16)));
+            answerSquares = 0;
+            if ((position.board[pas::add(fromSquare, 8)] == 0)) {
+                answerSquares = (answerSquares | petir_bitboard_mask::squareBit(pas::add(fromSquare, 8)));
+                if (((pas::shiftRight(fromSquare, 3) == 1) && (position.board[pas::add(fromSquare, 16)] == 0))) {
+                    answerSquares = (answerSquares | petir_bitboard_mask::squareBit(pas::add(fromSquare, 16)));
                 }
             }
-            attack2 = (attack2 & path);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    if ((pas::shr(pos, 3) == 6)) {
-                        pas_temp_1 = petir_header::promosi_kuda;
-                        for (a = petir_header::promosi_mentri; a <= pas_temp_1; ++a) {
-                            (jml = pas::increment(jml, 1));
-                            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(post, 7)), pas::shl(a, 14));
-                            movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisiputih, data, pos, post), 15);
-                            if ((movelist[jml].score == 0)) {
-                                movelist[jml].score = pas::shl(3, 15);
+            answerSquares = (answerSquares & blockingSquares);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::firstBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    if ((pas::shiftRight(fromSquare, 3) == 6)) {
+                        lastPushPromotionType = petir_header::knightPromotion;
+                        for (promotionType = petir_header::queenPromotion; promotionType <= lastPushPromotionType; ++promotionType) {
+                            (moveCount = pas::increment(moveCount, 1));
+                            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(toSquare, 7)), pas::shiftLeft(promotionType, 14));
+                            moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare), 15);
+                            if ((moveList[moveCount].score == 0)) {
+                                moveList[moveCount].score = pas::shiftLeft(3, 15);
                             }
                         }
                     } else {
-                        (jml = pas::increment(jml, 1));
-                        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                        movelist[jml].score = petir_header::historyw[petir_header::_pionputih][post];
+                        (moveCount = pas::increment(moveCount, 1));
+                        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                        moveList[moveCount].score = petir_header::whiteHistory[petir_header::whitePawn][toSquare];
                     }
                 }
             }
         }
-        piecepos = data.bishopwhite;
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-            attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = pas::shl(pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah), 15);
-                    if ((movelist[jml].score < 0)) {
-                        movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisiputih, data, pos, post), 15);
+        pieces = position.whiteBishops;
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+            targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::firstBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = pas::shiftLeft(pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::bishopOrderValue), 15);
+                    if ((moveList[moveCount].score < 0)) {
+                        moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare), 15);
                     }
                 }
             }
-            attack2 = (attack & path);
-            for(move_bits<false> remaining(attack2); remaining; ) {
-                post = remaining.pop();
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = petir_header::historyw[petir_header::_gajahputih][post];
+            answerSquares = (targets & blockingSquares);
+            for(move_bits<false> remaining(answerSquares); remaining; ) {
+                toSquare = remaining.pop();
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteBishop][toSquare];
                 }
             }
         }
-        piecepos = data.rookwhite;
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-            attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = pas::shl(pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng), 15);
-                    if ((movelist[jml].score < 0)) {
-                        movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisiputih, data, pos, post), 15);
+        pieces = position.whiteRooks;
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+            targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::firstBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = pas::shiftLeft(pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::rookOrderValue), 15);
+                    if ((moveList[moveCount].score < 0)) {
+                        moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare), 15);
                     }
                 }
             }
-            attack2 = (attack & path);
-            for(move_bits<false> remaining(attack2); remaining; ) {
-                post = remaining.pop();
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = petir_header::historyw[petir_header::_bentengputih][post];
+            answerSquares = (targets & blockingSquares);
+            for(move_bits<false> remaining(answerSquares); remaining; ) {
+                toSquare = remaining.pop();
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteRook][toSquare];
                 }
             }
         }
-        piecepos = data.queenwhite;
-        for(move_bits<false> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-            attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-            attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-            attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::firstbitp(pas::address(attack2));
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = pas::shl(pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_mentri), 15);
-                    if ((movelist[jml].score < 0)) {
-                        movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisiputih, data, pos, post), 15);
+        pieces = position.whiteQueens;
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+            targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+            targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+            targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::firstBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = pas::shiftLeft(pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::queenOrderValue), 15);
+                    if ((moveList[moveCount].score < 0)) {
+                        moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare), 15);
                     }
                 }
             }
-            attack2 = (attack & path);
-            for(move_bits<false> remaining(attack2); remaining; ) {
-                post = remaining.pop();
-                if ((!petir_tools::white_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = petir_header::historyw[petir_header::_mentriputih][post];
+            answerSquares = (targets & blockingSquares);
+            for(move_bits<false> remaining(answerSquares); remaining; ) {
+                toSquare = remaining.pop();
+                if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteQueen][toSquare];
                 }
             }
         }
     }
-    jml_out = jml;
+    moveCountOut = moveCount;
 }
 
 // movgen.pas:361
-void black_evasion(petir_header::tdata& data, petir_header::tmovelist& movelist, std::int32_t& jml_out, std::int32_t& skakcount) {
+void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCountOut, std::int32_t& checkerCount) {
     // Count locally: MSVC would otherwise reload the caller's count after
     // every move-list store. The count is published once on return.
-    std::int32_t jml = jml_out;
-    std::uint64_t piecepos{};
-    std::uint64_t attack{};
-    std::uint64_t battack{};
-    std::uint64_t attack2{};
-    std::int32_t pos{};
-    std::int32_t post{};
-    std::int32_t posraja{};
-    std::uint64_t skak64{};
-    std::int32_t skakpos{};
-    std::int32_t a{};
-    std::uint64_t path{};
-    std::uint64_t allp{};
-    std::uint64_t allp90{};
-    std::uint64_t allpa8{};
-    std::uint64_t allph8{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    jml = 0;
-    skakcount = 0;
-    battack = 0;
-    posraja = petir_bitboard_mask::king_square(data.kingblack);
-    skakpos = 64;
-    piecepos = data.knightwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        battack = (battack | petir_bitboard_mask::knightmask[pos]);
-        if (((petir_bitboard_mask::knightmask[pos] & data.kingblack) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    std::int32_t moveCount = moveCountOut;
+    std::uint64_t pieces{};
+    std::uint64_t targets{};
+    std::uint64_t enemyAttacks{};
+    std::uint64_t answerSquares{};
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t kingSquare{};
+    std::uint64_t checkerBit{};
+    std::int32_t checkerSquare{};
+    std::int32_t promotionType{};
+    std::uint64_t blockingSquares{};
+    std::uint64_t occupancyWithoutKing{};
+    std::uint64_t rotated90WithoutKing{};
+    std::uint64_t rotatedA8H1WithoutKing{};
+    std::uint64_t rotatedH8A1WithoutKing{};
+    std::int32_t lastCapturePromotionType{};
+    std::int32_t lastPushPromotionType{};
+    moveCount = 0;
+    checkerCount = 0;
+    enemyAttacks = 0;
+    kingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    checkerSquare = 64;
+    pieces = position.whiteKnights;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        enemyAttacks = (enemyAttacks | petir_bitboard_mask::knightAttacks[fromSquare]);
+        if (((petir_bitboard_mask::knightAttacks[fromSquare] & position.blackKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    piecepos = data.pawnwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::w_pawn_attack[pos];
-        battack = (battack | attack);
-        if (((attack & data.kingblack) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    pieces = position.whitePawns;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::whitePawnAttacks[fromSquare];
+        enemyAttacks = (enemyAttacks | targets);
+        if (((targets & position.blackKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    allp = (data.allpieces & (~data.kingblack));
-    allp90 = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[posraja]));
-    allpa8 = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[posraja]));
-    allph8 = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[posraja]));
-    piecepos = data.bishopwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(allpa8, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(allph8, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        battack = (battack | attack);
-        if (((attack & data.kingblack) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    occupancyWithoutKing = (position.allPieces & (~position.blackKingBoard));
+    rotated90WithoutKing = (position.allPiecesRotated90 & (~petir_bitboard_mask::rotated90SquareMask[kingSquare]));
+    rotatedA8H1WithoutKing = (position.allPiecesA8H1 & (~petir_bitboard_mask::rotatedA8H1SquareMask[kingSquare]));
+    rotatedH8A1WithoutKing = (position.allPiecesH8A1 & (~petir_bitboard_mask::rotatedH8A1SquareMask[kingSquare]));
+    pieces = position.whiteBishops;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(rotatedA8H1WithoutKing, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(rotatedH8A1WithoutKing, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        enemyAttacks = (enemyAttacks | targets);
+        if (((targets & position.blackKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    piecepos = data.rookwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(allp, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(allp90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        battack = (battack | attack);
-        if (((attack & data.kingblack) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    pieces = position.whiteRooks;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(occupancyWithoutKing, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(rotated90WithoutKing, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        enemyAttacks = (enemyAttacks | targets);
+        if (((targets & position.blackKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    piecepos = data.queenwhite;
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        pos = remaining.pop();
-        attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(allp, pas::add((pos & 56), 1)) & 63)];
-        attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(allp90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-        attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(allpa8, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(allph8, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        battack = (battack | attack);
-        if (((attack & data.kingblack) != 0)) {
-            (skakcount = pas::increment(skakcount, 1));
-            skakpos = pos;
+    pieces = position.whiteQueens;
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(occupancyWithoutKing, pas::add((fromSquare & 56), 1)) & 63)];
+        targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(rotated90WithoutKing, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+        targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(rotatedA8H1WithoutKing, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+        targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(rotatedH8A1WithoutKing, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+        enemyAttacks = (enemyAttacks | targets);
+        if (((targets & position.blackKingBoard) != 0)) {
+            (checkerCount = pas::increment(checkerCount, 1));
+            checkerSquare = fromSquare;
         }
     }
-    pos = petir_bitboard_mask::king_square(data.kingwhite);
-    battack = (battack | petir_bitboard_mask::kingmask[pos]);
-    piecepos = ((petir_bitboard_mask::kingmask[posraja] & (~battack)) & (~data.blackpieces));
-    for(move_bits<false> remaining(piecepos); remaining; ) {
-        post = remaining.pop();
-        (jml = pas::increment(jml, 1));
-        movelist[jml].moves = pas::add(posraja, pas::shl(post, 7));
-        if ((data.papan[post] == 0)) {
-            movelist[jml].score = petir_header::historyb[petir_header::_rajahitam][post];
+    fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    enemyAttacks = (enemyAttacks | petir_bitboard_mask::kingAttacks[fromSquare]);
+    pieces = ((petir_bitboard_mask::kingAttacks[kingSquare] & (~enemyAttacks)) & (~position.blackPieces));
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        toSquare = remaining.pop();
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(kingSquare, pas::shiftLeft(toSquare, 7));
+        if ((position.board[toSquare] == 0)) {
+            moveList[moveCount].score = petir_header::blackHistory[petir_header::blackKing][toSquare];
         } else {
-            movelist[jml].score = pas::shl(petir_movgen::nilai_piece[data.papan[post]], 15);
+            moveList[moveCount].score = pas::shiftLeft(petir_movgen::pieceOrderValue[position.board[toSquare]], 15);
         }
     }
-    append_legal_ep_evasions(data,movelist,jml,petir_header::_sisihitam);
-    if ((skakcount == 1)) {
-        skak64 = petir_bitboard_mask::bit(skakpos);
-        path = petir_bitboard_mask::pathmask[posraja][skakpos];
-        piecepos = data.knightblack;
-        for(move_bits<true> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::knightmask[pos];
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = pas::shl(pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_kuda), 15);
-                    if ((movelist[jml].score < 0)) {
-                        movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisihitam, data, pos, post), 15);
+    appendLegalEnPassantEvasions(position,moveList,moveCount,petir_header::blackSide);
+    if ((checkerCount == 1)) {
+        checkerBit = petir_bitboard_mask::squareBit(checkerSquare);
+        blockingSquares = petir_bitboard_mask::betweenMask[kingSquare][checkerSquare];
+        pieces = position.blackKnights;
+        for(move_bits<true> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::knightAttacks[fromSquare];
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::lastBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = pas::shiftLeft(pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue), 15);
+                    if ((moveList[moveCount].score < 0)) {
+                        moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare), 15);
                     }
                 }
             }
-            attack2 = (attack & path);
-            for(move_bits<true> remaining(attack2); remaining; ) {
-                post = remaining.pop();
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = petir_header::historyb[petir_header::_kudahitam][post];
+            answerSquares = (targets & blockingSquares);
+            for(move_bits<true> remaining(answerSquares); remaining; ) {
+                toSquare = remaining.pop();
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = petir_header::blackHistory[petir_header::blackKnight][toSquare];
                 }
             }
         }
-        piecepos = data.pawnblack;
-        for(move_bits<true> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::b_pawn_attack[pos];
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    if ((pas::shr(pos, 3) == 1)) {
-                        pas_temp_1 = petir_header::promosi_kuda;
-                        for (a = petir_header::promosi_mentri; a <= pas_temp_1; ++a) {
-                            (jml = pas::increment(jml, 1));
-                            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(post, 7)), pas::shl(a, 14));
-                            movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_pion);
+        pieces = position.blackPawns;
+        for(move_bits<true> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::blackPawnAttacks[fromSquare];
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::lastBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    if ((pas::shiftRight(fromSquare, 3) == 1)) {
+                        lastCapturePromotionType = petir_header::knightPromotion;
+                        for (promotionType = petir_header::queenPromotion; promotionType <= lastCapturePromotionType; ++promotionType) {
+                            (moveCount = pas::increment(moveCount, 1));
+                            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(toSquare, 7)), pas::shiftLeft(promotionType, 14));
+                            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::pawnOrderValue);
                         }
                     } else {
-                        (jml = pas::increment(jml, 1));
-                        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                        movelist[jml].score = pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_pion);
+                        (moveCount = pas::increment(moveCount, 1));
+                        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::pawnOrderValue);
                     }
                 }
             }
-            attack2 = 0;
-            if ((data.papan[pas::sub(pos, 8)] == 0)) {
-                attack2 = (attack2 | petir_bitboard_mask::bit(pas::sub(pos, 8)));
-                if (((pas::shr(pos, 3) == 6) && (data.papan[pas::sub(pos, 16)] == 0))) {
-                    attack2 = (attack2 | petir_bitboard_mask::bit(pas::sub(pos, 16)));
+            answerSquares = 0;
+            if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
+                answerSquares = (answerSquares | petir_bitboard_mask::squareBit(pas::sub(fromSquare, 8)));
+                if (((pas::shiftRight(fromSquare, 3) == 6) && (position.board[pas::sub(fromSquare, 16)] == 0))) {
+                    answerSquares = (answerSquares | petir_bitboard_mask::squareBit(pas::sub(fromSquare, 16)));
                 }
             }
-            attack2 = (attack2 & path);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    if ((pas::shr(pos, 3) == 1)) {
-                        pas_temp_2 = petir_header::promosi_kuda;
-                        for (a = petir_header::promosi_mentri; a <= pas_temp_2; ++a) {
-                            (jml = pas::increment(jml, 1));
-                            movelist[jml].moves = pas::add(pas::add(pos, pas::shl(post, 7)), pas::shl(a, 14));
-                            movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisihitam, data, pos, post), 15);
-                            if ((movelist[jml].score == 0)) {
-                                movelist[jml].score = pas::shl(3, 15);
+            answerSquares = (answerSquares & blockingSquares);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::lastBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    if ((pas::shiftRight(fromSquare, 3) == 1)) {
+                        lastPushPromotionType = petir_header::knightPromotion;
+                        for (promotionType = petir_header::queenPromotion; promotionType <= lastPushPromotionType; ++promotionType) {
+                            (moveCount = pas::increment(moveCount, 1));
+                            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(toSquare, 7)), pas::shiftLeft(promotionType, 14));
+                            moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare), 15);
+                            if ((moveList[moveCount].score == 0)) {
+                                moveList[moveCount].score = pas::shiftLeft(3, 15);
                             }
                         }
                     } else {
-                        (jml = pas::increment(jml, 1));
-                        movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                        movelist[jml].score = petir_header::historyb[petir_header::_pionhitam][post];
+                        (moveCount = pas::increment(moveCount, 1));
+                        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                        moveList[moveCount].score = petir_header::blackHistory[petir_header::blackPawn][toSquare];
                     }
                 }
             }
         }
-        piecepos = data.bishopblack;
-        for(move_bits<true> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-            attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = pas::shl(pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_gajah), 15);
-                    if ((movelist[jml].score < 0)) {
-                        movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisihitam, data, pos, post), 15);
+        pieces = position.blackBishops;
+        for(move_bits<true> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
+            targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::lastBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = pas::shiftLeft(pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::bishopOrderValue), 15);
+                    if ((moveList[moveCount].score < 0)) {
+                        moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare), 15);
                     }
                 }
             }
-            attack2 = (attack & path);
-            for(move_bits<true> remaining(attack2); remaining; ) {
-                post = remaining.pop();
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = petir_header::historyb[petir_header::_gajahhitam][post];
+            answerSquares = (targets & blockingSquares);
+            for(move_bits<true> remaining(answerSquares); remaining; ) {
+                toSquare = remaining.pop();
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = petir_header::blackHistory[petir_header::blackBishop][toSquare];
                 }
             }
         }
-        piecepos = data.rookblack;
-        for(move_bits<true> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-            attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = pas::shl(pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_benteng), 15);
-                    if ((movelist[jml].score < 0)) {
-                        movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisihitam, data, pos, post), 15);
+        pieces = position.blackRooks;
+        for(move_bits<true> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+            targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::lastBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = pas::shiftLeft(pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::rookOrderValue), 15);
+                    if ((moveList[moveCount].score < 0)) {
+                        moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare), 15);
                     }
                 }
             }
-            attack2 = (attack & path);
-            for(move_bits<true> remaining(attack2); remaining; ) {
-                post = remaining.pop();
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = petir_header::historyb[petir_header::_bentenghitam][post];
+            answerSquares = (targets & blockingSquares);
+            for(move_bits<true> remaining(answerSquares); remaining; ) {
+                toSquare = remaining.pop();
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = petir_header::blackHistory[petir_header::blackRook][toSquare];
                 }
             }
         }
-        piecepos = data.queenblack;
-        for(move_bits<true> remaining(piecepos); remaining; ) {
-            pos = remaining.pop();
-            attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-            attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-            attack = (attack | petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)]);
-            attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-            attack2 = (attack & skak64);
-            if ((attack2 != 0)) {
-                post = petir_bitboard_mask::lastbitp(pas::address(attack2));
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = pas::shl(pas::sub(petir_movgen::nilai_piece[data.papan[post]], petir_movgen::_nilai_mentri), 15);
-                    if ((movelist[jml].score < 0)) {
-                        movelist[jml].score = pas::shl(petir_usee::see(petir_header::_sisihitam, data, pos, post), 15);
+        pieces = position.blackQueens;
+        for(move_bits<true> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
+            targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
+            targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
+            targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
+            answerSquares = (targets & checkerBit);
+            if ((answerSquares != 0)) {
+                toSquare = petir_bitboard_mask::lastBit(pas::address(answerSquares));
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = pas::shiftLeft(pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::queenOrderValue), 15);
+                    if ((moveList[moveCount].score < 0)) {
+                        moveList[moveCount].score = pas::shiftLeft(petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare), 15);
                     }
                 }
             }
-            attack2 = (attack & path);
-            for(move_bits<true> remaining(attack2); remaining; ) {
-                post = remaining.pop();
-                if ((!petir_tools::black_open_check(data, pas::add(pos, pas::shl(post, 7))))) {
-                    (jml = pas::increment(jml, 1));
-                    movelist[jml].moves = pas::add(pos, pas::shl(post, 7));
-                    movelist[jml].score = petir_header::historyb[petir_header::_mentrihitam][post];
+            answerSquares = (targets & blockingSquares);
+            for(move_bits<true> remaining(answerSquares); remaining; ) {
+                toSquare = remaining.pop();
+                if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
+                    (moveCount = pas::increment(moveCount, 1));
+                    moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
+                    moveList[moveCount].score = petir_header::blackHistory[petir_header::blackQueen][toSquare];
                 }
             }
         }
     }
-    jml_out = jml;
+    moveCountOut = moveCount;
 }
 
 }

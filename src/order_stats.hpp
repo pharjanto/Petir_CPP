@@ -11,171 +11,171 @@
 namespace petir_order_stats {
 using u64 = std::uint64_t;
 // Where a searched move came from; tools/order_stats.py uses the same order.
-enum Phase {hash, good_capture, killer1, killer2, killer3, killer4, quiet, bad_capture, evasion_hash, evasion, phase_count};
-inline constexpr int depth_count = 6, index_count = 8, rank_count = 7, q_index_count = 4;
+enum Phase {hash, goodCapture, killer1, killer2, killer3, killer4, quiet, badCapture, evasionHash, evasion, phaseCount};
+inline constexpr int depthCount = 6, indexCount = 8, rankCount = 7, quiescenceIndexCount = 4;
 // Remaining depth in whole plies: 0-1, 2, 3, 4-5, 6-8, 9+.
-inline int depth_bucket(int rlevel) {return rlevel<=1?0:rlevel==2?1:rlevel==3?2:rlevel<=5?3:rlevel<=8?4:5;}
+inline int depthBucket(int plies) {return plies<=1?0:plies==2?1:plies==3?2:plies<=5?3:plies<=8?4:5;}
 // Move number: 1, 2, 3, 4, 5, 6-10, 11-20, 21+.
-inline int index_bucket(int n) {return n<=5?n-1:n<=10?5:n<=20?6:7;}
+inline int indexBucket(int moveNumber) {return moveNumber<=5?moveNumber-1:moveNumber<=10?5:moveNumber<=20?6:7;}
 // Position in the quiet list: 1, 2, 3, 4-5, 6-10, 11-20, 21+.
-inline int rank_bucket(int n) {return n<=3?n-1:n<=5?3:n<=10?4:n<=20?5:6;}
+inline int rankBucket(int listPosition) {return listPosition<=3?listPosition-1:listPosition<=5?3:listPosition<=10?4:listPosition<=20?5:6;}
 // Exact position in the quiet list, 1..39, with 40 and later together.
-inline constexpr int position_count = 40;
-inline int position_index(int n) {return (n<position_count?n:position_count)-1;}
+inline constexpr int positionCount = 40;
+inline int positionIndex(int listPosition) {return (listPosition<positionCount?listPosition:positionCount)-1;}
 
 struct Counters {
     u64 outcome[3][3]{};                        // [expected pv/cut/all][actual pv/cut/all]
-    u64 cut_index[depth_count][index_count]{};  // move number of the cutoff move
-    u64 cut_move_sum[depth_count]{};            // exact sum of those move numbers
-    u64 cut_by_check[2][2]{};                   // [in check][cut on first move]
-    u64 pv_hash[depth_count][2]{};              // expected-PV move loops by hash move available
-    u64 cut_phase[depth_count][phase_count]{};
-    u64 tried_phase[depth_count][phase_count]{};
-    u64 cut_wasted[depth_count]{}, cut_nodes[depth_count]{}; // nodes before the cutoff move / whole loop
-    u64 phase_wasted[depth_count][phase_count]{};            // cut_wasted by phase of the cutoff move
-    u64 cut_by_hash[depth_count][2][2]{};       // [hash move available][cut on first move]
-    u64 hash_wasted[depth_count][2]{}, hash_nodes[depth_count][2]{};
-    u64 cut_by_side[2][2]{};                    // [white to move][cut on first move]
-    u64 quiet_rank[2][rank_count]{};            // [white to move][quiet list position]
-    u64 quiet_tried_rank[2][rank_count]{};
-    u64 quiet_zero_score{}, quiet_list_moves{};
-    u64 quiet_pos_cut[position_count]{}, quiet_pos_tried[position_count]{}; // by exact list position
-    u64 pv_best_index[index_count]{};
-    u64 reduced{}, lmr_research{}, lmr_held{}, pvs_research{}, pvs_raised{};
-    u64 root_calls{}, root_fail_low{}, root_best_index[index_count]{}, root_best_changes{};
-    u64 root_nodes_first{}, root_nodes{}, root_research{}, root_raised{};
-    u64 q_cut_index[q_index_count]{}, q_nodes{};
+    u64 cutIndex[depthCount][indexCount]{};  // move number of the cutoff move
+    u64 cutMoveSum[depthCount]{};            // exact sum of those move numbers
+    u64 cutByCheck[2][2]{};                   // [in check][cut on first move]
+    u64 pvHash[depthCount][2]{};              // expected-PV move loops by hash move available
+    u64 cutPhase[depthCount][phaseCount]{};
+    u64 triedPhase[depthCount][phaseCount]{};
+    u64 cutWasted[depthCount]{}, cutNodes[depthCount]{}; // nodes before the cutoff move / whole loop
+    u64 phaseWasted[depthCount][phaseCount]{};            // cutWasted by phase of the cutoff move
+    u64 cutByHash[depthCount][2][2]{};       // [hash move available][cut on first move]
+    u64 hashWasted[depthCount][2]{}, hashNodes[depthCount][2]{};
+    u64 cutBySide[2][2]{};                    // [white to move][cut on first move]
+    u64 quietRank[2][rankCount]{};            // [white to move][quiet list position]
+    u64 quietTriedRank[2][rankCount]{};
+    u64 quietZeroScore{}, quietListMoves{};
+    u64 quietPositionCut[positionCount]{}, quietPositionTried[positionCount]{}; // by exact list position
+    u64 pvBestIndex[indexCount]{};
+    u64 reduced{}, lmrResearch{}, lmrHeld{}, pvsResearch{}, pvsRaised{};
+    u64 rootCalls{}, rootFailLow{}, rootBestIndex[indexCount]{}, rootBestChanges{};
+    u64 rootNodesFirst{}, rootNodes{}, rootResearch{}, rootRaised{};
+    u64 quiescenceCutIndex[quiescenceIndexCount]{}, quiescenceNodes{};
 };
 inline Counters counters;
 
 // Differences stay right if the 32-bit node counter wraps.
-inline std::uint32_t nodes() {return static_cast<std::uint32_t>(petir_header::total_node);}
+inline std::uint32_t nodeCounter() {return static_cast<std::uint32_t>(petir_header::nodeCount);}
 
-// One mainsearch move loop.
+// One mainSearch move loop.
 class SearchNode {
     int depth, expected, best=0, rank=0, list=0, score=0;
-    bool white, has_hash, incheck;
+    bool isWhite, hasHash, inCheck;
     Phase phase=hash;
-    std::uint32_t start=nodes(), move_start=start;
+    std::uint32_t start=nodeCounter(), moveStart=start;
 public:
-    SearchNode(int rlevel, int giliran, int hmoves, int nodetype, bool incheck)
-        : depth(depth_bucket(rlevel)),
-          expected(nodetype==petir_search::node_pv?0:nodetype==petir_search::node_cut?1:2),
-          white(giliran==petir_header::_sisiputih), has_hash(hmoves!=petir_header::_no_move), incheck(incheck) {
-        if(expected==0)++counters.pv_hash[depth][has_hash];
+    SearchNode(int plies, int sideToMove, int hashMove, int nodeType, bool isInCheck)
+        : depth(depthBucket(plies)),
+          expected(nodeType==petir_search::pvNode?0:nodeType==petir_search::cutNode?1:2),
+          isWhite(sideToMove==petir_header::whiteSide), hasHash(hashMove!=petir_header::noMove), inCheck(isInCheck) {
+        if(expected==0)++counters.pvHash[depth][hasHash];
     }
     // Called once the move is made and known legal; the picker state still
     // describes the phase that produced it.
-    void move(int moves, int hmoves, int fase, int curmovenoncap, int jmlnoncap, const petir_header::tmovelist& ml) {
-        move_start = nodes()-1; // makemove has already counted this move
-        if(incheck)phase = moves==hmoves?evasion_hash:evasion;
-        else if(moves==hmoves)phase = hash;
-        else switch(fase) {
-            case petir_header::_goodcaps: phase = good_capture; break;
-            case petir_header::_killermoves2: phase = killer1; break;
-            case petir_header::_killermoves3: phase = killer2; break;
-            case petir_header::_killermoves4: phase = killer3; break;
+    void move(int searchedMove, int hashMove, int pickerPhase, int quietIndex, int quietMoveCount, const petir_header::tmovelist& quietList) {
+        moveStart = nodeCounter()-1; // makemove has already counted this move
+        if(inCheck)phase = searchedMove==hashMove?evasionHash:evasion;
+        else if(searchedMove==hashMove)phase = hash;
+        else switch(pickerPhase) {
+            case petir_header::goodCapturesPhase: phase = goodCapture; break;
+            case petir_header::killerMove2Phase: phase = killer1; break;
+            case petir_header::killerMove3Phase: phase = killer2; break;
+            case petir_header::killerMove4Phase: phase = killer3; break;
             // The last killer leaves the picker in the quiet phase before any
             // quiet move has been generated.
-            case petir_header::_othermoves: phase = curmovenoncap==0?killer4:quiet; break;
-            default: phase = bad_capture;
+            case petir_header::otherMovesPhase: phase = quietIndex==0?killer4:quiet; break;
+            default: phase = badCapture;
         }
-        ++counters.tried_phase[depth][phase];
+        ++counters.triedPhase[depth][phase];
         if(phase==quiet) {
-            rank=curmovenoncap;list=jmlnoncap;score=ml[curmovenoncap].score;
-            ++counters.quiet_tried_rank[white][rank_bucket(rank)];
-            ++counters.quiet_pos_tried[position_index(rank)];
+            rank=quietIndex;list=quietMoveCount;score=quietList[quietIndex].score;
+            ++counters.quietTriedRank[isWhite][rankBucket(rank)];
+            ++counters.quietPositionTried[positionIndex(rank)];
         }
     }
-    void searching(int areduce) {if(areduce!=0)++counters.reduced;}
-    void pvs_research() {++counters.pvs_research;}
-    void pvs_result(bool raised) {counters.pvs_raised+=raised;}
-    void lmr_research() {++counters.lmr_research;}
-    void lmr_result(bool held) {counters.lmr_held+=held;}
-    void raised(int legalmove) {best=legalmove;}
-    void cutoff(int legalmove) {
-        const std::uint32_t wasted=move_start-start, total=nodes()-start;
-        const bool first=legalmove==1;
-        ++counters.cut_index[depth][index_bucket(legalmove)];
-        counters.cut_move_sum[depth]+=legalmove;
-        ++counters.cut_by_check[incheck][first];
-        ++counters.cut_phase[depth][phase];
-        counters.cut_wasted[depth]+=wasted;counters.cut_nodes[depth]+=total;
-        counters.phase_wasted[depth][phase]+=wasted;
-        ++counters.cut_by_hash[depth][has_hash][first];
-        counters.hash_wasted[depth][has_hash]+=wasted;counters.hash_nodes[depth][has_hash]+=total;
-        ++counters.cut_by_side[white][first];
+    void searching(int reduction) {if(reduction!=0)++counters.reduced;}
+    void pvsResearch() {++counters.pvsResearch;}
+    void pvsResult(bool wasRaised) {counters.pvsRaised+=wasRaised;}
+    void lmrResearch() {++counters.lmrResearch;}
+    void lmrResult(bool wasHeld) {counters.lmrHeld+=wasHeld;}
+    void raised(int moveNumber) {best=moveNumber;}
+    void cutoff(int moveNumber) {
+        const std::uint32_t wasted=moveStart-start, total=nodeCounter()-start;
+        const bool isFirst=moveNumber==1;
+        ++counters.cutIndex[depth][indexBucket(moveNumber)];
+        counters.cutMoveSum[depth]+=moveNumber;
+        ++counters.cutByCheck[inCheck][isFirst];
+        ++counters.cutPhase[depth][phase];
+        counters.cutWasted[depth]+=wasted;counters.cutNodes[depth]+=total;
+        counters.phaseWasted[depth][phase]+=wasted;
+        ++counters.cutByHash[depth][hasHash][isFirst];
+        counters.hashWasted[depth][hasHash]+=wasted;counters.hashNodes[depth][hasHash]+=total;
+        ++counters.cutBySide[isWhite][isFirst];
         if(phase==quiet) {
-            ++counters.quiet_rank[white][rank_bucket(rank)];
-            ++counters.quiet_pos_cut[position_index(rank)];
-            counters.quiet_zero_score+=score==0;counters.quiet_list_moves+=list;
+            ++counters.quietRank[isWhite][rankBucket(rank)];
+            ++counters.quietPositionCut[positionIndex(rank)];
+            counters.quietZeroScore+=score==0;counters.quietListMoves+=list;
         }
     }
-    void finish(int g, int alpha, int beta, int legalmove) {
-        if(legalmove==0)return;
-        const int actual=g>=beta?1:g<=alpha?2:0;
-        ++counters.outcome[expected][actual];
-        if(actual==0 && best>0)++counters.pv_best_index[index_bucket(best)];
+    void finish(int bestScore, int alpha, int beta, int legalMoveCount) {
+        if(legalMoveCount==0)return;
+        const int actualType=bestScore>=beta?1:bestScore<=alpha?2:0;
+        ++counters.outcome[expected][actualType];
+        if(actualType==0 && best>0)++counters.pvBestIndex[indexBucket(best)];
     }
 };
 
-// One searchroot call: an iteration or an aspiration re-search.
+// One searchRoot call: an iteration or an aspiration re-search.
 class RootNode {
-    std::uint32_t start=nodes(), first_end=0;
+    std::uint32_t start=nodeCounter(), firstEnd=0;
     int best=0;
 public:
-    void move(int legalmove) {if(legalmove==2)first_end=nodes()-1;}
-    void research() {++counters.root_research;}
-    void research_result(bool raised) {counters.root_raised+=raised;}
-    void raised(int legalmove) {best=legalmove;counters.root_best_changes+=legalmove>1;}
+    void move(int moveNumber) {if(moveNumber==2)firstEnd=nodeCounter()-1;}
+    void research() {++counters.rootResearch;}
+    void researchResult(bool wasRaised) {counters.rootRaised+=wasRaised;}
+    void raised(int moveNumber) {best=moveNumber;counters.rootBestChanges+=moveNumber>1;}
     void finish() {
-        ++counters.root_calls;
-        if(best>0)++counters.root_best_index[index_bucket(best)];else ++counters.root_fail_low;
-        const std::uint32_t end=nodes();
-        counters.root_nodes+=end-start;counters.root_nodes_first+=(first_end?first_end:end)-start;
+        ++counters.rootCalls;
+        if(best>0)++counters.rootBestIndex[indexBucket(best)];else ++counters.rootFailLow;
+        const std::uint32_t endNodes=nodeCounter();
+        counters.rootNodes+=endNodes-start;counters.rootNodesFirst+=(firstEnd?firstEnd:endNodes)-start;
     }
 };
 
 // Quiescence nodes not in check; searched counts moves actually searched.
-inline void q_cutoff(bool incheck, int searched) {
-    if(incheck)return;
-    ++counters.q_nodes;++counters.q_cut_index[searched<4?searched-1:3];
+inline void quiescenceCutoff(bool inCheck, int searchedCount) {
+    if(inCheck)return;
+    ++counters.quiescenceNodes;++counters.quiescenceCutIndex[searchedCount<4?searchedCount-1:3];
 }
-inline void q_done(bool incheck, int searched) {if(!incheck && searched>0)++counters.q_nodes;}
+inline void quiescenceDone(bool inCheck, int searchedCount) {if(!inCheck && searchedCount>0)++counters.quiescenceNodes;}
 
-inline void put(std::string& s, u64 v) {s+=std::to_string(v);}
-template<class T, std::size_t N> void put(std::string& s, const T (&a)[N]) {
-    s+='[';
-    for(std::size_t i=0;i<N;++i) {if(i)s+=',';put(s,a[i]);}
-    s+=']';
+inline void put(std::string& text, u64 value) {text+=std::to_string(value);}
+template<class T, std::size_t N> void put(std::string& text, const T (&values)[N]) {
+    text+='[';
+    for(std::size_t index=0;index<N;++index) {if(index)text+=',';put(text,values[index]);}
+    text+=']';
 }
 inline std::string report() {
-    const auto& c=counters;
-    std::string s="orderstats {";
-    bool first=true;
-    auto add=[&](const char* name, const auto& value) {
-        if(!first)s+=',';
-        first=false;s+='"';s+=name;s+="\":";put(s,value);
+    const auto& current=counters;
+    std::string text="orderstats {";
+    bool isFirst=true;
+    auto addField=[&](const char* fieldName, const auto& value) {
+        if(!isFirst)text+=',';
+        isFirst=false;text+='"';text+=fieldName;text+="\":";put(text,value);
     };
-    add("outcome",c.outcome);add("cut_index",c.cut_index);add("cut_move_sum",c.cut_move_sum);
-    add("cut_by_check",c.cut_by_check);add("pv_hash",c.pv_hash);add("cut_phase",c.cut_phase);
-    add("tried_phase",c.tried_phase);add("cut_wasted",c.cut_wasted);add("cut_nodes",c.cut_nodes);
-    add("phase_wasted",c.phase_wasted);
-    add("cut_by_hash",c.cut_by_hash);add("hash_wasted",c.hash_wasted);add("hash_nodes",c.hash_nodes);
-    add("cut_by_side",c.cut_by_side);add("quiet_rank",c.quiet_rank);add("quiet_tried_rank",c.quiet_tried_rank);
-    add("quiet_zero_score",c.quiet_zero_score);add("quiet_list_moves",c.quiet_list_moves);
-    add("quiet_pos_cut",c.quiet_pos_cut);add("quiet_pos_tried",c.quiet_pos_tried);
-    add("pv_best_index",c.pv_best_index);add("reduced",c.reduced);
-    add("lmr_research",c.lmr_research);add("lmr_held",c.lmr_held);
-    add("pvs_research",c.pvs_research);add("pvs_raised",c.pvs_raised);
-    add("root_calls",c.root_calls);add("root_fail_low",c.root_fail_low);
-    add("root_best_index",c.root_best_index);add("root_best_changes",c.root_best_changes);
-    add("root_nodes_first",c.root_nodes_first);add("root_nodes",c.root_nodes);
-    add("root_research",c.root_research);add("root_raised",c.root_raised);
-    add("q_cut_index",c.q_cut_index);add("q_nodes",c.q_nodes);
-    s+='}';
+    addField("outcome",current.outcome);addField("cut_index",current.cutIndex);addField("cut_move_sum",current.cutMoveSum);
+    addField("cut_by_check",current.cutByCheck);addField("pv_hash",current.pvHash);addField("cut_phase",current.cutPhase);
+    addField("tried_phase",current.triedPhase);addField("cut_wasted",current.cutWasted);addField("cut_nodes",current.cutNodes);
+    addField("phase_wasted",current.phaseWasted);
+    addField("cut_by_hash",current.cutByHash);addField("hash_wasted",current.hashWasted);addField("hash_nodes",current.hashNodes);
+    addField("cut_by_side",current.cutBySide);addField("quiet_rank",current.quietRank);addField("quiet_tried_rank",current.quietTriedRank);
+    addField("quiet_zero_score",current.quietZeroScore);addField("quiet_list_moves",current.quietListMoves);
+    addField("quiet_pos_cut",current.quietPositionCut);addField("quiet_pos_tried",current.quietPositionTried);
+    addField("pv_best_index",current.pvBestIndex);addField("reduced",current.reduced);
+    addField("lmr_research",current.lmrResearch);addField("lmr_held",current.lmrHeld);
+    addField("pvs_research",current.pvsResearch);addField("pvs_raised",current.pvsRaised);
+    addField("root_calls",current.rootCalls);addField("root_fail_low",current.rootFailLow);
+    addField("root_best_index",current.rootBestIndex);addField("root_best_changes",current.rootBestChanges);
+    addField("root_nodes_first",current.rootNodesFirst);addField("root_nodes",current.rootNodes);
+    addField("root_research",current.rootResearch);addField("root_raised",current.rootRaised);
+    addField("q_cut_index",current.quiescenceCutIndex);addField("q_nodes",current.quiescenceNodes);
+    text+='}';
     counters={};
-    return s;
+    return text;
 }
 }
 #else

@@ -1,54 +1,54 @@
 #include "petir.hpp"
 
 namespace petir {
-TimeManager search_time;
+TimeManager searchTime;
 TimeBudget TimeManager::allocate(const ClockLimits& limits) {
     if(!limits.timed)return {};
-    const auto overhead=std::int64_t(std::max(0,limits.overhead_ms));
-    if(limits.movetime_ms>=0) {
-        const auto available=std::max<std::int64_t>(0,limits.movetime_ms-overhead);
-        return {true,available<=2,available,available};
+    const auto overheadMs=std::int64_t(std::max(0,limits.overheadMs));
+    if(limits.moveTimeMs>=0) {
+        const auto availableMs=std::max<std::int64_t>(0,limits.moveTimeMs-overheadMs);
+        return {true,availableMs<=2,availableMs,availableMs};
     }
-    const auto remaining=std::max<std::int64_t>(0,limits.remaining_ms);
-    const auto available=std::max<std::int64_t>(0,remaining-overhead);
-    const auto horizon=std::int64_t(limits.moves_to_go>0?std::clamp(limits.moves_to_go,1,100):30);
+    const auto remainingMs=std::max<std::int64_t>(0,limits.remainingMs);
+    const auto availableMs=std::max<std::int64_t>(0,remainingMs-overheadMs);
+    const auto horizonMoves=std::int64_t(limits.movesToGo>0?std::clamp(limits.movesToGo,1,100):30);
     // Bank future response overhead, especially in long games without increment.
-    const auto bank=std::min(remaining/2,overhead*(horizon+1));
-    const auto distributable=std::max<std::int64_t>(0,remaining-bank);
-    const auto increment=std::max<std::int64_t>(0,limits.increment_ms);
-    const auto soft=std::min(available,std::max<std::int64_t>(1,distributable/horizon+increment*4/5));
-    const auto hard=std::min(available,soft*3);
-    return {true,available<=5,soft,hard};
+    const auto bankMs=std::min(remainingMs/2,overheadMs*(horizonMoves+1));
+    const auto distributableMs=std::max<std::int64_t>(0,remainingMs-bankMs);
+    const auto incrementMs=std::max<std::int64_t>(0,limits.incrementMs);
+    const auto softMs=std::min(availableMs,std::max<std::int64_t>(1,distributableMs/horizonMoves+incrementMs*4/5));
+    const auto hardMs=std::min(availableMs,softMs*3);
+    return {true,availableMs<=5,softMs,hardMs};
 }
-void TimeManager::start(const TimeBudget& budget,std::int64_t received_at) {
-    origin_=received_at;base_soft_=budget.soft_ms;
-    soft_deadline_=budget.timed?received_at+budget.soft_ms:0;
-    hard_deadline_=budget.timed?received_at+budget.hard_ms:0;
+void TimeManager::start(const TimeBudget& budget,std::int64_t receivedAt) {
+    originMs=receivedAt;baseSoftMs=budget.softMs;
+    softDeadlineMs=budget.timed?receivedAt+budget.softMs:0;
+    hardDeadlineMs=budget.timed?receivedAt+budget.hardMs:0;
 }
-void TimeManager::tighten(std::int64_t received_at,std::int64_t remaining_ms,int overhead_ms) {
-    const auto cap=received_at+std::max<std::int64_t>(0,remaining_ms-std::max(0,overhead_ms));
-    auto end=hard_deadline_.load();
-    while(end && end>cap && !hard_deadline_.compare_exchange_weak(end,cap)) {}
-    auto soft=soft_deadline_.load();
-    while(soft && soft>cap && !soft_deadline_.compare_exchange_weak(soft,cap)) {}
+void TimeManager::tighten(std::int64_t receivedAt,std::int64_t remainingMs,int overheadMs) {
+    const auto capMs=receivedAt+std::max<std::int64_t>(0,remainingMs-std::max(0,overheadMs));
+    auto endMs=hardDeadlineMs.load();
+    while(endMs && endMs>capMs && !hardDeadlineMs.compare_exchange_weak(endMs,capMs)) {}
+    auto softMs=softDeadlineMs.load();
+    while(softMs && softMs>capMs && !softDeadlineMs.compare_exchange_weak(softMs,capMs)) {}
 }
-bool TimeManager::can_start_iteration(std::int64_t last_iteration_ms) const {
-    const auto hard=hard_deadline_.load();
-    if(!hard)return true;
-    const auto now=now_ms();
-    return now<soft_deadline_.load() && now+std::max<std::int64_t>(1,last_iteration_ms*2)<hard;
+bool TimeManager::canStartIteration(std::int64_t lastIterationMs) const {
+    const auto hardMs=hardDeadlineMs.load();
+    if(!hardMs)return true;
+    const auto currentMs=nowMs();
+    return currentMs<softDeadlineMs.load() && currentMs+std::max<std::int64_t>(1,lastIterationMs*2)<hardMs;
 }
-void TimeManager::adjust_soft(double fraction) {
-    const auto hard=hard_deadline_.load();
-    if(!hard)return;
-    const auto delta=static_cast<std::int64_t>(base_soft_.load()*fraction);
-    auto soft=soft_deadline_.load();
-    while(!soft_deadline_.compare_exchange_weak(soft,std::clamp(soft+delta,std::min(hard,origin_.load()+1),hard))) {}
+void TimeManager::adjustSoft(double fraction) {
+    const auto hardMs=hardDeadlineMs.load();
+    if(!hardMs)return;
+    const auto deltaMs=static_cast<std::int64_t>(baseSoftMs.load()*fraction);
+    auto softMs=softDeadlineMs.load();
+    while(!softDeadlineMs.compare_exchange_weak(softMs,std::clamp(softMs+deltaMs,std::min(hardMs,originMs.load()+1),hardMs))) {}
 }
-bool search_should_stop(bool force) {
-    if(petir_header::stop_process.load(std::memory_order_relaxed))return true;
-    if(!search_time.expired(force))return false;
-    petir_header::stop_process.store(true,std::memory_order_relaxed);
+bool searchShouldStop(bool force) {
+    if(petir_header::stopSearch.load(std::memory_order_relaxed))return true;
+    if(!searchTime.expired(force))return false;
+    petir_header::stopSearch.store(true,std::memory_order_relaxed);
     return true;
 }
 }

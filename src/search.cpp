@@ -4,287 +4,284 @@
 #include <algorithm>
 #include <cstdlib>
 namespace petir_search {
-pas::Array<std::int32_t, 0, 63> curr_move{};
-pas::Array<std::int32_t, 0, 63> curr_piece{};
-pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> hist_tried{};
-pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> hist_succ{};
-pas::Array<petir_search::anonymous_record_1, 0, 63> stack{};
-std::int32_t rs{};
-// The original rlevel*rlevel step, capped well inside the history limit.
-static std::int32_t history_bonus(std::int32_t rlevel) {return std::min(pas::mul(rlevel, rlevel), petir_header::history_max / 4);}
-// The change for a bonus or penalty: it moves the entry toward +history_max or
-// -history_max and shrinks as the entry nears that limit.
-static std::int32_t history_step(std::int32_t entry, std::int32_t bonus) {return bonus - entry * std::abs(bonus) / petir_header::history_max;}
+pas::Array<std::int32_t, 0, 63> currentMove{};
+pas::Array<std::int32_t, 0, 63> currentPiece{};
+pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> historyTried{};
+pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> historySucceeded{};
+pas::Array<petir_search::anonymous_record_1, 0, 63> searchStack{};
+std::int32_t researchCount{};
+// The original plies*plies step, capped well inside the history limit.
+static std::int32_t historyBonus(std::int32_t plies) {return std::min(pas::mul(plies, plies), petir_header::historyLimit / 4);}
+// The change for a bonus or penalty: it moves the entry toward +historyLimit or
+// -historyLimit and shrinks as the entry nears that limit.
+static std::int32_t historyStep(std::int32_t entry, std::int32_t bonus) {return bonus - entry * std::abs(bonus) / petir_header::historyLimit;}
 // SEE pruning of quiet moves: up to this many plies left, a quiet move whose SEE
 // (in pawns) is below the margin is skipped. The margin grows with the square of
 // the plies left: 0 up to 2 plies (any loss), -1 at 3, -2 at 4, -3 at 5, -4 at 6.
-static constexpr std::int32_t see_quiet_max_rlevel = 6;
-static std::int32_t see_quiet_margin(std::int32_t rlevel) {return -(rlevel * rlevel / 8);}
+static constexpr std::int32_t seeQuietMaxPlies = 6;
+static std::int32_t seeQuietMargin(std::int32_t plies) {return -(plies * plies / 8);}
 // The continuation-history table of the move made at ply d; none above the
 // root or after a null move.
-static petir_header::piece_to_history* continuation(std::int32_t d) {
-    if ((d < 0) || (petir_search::curr_move[d] == petir_header::_no_move)) return nullptr;
-    return &petir_header::conthist[petir_search::curr_piece[d]][(pas::shr(petir_search::curr_move[d], 7) & 127)];
+static petir_header::piece_to_history* continuationTable(std::int32_t ply) {
+    if ((ply < 0) || (petir_search::currentMove[ply] == petir_header::noMove)) return nullptr;
+    return &petir_header::continuationHistory[petir_search::currentPiece[ply]][(pas::shiftRight(petir_search::currentMove[ply], 7) & 127)];
 }
 // search.pas:44
-void empty_historytable() {
-    pas::fillchar(petir_search::hist_tried, sizeof(petir_search::hist_tried), 0);
-    pas::fillchar(petir_search::hist_succ, sizeof(petir_search::hist_succ), 0);
+void clearHistoryTables() {
+    pas::fillChar(petir_search::historyTried, sizeof(petir_search::historyTried), 0);
+    pas::fillChar(petir_search::historySucceeded, sizeof(petir_search::historySucceeded), 0);
 }
 
 // search.pas:72
-std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, petir_header::tdata& data, bool nullmove, std::int32_t depth, std::int32_t cext, bool nmtree, std::int32_t reduced, std::int32_t nodetype) {
-    std::int32_t return_value{};
-    std::int32_t g{};
-    std::int32_t fase{};
-    petir_header::tdata temp{};
+std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit, bool inNullMoveTree, std::int32_t reduced, std::int32_t nodeType) {
+    std::int32_t result{};
+    std::int32_t bestScore{};
+    std::int32_t phase{};
+    petir_header::tdata savedPosition{};
     // Generators write both fields in entries 1..count before move ordering.
     // Avoid clearing two 2 KiB buffers on every node; capacity checks remain.
-    petir_header::tmovelist ml;
-    petir_header::tmovelist mlcap;
-    std::int32_t curmovecap{};
-    std::int32_t curmovenoncap{};
-    std::int32_t jmlcap{};
-    std::int32_t jmlnoncap{};
-    std::int32_t newlevel{};
-    std::int32_t nlev{};
-    std::int32_t jml{};
-    std::int32_t tcext{};
-    std::int32_t t_alpha{};
-    std::int32_t t_beta{};
-    std::int32_t nilai{};
-    std::int32_t tempi{};
-    std::int32_t areduce{};
-    std::uint8_t sto{};
-    bool nullmoveok{};
-    bool incheck{};
-    std::uint64_t pin_mask{};
-    bool mte{};
-    std::uint64_t h{};
-    std::int32_t goodcap{};
-    std::int32_t tempep{};
-    std::uint8_t r{};
-    std::uint8_t stat{};
-    std::int32_t rlevel{};
-    std::int32_t legalmove{};
-    std::int32_t moves{};
-    std::int32_t hmoves{};
-    std::int32_t tmoves{};
-    std::int32_t neval{};
-    bool futflag{};
-    bool scoredraw{};
-    bool isscoredraw{};
-    bool donotreduce{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
+    petir_header::tmovelist quietList;
+    petir_header::tmovelist captureList;
+    std::int32_t captureIndex{};
+    std::int32_t quietIndex{};
+    std::int32_t captureCount{};
+    std::int32_t quietMoveCount{};
+    std::int32_t newDepth{};
+    std::int32_t nextDepth{};
+    std::int32_t evasionCount{};
+    std::int32_t savedExtensionCredit{};
+    std::int32_t currentAlpha{};
+    std::int32_t currentBeta{};
+    std::int32_t score{};
+    std::int32_t quickEstimate{};
+    std::int32_t reduction{};
+    std::uint8_t toSquare{};
+    bool inCheck{};
+    std::uint64_t pinnedMask{};
+    bool mateThreatExtended{};
+    std::uint64_t savedHashKey{};
+    std::int32_t bestCaptureGain{};
+    std::int32_t savedEnPassant{};
+    std::int32_t remainingPlies{};
+    std::int32_t legalMoveCount{};
+    std::int32_t move{};
+    std::int32_t hashMove{};
+    std::int32_t bestMove{};
+    std::int32_t staticEval{};
+    bool avoidNullMove{};
+    bool isRepetitionDraw{};
+    bool bestIsRepetitionDraw{};
+    bool doNotReduce{};
+    std::int32_t remainingPliesCase{};
+    std::int32_t razorPliesCase{};
     // Quiet moves searched at this node, penalised when another quiet move is best.
-    std::int32_t quiets[64];
-    std::int32_t quiet_count = 0;
+    std::int32_t searchedQuiets[64];
+    std::int32_t searchedQuietCount = 0;
 // search.pas:91
-    auto get_moving_piece = [&]() -> std::int8_t {
-    std::int8_t return_value{};
-    return_value = temp.papan[(moves & 127)];
-    return return_value;
+    auto movingPiece = [&]() -> std::int8_t {
+    std::int8_t result{};
+    result = savedPosition.board[(move & 127)];
+    return result;
 };
 
 // search.pas:97
-    auto get_dest = [&](std::int32_t sto) -> std::int8_t {
-    std::int8_t return_value{};
-    std::int32_t pas_temp_1{};
-    return_value = pas::negate(1);
-    pas_temp_1 = sto;
-    if (((pas_temp_1 == petir_header::_rokadepanjang))) {
-        if ((giliran == petir_header::_sisiputih)) {
-            return_value = petir_header::c1;
+    auto destinationSquare = [&](std::int32_t toSquare) -> std::int8_t {
+    std::int8_t result{};
+    std::int32_t target{};
+    result = pas::negate(1);
+    target = toSquare;
+    if (((target == petir_header::longCastleTarget))) {
+        if ((sideToMove == petir_header::whiteSide)) {
+            result = petir_header::c1;
         } else {
-            return_value = petir_header::c8;
+            result = petir_header::c8;
         }
     }
-    else if (((pas_temp_1 == petir_header::_rokadependek))) {
-        if ((giliran == petir_header::_sisiputih)) {
-            return_value = petir_header::g1;
+    else if (((target == petir_header::shortCastleTarget))) {
+        if ((sideToMove == petir_header::whiteSide)) {
+            result = petir_header::g1;
         } else {
-            return_value = petir_header::g8;
+            result = petir_header::g8;
         }
     }
     else {
-        return_value = sto;
+        result = toSquare;
     }
-    return return_value;
+    return result;
 };
 
 // search.pas:107
-    auto seval = [&]() -> std::int32_t {
-    std::int32_t return_value{};
-    if (((neval == petir_search::noval) && (depth >= 2))) {
-        return_value = petir_ueval::eval(data, giliran, pas::negate(petir_header::_infinity), petir_header::_infinity);
+    auto staticEvaluation = [&]() -> std::int32_t {
+    std::int32_t result{};
+    if (((staticEval == petir_search::noValue) && (ply >= 2))) {
+        result = petir_ueval::evaluate(position, sideToMove, pas::negate(petir_header::infinity), petir_header::infinity);
     } else {
-        return_value = neval;
+        result = staticEval;
     }
-    return return_value;
+    return result;
 };
 
     // Portability guards: stop safely and keep the original 64-ply arrays in bounds.
-    if (petir::search_should_stop())return 0;
-    if (depth >= 63) return petir_ueval::eval(data, giliran, alpha, beta);
+    if (petir::searchShouldStop())return 0;
+    if (ply >= 63) return petir_ueval::evaluate(position, sideToMove, alpha, beta);
     // Continuation-history tables of the opponent's move into this node and of
     // our move before it.
-    petir_header::piece_to_history* const cont[2] = {continuation(pas::sub(depth, 1)), continuation(pas::sub(depth, 2))};
-    petir_search::stack[depth].ext = false;
-    if ((data.move50count >= 101)) {
-        return_value = petir_header::contemp_draw;
-        return return_value;
+    petir_header::piece_to_history* const continuationTables[2] = {continuationTable(pas::sub(ply, 1)), continuationTable(pas::sub(ply, 2))};
+    petir_search::searchStack[ply].checkExtended = false;
+    if ((position.fiftyMoveCounter >= 101)) {
+        result = petir_header::drawScore;
+        return result;
     }
-    hmoves = petir_header::_no_move;
-    futflag = false;
-    if ((petir_hashing::searchhash(data.hashkey, alpha, beta, level, giliran, nilai, hmoves, futflag, data.move50count) && (nodetype != petir_search::node_pv))) {
-        return_value = nilai;
-        return return_value;
+    hashMove = petir_header::noMove;
+    avoidNullMove = false;
+    if ((petir_hashing::probeHash(position.hashKey, alpha, beta, searchDepth, sideToMove, score, hashMove, avoidNullMove, position.fiftyMoveCounter) && (nodeType != petir_search::pvNode))) {
+        result = score;
+        return result;
     }
-    h = data.hashkey;
-    rlevel = pas::shr(level, 3);
-    mte = false;
-    if ((giliran == petir_header::_sisiputih)) {
-        if (petir_tools::white_checked(data)) {
-            incheck = true;
-            petir_search::stack[depth].ext = true;
-            if ((cext > 0)) {
-                if (((pas::add(data.nilai_perwira_putih, data.nilai_perwira_hitam) > 24) || (alpha != pas::sub(beta, 1)))) {
-                    (level = pas::increment(level, 6));
+    savedHashKey = position.hashKey;
+    remainingPlies = pas::shiftRight(searchDepth, 3);
+    mateThreatExtended = false;
+    if ((sideToMove == petir_header::whiteSide)) {
+        if (petir_tools::whiteInCheck(position)) {
+            inCheck = true;
+            petir_search::searchStack[ply].checkExtended = true;
+            if ((extensionCredit > 0)) {
+                if (((pas::add(position.whiteNonPawnMaterial, position.blackNonPawnMaterial) > 24) || (alpha != pas::sub(beta, 1)))) {
+                    (searchDepth = pas::increment(searchDepth, 6));
                 } else {
-                    (level = pas::increment(level, 2));
+                    (searchDepth = pas::increment(searchDepth, 2));
                 }
             }
             goto nonullmove;
         } else {
-            incheck = false;
+            inCheck = false;
         }
     } else {
-        if (petir_tools::black_checked(data)) {
-            incheck = true;
-            petir_search::stack[depth].ext = true;
-            if ((cext > 0)) {
-                if (((pas::add(data.nilai_perwira_putih, data.nilai_perwira_hitam) > 24) || (alpha != pas::sub(beta, 1)))) {
-                    (level = pas::increment(level, 6));
+        if (petir_tools::blackInCheck(position)) {
+            inCheck = true;
+            petir_search::searchStack[ply].checkExtended = true;
+            if ((extensionCredit > 0)) {
+                if (((pas::add(position.whiteNonPawnMaterial, position.blackNonPawnMaterial) > 24) || (alpha != pas::sub(beta, 1)))) {
+                    (searchDepth = pas::increment(searchDepth, 6));
                 } else {
-                    (level = pas::increment(level, 2));
+                    (searchDepth = pas::increment(searchDepth, 2));
                 }
             }
             goto nonullmove;
         } else {
-            incheck = false;
+            inCheck = false;
         }
     }
-    petir_search::stack[depth].mte = false;
-    if (((((((rlevel >= 2) && (beta < pas::sub(petir_header::_infinity, 100))) && (!nullmove)) && (petir_ueval::materialvalue(giliran, data.materialscore) >= pas::negate(500))) && (alpha == pas::sub(beta, 1))) && (!futflag))) {
-        if ((giliran == petir_header::_sisiputih)) {
-            tempep = data.nilai_perwira_putih;
+    petir_search::searchStack[ply].mateThreatExtended = false;
+    if (((((((remainingPlies >= 2) && (beta < pas::sub(petir_header::infinity, 100))) && (!afterNullMove)) && (petir_ueval::materialForSide(sideToMove, position.materialScore) >= pas::negate(500))) && (alpha == pas::sub(beta, 1))) && (!avoidNullMove))) {
+        if ((sideToMove == petir_header::whiteSide)) {
+            savedEnPassant = position.whiteNonPawnMaterial;
         } else {
-            tempep = data.nilai_perwira_hitam;
+            savedEnPassant = position.blackNonPawnMaterial;
         }
-        if ((tempep >= 3)) {
-            tempep = data.ep;
-            pas_temp_1 = rlevel;
-            if (((pas_temp_1 == 4))) {
-                if ((petir_ueval::materialvalue(giliran, data.materialscore) >= pas::add(alpha, 500))) {
-                    newlevel = pas::sub(level, 32);
+        if ((savedEnPassant >= 3)) {
+            savedEnPassant = position.enPassantFile;
+            remainingPliesCase = remainingPlies;
+            if (((remainingPliesCase == 4))) {
+                if ((petir_ueval::materialForSide(sideToMove, position.materialScore) >= pas::add(alpha, 500))) {
+                    newDepth = pas::sub(searchDepth, 32);
                 } else {
-                    if ((nodetype == petir_search::node_pv)) {
-                        newlevel = pas::sub(level, 24);
+                    if ((nodeType == petir_search::pvNode)) {
+                        newDepth = pas::sub(searchDepth, 24);
                     } else {
-                        newlevel = pas::sub(level, 32);
+                        newDepth = pas::sub(searchDepth, 32);
                     }
                 }
             }
             else {
-                newlevel = pas::sub(level, 32);
+                newDepth = pas::sub(searchDepth, 32);
             }
-            if ((data.ep != petir_header::_no_ep)) {
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-                data.ep = petir_header::_no_ep;
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
+            if ((position.enPassantFile != petir_header::noEnPassant)) {
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+                position.enPassantFile = petir_header::noEnPassant;
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
             }
-            areduce = 0;
-            petir_search::stack[depth].evaluated = false;
-            petir_search::curr_move[depth] = petir_header::_no_move;
-            if ((newlevel < petir_header::fractional_ply)) {
-                if (((data.nilai_perwira_putih <= 9) && (data.nilai_perwira_hitam <= 9))) {
-                    nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(beta), pas::negate(pas::sub(beta, 1)), data, 0, pas::add(depth, 1), cext, petir_search::noval, pas::negate(nodetype)));
+            reduction = 0;
+            petir_search::searchStack[ply].evaluated = false;
+            petir_search::currentMove[ply] = petir_header::noMove;
+            if ((newDepth < petir_header::plyUnits)) {
+                if (((position.whiteNonPawnMaterial <= 9) && (position.blackNonPawnMaterial <= 9))) {
+                    score = pas::negate(petir_search::quiescenceSearch(pas::sub(3, sideToMove), pas::negate(beta), pas::negate(pas::sub(beta, 1)), position, 0, pas::add(ply, 1), extensionCredit, petir_search::noValue, pas::negate(nodeType)));
                 } else {
-                    nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(beta), pas::negate(pas::sub(beta, 1)), data, 1, pas::add(depth, 1), cext, petir_search::noval, pas::negate(nodetype)));
+                    score = pas::negate(petir_search::quiescenceSearch(pas::sub(3, sideToMove), pas::negate(beta), pas::negate(pas::sub(beta, 1)), position, 1, pas::add(ply, 1), extensionCredit, petir_search::noValue, pas::negate(nodeType)));
                 }
             } else {
-                nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(beta), pas::negate(pas::sub(beta, 1)), data, true, pas::add(depth, 1), cext, true, 0, pas::negate(nodetype)));
+                score = pas::negate(petir_search::mainSearch(newDepth, pas::sub(3, sideToMove), pas::negate(beta), pas::negate(pas::sub(beta, 1)), position, true, pas::add(ply, 1), extensionCredit, true, 0, pas::negate(nodeType)));
             }
-            if(petir::search_should_stop()) {data.hashkey=h;data.ep=tempep;return 0;}
-            if ((nilai >= beta)) {
-                data.hashkey = h;
-                data.ep = tempep;
-                return_value = nilai;
-                return return_value;
+            if(petir::searchShouldStop()) {position.hashKey=savedHashKey;position.enPassantFile=savedEnPassant;return 0;}
+            if ((score >= beta)) {
+                position.hashKey = savedHashKey;
+                position.enPassantFile = savedEnPassant;
+                result = score;
+                return result;
             }
-            if (((nilai == pas::add(pas::add(pas::negate(petir_header::_nilai_raja), depth), 2)) && (cext > 0))) {
-                petir_search::stack[depth].mte = true;
-                (level = pas::increment(level, 6));
-                (cext = pas::decrement(cext, 6));
-                mte = true;
+            if (((score == pas::add(pas::add(pas::negate(petir_header::kingValue), ply), 2)) && (extensionCredit > 0))) {
+                petir_search::searchStack[ply].mateThreatExtended = true;
+                (searchDepth = pas::increment(searchDepth, 6));
+                (extensionCredit = pas::decrement(extensionCredit, 6));
+                mateThreatExtended = true;
             }
-            data.hashkey = h;
-            data.ep = tempep;
+            position.hashKey = savedHashKey;
+            position.enPassantFile = savedEnPassant;
         }
     }
     nonullmove: ;
-    donotreduce = false;
-    if ((petir_search::stack[pas::sub(depth, 1)].evaluated && ((pas::sub(petir_search::stack[pas::sub(depth, 1)].evalvalue, petir_ueval::materialvalue(giliran, data.materialscore)) >= 90) || (petir_search::stack[pas::sub(depth, 1)].evalvalue >= beta)))) {
-        donotreduce = true;
+    doNotReduce = false;
+    if ((petir_search::searchStack[pas::sub(ply, 1)].evaluated && ((pas::sub(petir_search::searchStack[pas::sub(ply, 1)].staticEval, petir_ueval::materialForSide(sideToMove, position.materialScore)) >= 90) || (petir_search::searchStack[pas::sub(ply, 1)].staticEval >= beta)))) {
+        doNotReduce = true;
     }
-    fase = 0;
-    temp = data;
-    pin_mask = incheck?0:petir_tools::pinned_pieces(data,giliran);
-    curmovecap = 0;
-    tmoves = petir_header::_no_move;
-    t_alpha = alpha;
-    t_beta = beta;
-    g = pas::sub(pas::negate(petir_header::_infinity), 100);
-    legalmove = 0;
-    nlev = pas::sub(level, petir_header::fractional_ply);
-    tcext = cext;
-    goodcap = 0;
-    rlevel = pas::shr(level, 3);
-    isscoredraw = false;
-    PETIR_ORDER_STAT(petir_order_stats::SearchNode ostat(rlevel, giliran, hmoves, nodetype, incheck);)
+    phase = 0;
+    savedPosition = position;
+    pinnedMask = inCheck?0:petir_tools::pinnedPieces(position,sideToMove);
+    captureIndex = 0;
+    bestMove = petir_header::noMove;
+    currentAlpha = alpha;
+    currentBeta = beta;
+    bestScore = pas::sub(pas::negate(petir_header::infinity), 100);
+    legalMoveCount = 0;
+    nextDepth = pas::sub(searchDepth, petir_header::plyUnits);
+    savedExtensionCredit = extensionCredit;
+    bestCaptureGain = 0;
+    remainingPlies = pas::shiftRight(searchDepth, 3);
+    bestIsRepetitionDraw = false;
+    PETIR_ORDER_STAT(petir_order_stats::SearchNode orderStats(remainingPlies, sideToMove, hashMove, nodeType, inCheck);)
     do {
-        if(petir::search_should_stop())return 0;
-        petir_search::stack[depth].evaluated = false;
-        scoredraw = false;
-        futflag = false;
-        neval = petir_search::noval;
-        cext = tcext;
-        newlevel = nlev;
-        areduce = 0;
-        if ((!incheck)) {
-            petir_next::nextmove(giliran, depth, data, moves, fase, hmoves, curmovecap, curmovenoncap, jmlcap, jmlnoncap, ml, mlcap, goodcap, cont);
-            if ((moves == petir_header::_no_move)) {
+        if(petir::searchShouldStop())return 0;
+        petir_search::searchStack[ply].evaluated = false;
+        isRepetitionDraw = false;
+        avoidNullMove = false;
+        staticEval = petir_search::noValue;
+        extensionCredit = savedExtensionCredit;
+        newDepth = nextDepth;
+        reduction = 0;
+        if ((!inCheck)) {
+            petir_next::nextMove(sideToMove, ply, position, move, phase, hashMove, captureIndex, quietIndex, captureCount, quietMoveCount, quietList, captureList, bestCaptureGain, continuationTables);
+            if ((move == petir_header::noMove)) {
                 break;
             }
-            sto = (pas::shr(moves, 7) & 127);
-            if ((giliran == petir_header::_sisiputih)) {
-                if ((data.papan[(moves & 127)] == petir_header::_rajaputih)) {
-                    if (petir_tools::white_attacked(data, sto)) {
+            toSquare = (pas::shiftRight(move, 7) & 127);
+            if ((sideToMove == petir_header::whiteSide)) {
+                if ((position.board[(move & 127)] == petir_header::whiteKing)) {
+                    if (petir_tools::attackedByBlack(position, toSquare)) {
                         continue;
                     }
                 } else {
-                    if ((pin_mask & petir_bitboard_mask::bit(moves & 127)) && petir_tools::white_open_check(data, moves)) {
+                    if ((pinnedMask & petir_bitboard_mask::squareBit(move & 127)) && petir_tools::exposesWhiteKing(position, move)) {
                         continue;
                     }
                 }
             } else {
-                if ((data.papan[(moves & 127)] == petir_header::_rajahitam)) {
-                    if (petir_tools::black_attacked(data, sto)) {
+                if ((position.board[(move & 127)] == petir_header::blackKing)) {
+                    if (petir_tools::attackedByWhite(position, toSquare)) {
                         continue;
                     }
                 } else {
-                    if ((pin_mask & petir_bitboard_mask::bit(moves & 127)) && petir_tools::black_open_check(data, moves)) {
+                    if ((pinnedMask & petir_bitboard_mask::squareBit(move & 127)) && petir_tools::exposesBlackKing(position, move)) {
                         continue;
                     }
                 }
@@ -293,157 +290,157 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             // few plies left, skip a late quiet move that loses material by SEE,
             // unless it gives check. Hash and killer moves are never pruned, and
             // at least one move must already have a non-mated score.
-            if ((fase == petir_header::_othermoves) && (rlevel <= see_quiet_max_rlevel)
-                && (nodetype != petir_search::node_pv) && (pas::sub(beta, alpha) == 1)
-                && (legalmove > 0) && !mte && (g > pas::add(pas::negate(petir_header::_nilai_raja), 100))
-                && (sto <= 63)
-                && (petir_usee::see(giliran, data, (moves & 127), sto) < see_quiet_margin(rlevel))
-                && !petir_tools::menskak2(data, giliran, moves)) {
-                (legalmove = pas::increment(legalmove, 1));
+            if ((phase == petir_header::otherMovesPhase) && (remainingPlies <= seeQuietMaxPlies)
+                && (nodeType != petir_search::pvNode) && (pas::sub(beta, alpha) == 1)
+                && (legalMoveCount > 0) && !mateThreatExtended && (bestScore > pas::add(pas::negate(petir_header::kingValue), 100))
+                && (toSquare <= 63)
+                && (petir_usee::staticExchange(sideToMove, position, (move & 127), toSquare) < seeQuietMargin(remainingPlies))
+                && !petir_tools::moveGivesCheck(position, sideToMove, move)) {
+                (legalMoveCount = pas::increment(legalMoveCount, 1));
                 continue;
             }
         } else {
-            if (petir_next::nextevasion(giliran, data, moves, fase, hmoves, curmovecap, jml, jmlcap, ml)) {
-                return_value = pas::add(pas::negate(petir_header::_nilai_raja), depth);
-                return return_value;
+            if (petir_next::nextEvasionMove(sideToMove, position, move, phase, hashMove, captureIndex, evasionCount, captureCount, quietList)) {
+                result = pas::add(pas::negate(petir_header::kingValue), ply);
+                return result;
             }
-            if ((moves == petir_header::_no_move)) {
+            if ((move == petir_header::noMove)) {
                 break;
             }
-            sto = (pas::shr(moves, 7) & 127);
-            if (((legalmove == 0) && (cext > 0))) {
-                if ((jml == 1)) {
-                    (newlevel = pas::increment(newlevel, petir_header::single_reply_extension));
-                    (nlev = pas::increment(nlev, petir_header::single_reply_extension));
-                    (cext = pas::increment(cext, 8));
-                    (tcext = pas::increment(tcext, 8));
-                    (newlevel = pas::decrement(newlevel, (newlevel & 7)));
+            toSquare = (pas::shiftRight(move, 7) & 127);
+            if (((legalMoveCount == 0) && (extensionCredit > 0))) {
+                if ((evasionCount == 1)) {
+                    (newDepth = pas::increment(newDepth, petir_header::singleReplyExtension));
+                    (nextDepth = pas::increment(nextDepth, petir_header::singleReplyExtension));
+                    (extensionCredit = pas::increment(extensionCredit, 8));
+                    (savedExtensionCredit = pas::increment(savedExtensionCredit, 8));
+                    (newDepth = pas::decrement(newDepth, (newDepth & 7)));
                 }
-                if ((jmlcap == 2)) {
-                    (newlevel = pas::increment(newlevel, petir_header::double_skak_extension));
-                    (nlev = pas::increment(nlev, petir_header::double_skak_extension));
-                    (cext = pas::decrement(cext, petir_header::double_skak_extension));
-                    (tcext = pas::decrement(tcext, petir_header::double_skak_extension));
+                if ((captureCount == 2)) {
+                    (newDepth = pas::increment(newDepth, petir_header::doubleCheckExtension));
+                    (nextDepth = pas::increment(nextDepth, petir_header::doubleCheckExtension));
+                    (extensionCredit = pas::decrement(extensionCredit, petir_header::doubleCheckExtension));
+                    (savedExtensionCredit = pas::decrement(savedExtensionCredit, petir_header::doubleCheckExtension));
                 }
-                (cext = pas::decrement(cext, petir_header::skak_extension));
-                (tcext = pas::decrement(tcext, petir_header::skak_extension));
+                (extensionCredit = pas::decrement(extensionCredit, petir_header::checkExtension));
+                (savedExtensionCredit = pas::decrement(savedExtensionCredit, petir_header::checkExtension));
             }
         }
-        if ((giliran == petir_header::_sisiputih)) {
-            petir_makemove::makewhitemove(moves, data);
+        if ((sideToMove == petir_header::whiteSide)) {
+            petir_makemove::makeWhiteMove(move, position);
         } else {
-            petir_makemove::makeblackmove(moves, data);
+            petir_makemove::makeBlackMove(move, position);
         }
         // Children at full depth probe the hash table first; overlap that
         // memory access with the extension and reduction work below.
-        if (nlev >= petir_header::fractional_ply) {
-            petir_hashing::prefetch(data.hashkey, pas::sub(3, giliran));
+        if (nextDepth >= petir_header::plyUnits) {
+            petir_hashing::prefetchHash(position.hashKey, pas::sub(3, sideToMove));
         }
-        if ((sto == petir_header::_en_passant)) {
-            if ((((giliran == petir_header::_sisiputih) && petir_tools::white_checked(data)) || ((giliran == petir_header::_sisihitam) && petir_tools::black_checked(data)))) {
-                data = temp;
+        if ((toSquare == petir_header::enPassantTarget)) {
+            if ((((sideToMove == petir_header::whiteSide) && petir_tools::whiteInCheck(position)) || ((sideToMove == petir_header::blackSide) && petir_tools::blackInCheck(position)))) {
+                position = savedPosition;
                 continue;
             }
         }
-        if ((data.cp == 0)) {
-            (petir_search::hist_tried[get_moving_piece()][get_dest(sto)] = pas::increment(petir_search::hist_tried[get_moving_piece()][get_dest(sto)], pas::mul(rlevel, rlevel)));
-            if (quiet_count < 64) {
-                quiets[quiet_count++] = moves;
+        if ((position.lastCaptureType == 0)) {
+            (petir_search::historyTried[movingPiece()][destinationSquare(toSquare)] = pas::increment(petir_search::historyTried[movingPiece()][destinationSquare(toSquare)], pas::mul(remainingPlies, remainingPlies)));
+            if (searchedQuietCount < 64) {
+                searchedQuiets[searchedQuietCount++] = move;
             }
         }
-        petir_search::curr_move[depth] = moves;
-        petir_search::curr_piece[depth] = get_moving_piece();
-        (legalmove = pas::increment(legalmove, 1));
-        PETIR_ORDER_STAT(ostat.move(moves, hmoves, fase, curmovenoncap, jmlnoncap, ml);)
-        if ((petir_repetition::addrephash(data.hashkey, pas::sub(2, giliran)) == 1)) {
-            nilai = petir_header::contemp_draw;
-            scoredraw = true;
+        petir_search::currentMove[ply] = move;
+        petir_search::currentPiece[ply] = movingPiece();
+        (legalMoveCount = pas::increment(legalMoveCount, 1));
+        PETIR_ORDER_STAT(orderStats.move(move, hashMove, phase, quietIndex, quietMoveCount, quietList);)
+        if ((petir_repetition::addRepetition(position.hashKey, pas::sub(2, sideToMove)) == 1)) {
+            score = petir_header::drawScore;
+            isRepetitionDraw = true;
             goto search3;
         }
-        petir_search::stack[depth].fase = fase;
-        petir_search::stack[depth].legalmove = legalmove;
-        if ((((data.nilai_perwira_putih == 0) && (data.nilai_perwira_hitam == 0)) && (nodetype == petir_search::node_pv))) {
-            if (((data.cp == 1) && (cext > 0))) {
-                (newlevel = pas::increment(newlevel, 4));
-                (cext = pas::decrement(cext, 4));
+        petir_search::searchStack[ply].phase = phase;
+        petir_search::searchStack[ply].legalMoveCount = legalMoveCount;
+        if ((((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0)) && (nodeType == petir_search::pvNode))) {
+            if (((position.lastCaptureType == 1) && (extensionCredit > 0))) {
+                (newDepth = pas::increment(newDepth, 4));
+                (extensionCredit = pas::decrement(extensionCredit, 4));
             }
-            if ((((((data.cp >= petir_header::_kudaputih) && (data.cp <= petir_header::_mentriputih)) && (data.materialscore >= pas::negate(385))) && (data.materialscore <= 385)) && (cext > 0))) {
-                (cext = pas::decrement(cext, 16));
-                (newlevel = pas::increment(newlevel, 16));
+            if ((((((position.lastCaptureType >= petir_header::whiteKnight) && (position.lastCaptureType <= petir_header::whiteQueen)) && (position.materialScore >= pas::negate(385))) && (position.materialScore <= 385)) && (extensionCredit > 0))) {
+                (extensionCredit = pas::decrement(extensionCredit, 16));
+                (newDepth = pas::increment(newDepth, 16));
                 goto search1;
             }
         }
-        if ((((((((sto <= 63) && (pas::abs(data.papan[sto]) == petir_header::_pionputih)) && (nodetype == petir_search::node_pv)) && (cext > 0)) && (((giliran == petir_header::_sisiputih) && (sto >= petir_header::a7)) || ((giliran == petir_header::_sisihitam) && (sto <= petir_header::h2)))) && (!incheck)) && (petir_usee::see(giliran, temp, (moves & 127), sto) >= 0))) {
-            (newlevel = pas::increment(newlevel, 8));
-            (cext = pas::decrement(cext, 8));
+        if ((((((((toSquare <= 63) && (pas::abs(position.board[toSquare]) == petir_header::whitePawn)) && (nodeType == petir_search::pvNode)) && (extensionCredit > 0)) && (((sideToMove == petir_header::whiteSide) && (toSquare >= petir_header::a7)) || ((sideToMove == petir_header::blackSide) && (toSquare <= petir_header::h2)))) && (!inCheck)) && (petir_usee::staticExchange(sideToMove, savedPosition, (move & 127), toSquare) >= 0))) {
+            (newDepth = pas::increment(newDepth, 8));
+            (extensionCredit = pas::decrement(extensionCredit, 8));
             goto search1;
         }
-        if ((((((((alpha != pas::sub(beta, 1)) && (data.cp > 1)) && (data.cp < 9)) && (data.cp == temp.cp)) && (!incheck)) && (cext > 0)) && (!mte))) {
-            (newlevel = pas::increment(newlevel, 8));
-            (cext = pas::decrement(cext, 8));
+        if ((((((((alpha != pas::sub(beta, 1)) && (position.lastCaptureType > 1)) && (position.lastCaptureType < 9)) && (position.lastCaptureType == savedPosition.lastCaptureType)) && (!inCheck)) && (extensionCredit > 0)) && (!mateThreatExtended))) {
+            (newDepth = pas::increment(newDepth, 8));
+            (extensionCredit = pas::decrement(extensionCredit, 8));
             goto search1;
         }
-        if (((((((((rlevel <= 2) && (!incheck)) && (data.cp == 0)) && (pas::sub(beta, alpha) == 1)) && (!petir_search::stack[pas::sub(depth, 1)].mte)) && (!petir_search::stack[pas::sub(depth, 1)].ext)) && (nodetype != petir_search::node_pv)) && (moves != hmoves))) {
-            pas_temp_2 = rlevel;
-            if (((pas_temp_2 == 1))) {
-                tempi = petir_ueval::materialvalue(giliran, data.materialscore);
-                if ((pas::add(data.nilai_perwira_putih, data.nilai_perwira_hitam) <= 24)) {
-                    (tempi = pas::increment(tempi, 300));
+        if (((((((((remainingPlies <= 2) && (!inCheck)) && (position.lastCaptureType == 0)) && (pas::sub(beta, alpha) == 1)) && (!petir_search::searchStack[pas::sub(ply, 1)].mateThreatExtended)) && (!petir_search::searchStack[pas::sub(ply, 1)].checkExtended)) && (nodeType != petir_search::pvNode)) && (move != hashMove))) {
+            razorPliesCase = remainingPlies;
+            if (((razorPliesCase == 1))) {
+                quickEstimate = petir_ueval::materialForSide(sideToMove, position.materialScore);
+                if ((pas::add(position.whiteNonPawnMaterial, position.blackNonPawnMaterial) <= 24)) {
+                    (quickEstimate = pas::increment(quickEstimate, 300));
                 }
-                if ((((((((pas::add(tempi, 250) < t_alpha) && (!petir_tools::menskak2(temp, giliran, moves))) && (data.nilai_perwira_putih > 3)) && (data.nilai_perwira_hitam > 3)) && (!petir_tools::pawn_7_rank(giliran, data))) && (data.pawnwhite != 0)) && (data.pawnblack != 0))) {
-                    nilai = tempi;
+                if ((((((((pas::add(quickEstimate, 250) < currentAlpha) && (!petir_tools::moveGivesCheck(savedPosition, sideToMove, move))) && (position.whiteNonPawnMaterial > 3)) && (position.blackNonPawnMaterial > 3)) && (!petir_tools::hasPawnOnSeventh(sideToMove, position))) && (position.whitePawns != 0)) && (position.blackPawns != 0))) {
+                    score = quickEstimate;
                     goto search3;
                 }
             }
-            else if (((pas_temp_2 == 2))) {
-                tempi = petir_ueval::materialvalue(giliran, data.materialscore);
-                if ((pas::add(data.nilai_perwira_putih, data.nilai_perwira_hitam) <= 24)) {
-                    (tempi = pas::increment(tempi, 300));
+            else if (((razorPliesCase == 2))) {
+                quickEstimate = petir_ueval::materialForSide(sideToMove, position.materialScore);
+                if ((pas::add(position.whiteNonPawnMaterial, position.blackNonPawnMaterial) <= 24)) {
+                    (quickEstimate = pas::increment(quickEstimate, 300));
                 }
-                if (((((((((pas::add(tempi, 300) < t_alpha) && (!petir_tools::menskak2(temp, giliran, moves))) && (data.nilai_perwira_putih > 5)) && (data.nilai_perwira_hitam > 5)) && (!petir_tools::pawn_7_rank(giliran, data))) && (!petir_tools::pawn_6_rank(giliran, data))) && (data.pawnwhite != 0)) && (data.pawnblack != 0))) {
-                    nilai = tempi;
+                if (((((((((pas::add(quickEstimate, 300) < currentAlpha) && (!petir_tools::moveGivesCheck(savedPosition, sideToMove, move))) && (position.whiteNonPawnMaterial > 5)) && (position.blackNonPawnMaterial > 5)) && (!petir_tools::hasPawnOnSeventh(sideToMove, position))) && (!petir_tools::hasFreeSixthRankPawn(sideToMove, position))) && (position.whitePawns != 0)) && (position.blackPawns != 0))) {
+                    score = quickEstimate;
                     goto search3;
                 }
             }
         }
-        if ((giliran == petir_header::_sisiputih)) {
-            if ((((((((((((((!incheck) && (rlevel >= 2)) && (depth >= 2)) && (data.cp == 0)) && (fase > petir_header::_killermoves3)) && (alpha == t_alpha)) && (pas::sub(beta, alpha) == 1)) && (!petir_tools::pawn_7_rank(petir_header::_sisiputih, data))) && (!mte)) && (!petir_tools::good_move_white(data, sto))) && (((data.nilai_perwira_putih >= 6) && (data.nilai_perwira_hitam >= 6)) || (((data.nilai_perwira_putih >= 3) && (data.nilai_perwira_hitam >= 3)) && (rlevel == 2)))) && (!petir_tools::white_threat(data, moves, tempi))) && (!petir_tools::black_open_check(temp, moves)))) {
-                if ((((((tempi == 0) || ((((legalmove > 5) && (petir_search::stack[pas::sub(depth, 2)].fase > petir_header::_killermoves4)) && (petir_search::stack[pas::sub(depth, 1)].legalmove <= 3)) && (!petir_search::stack[pas::sub(depth, 1)].mte))) && (legalmove > 3)) && (petir_search::hist_tried[get_moving_piece()][get_dest(sto)] >= petir_search::min_try)) && (petir_search::hist_succ[get_moving_piece()][get_dest(sto)] <= pas::shr(petir_search::hist_tried[get_moving_piece()][get_dest(sto)], 3)))) {
-                    (newlevel = pas::decrement(newlevel, 8));
-                    areduce = 8;
-                    if ((petir_search::hist_succ[get_moving_piece()][get_dest(sto)] <= pas::shr(petir_search::hist_tried[get_moving_piece()][get_dest(sto)], 4))) {
-                        (newlevel = pas::decrement(newlevel, 8));
-                        areduce = 16;
+        if ((sideToMove == petir_header::whiteSide)) {
+            if ((((((((((((((!inCheck) && (remainingPlies >= 2)) && (ply >= 2)) && (position.lastCaptureType == 0)) && (phase > petir_header::killerMove3Phase)) && (alpha == currentAlpha)) && (pas::sub(beta, alpha) == 1)) && (!petir_tools::hasPawnOnSeventh(petir_header::whiteSide, position))) && (!mateThreatExtended)) && (!petir_tools::isGoodWhiteMove(position, toSquare))) && (((position.whiteNonPawnMaterial >= 6) && (position.blackNonPawnMaterial >= 6)) || (((position.whiteNonPawnMaterial >= 3) && (position.blackNonPawnMaterial >= 3)) && (remainingPlies == 2)))) && (!petir_tools::whiteMoveThreatensKing(position, move, quickEstimate))) && (!petir_tools::exposesBlackKing(savedPosition, move)))) {
+                if ((((((quickEstimate == 0) || ((((legalMoveCount > 5) && (petir_search::searchStack[pas::sub(ply, 2)].phase > petir_header::killerMove4Phase)) && (petir_search::searchStack[pas::sub(ply, 1)].legalMoveCount <= 3)) && (!petir_search::searchStack[pas::sub(ply, 1)].mateThreatExtended))) && (legalMoveCount > 3)) && (petir_search::historyTried[movingPiece()][destinationSquare(toSquare)] >= petir_search::minHistoryTries)) && (petir_search::historySucceeded[movingPiece()][destinationSquare(toSquare)] <= pas::shiftRight(petir_search::historyTried[movingPiece()][destinationSquare(toSquare)], 3)))) {
+                    (newDepth = pas::decrement(newDepth, 8));
+                    reduction = 8;
+                    if ((petir_search::historySucceeded[movingPiece()][destinationSquare(toSquare)] <= pas::shiftRight(petir_search::historyTried[movingPiece()][destinationSquare(toSquare)], 4))) {
+                        (newDepth = pas::decrement(newDepth, 8));
+                        reduction = 16;
                     }
                     goto search1;
                 }
-                if ((rlevel <= 8)) {
-                    nilai = petir_ueval::eval(data, giliran, pas::negate(petir_header::_infinity), petir_header::_infinity, true);
-                    neval = pas::negate(nilai);
-                    petir_search::stack[depth].evaluated = true;
-                    petir_search::stack[depth].evalvalue = neval;
-                    if (((pas::add(pas::add(pas::add(nilai, tempi), petir_search::margin[rlevel]), 30) < t_alpha) && (!petir_tools::pawn_6_rank(giliran, data)))) {
-                        (newlevel = pas::decrement(newlevel, 24));
-                        areduce = 24;
+                if ((remainingPlies <= 8)) {
+                    score = petir_ueval::evaluate(position, sideToMove, pas::negate(petir_header::infinity), petir_header::infinity, true);
+                    staticEval = pas::negate(score);
+                    petir_search::searchStack[ply].evaluated = true;
+                    petir_search::searchStack[ply].staticEval = staticEval;
+                    if (((pas::add(pas::add(pas::add(score, quickEstimate), petir_search::futilityMargins[remainingPlies]), 30) < currentAlpha) && (!petir_tools::hasFreeSixthRankPawn(sideToMove, position)))) {
+                        (newDepth = pas::decrement(newDepth, 24));
+                        reduction = 24;
                     } else {
-                        if ((pas::add(pas::add(nilai, tempi), petir_search::margin[rlevel]) < t_alpha)) {
-                            (newlevel = pas::decrement(newlevel, 16));
-                            areduce = 16;
+                        if ((pas::add(pas::add(score, quickEstimate), petir_search::futilityMargins[remainingPlies]) < currentAlpha)) {
+                            (newDepth = pas::decrement(newDepth, 16));
+                            reduction = 16;
                         } else {
-                            if ((pas::sub(pas::add(pas::add(nilai, tempi), petir_search::margin[rlevel]), 5) < t_alpha)) {
-                                (newlevel = pas::decrement(newlevel, 8));
-                                areduce = 8;
+                            if ((pas::sub(pas::add(pas::add(score, quickEstimate), petir_search::futilityMargins[remainingPlies]), 5) < currentAlpha)) {
+                                (newDepth = pas::decrement(newDepth, 8));
+                                reduction = 8;
                             } else {
-                                if (((tempi > 0) && (pas::add(pas::add(pas::add(nilai, petir_search::margin[rlevel]), 40), pas::shr(tempi, 1)) < t_alpha))) {
-                                    newlevel = 0;
+                                if (((quickEstimate > 0) && (pas::add(pas::add(pas::add(score, petir_search::futilityMargins[remainingPlies]), 40), pas::shiftRight(quickEstimate, 1)) < currentAlpha))) {
+                                    newDepth = 0;
                                 } else {
-                                    if ((((goodcap > 1) && (tempi == 0)) && (nilai < t_alpha))) {
-                                        if ((goodcap >= 5)) {
-                                            (newlevel = pas::decrement(newlevel, 16));
-                                            areduce = 16;
+                                    if ((((bestCaptureGain > 1) && (quickEstimate == 0)) && (score < currentAlpha))) {
+                                        if ((bestCaptureGain >= 5)) {
+                                            (newDepth = pas::decrement(newDepth, 16));
+                                            reduction = 16;
                                         } else {
-                                            (newlevel = pas::decrement(newlevel, 8));
-                                            areduce = 8;
+                                            (newDepth = pas::decrement(newDepth, 8));
+                                            reduction = 8;
                                         }
                                     }
                                 }
@@ -454,43 +451,43 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                 ;
             }
         } else {
-            if ((((((((((((((!incheck) && (rlevel >= 2)) && (depth >= 2)) && (data.cp == 0)) && (fase > petir_header::_killermoves3)) && (alpha == t_alpha)) && (pas::sub(beta, alpha) == 1)) && (!petir_tools::pawn_7_rankb(data))) && (!mte)) && (!petir_tools::good_move_black(data, sto))) && (((data.nilai_perwira_putih >= 6) && (data.nilai_perwira_hitam >= 6)) || (((data.nilai_perwira_putih >= 3) && (data.nilai_perwira_hitam >= 3)) && (rlevel == 2)))) && (!petir_tools::black_threat(data, moves, tempi))) && (!petir_tools::white_open_check(temp, moves)))) {
-                if ((((((tempi == 0) || ((((legalmove > 5) && (petir_search::stack[pas::sub(depth, 2)].fase > petir_header::_killermoves4)) && (petir_search::stack[pas::sub(depth, 1)].legalmove <= 3)) && (!petir_search::stack[pas::sub(depth, 1)].mte))) && (legalmove > 3)) && (petir_search::hist_tried[get_moving_piece()][get_dest(sto)] >= petir_search::min_try)) && (petir_search::hist_succ[get_moving_piece()][get_dest(sto)] <= pas::shr(petir_search::hist_tried[get_moving_piece()][get_dest(sto)], 3)))) {
-                    (newlevel = pas::decrement(newlevel, 8));
-                    areduce = 8;
-                    if ((petir_search::hist_succ[get_moving_piece()][get_dest(sto)] <= pas::shr(petir_search::hist_tried[get_moving_piece()][get_dest(sto)], 4))) {
-                        (newlevel = pas::decrement(newlevel, 8));
-                        areduce = 16;
+            if ((((((((((((((!inCheck) && (remainingPlies >= 2)) && (ply >= 2)) && (position.lastCaptureType == 0)) && (phase > petir_header::killerMove3Phase)) && (alpha == currentAlpha)) && (pas::sub(beta, alpha) == 1)) && (!petir_tools::blackHasPawnOnSeventh(position))) && (!mateThreatExtended)) && (!petir_tools::isGoodBlackMove(position, toSquare))) && (((position.whiteNonPawnMaterial >= 6) && (position.blackNonPawnMaterial >= 6)) || (((position.whiteNonPawnMaterial >= 3) && (position.blackNonPawnMaterial >= 3)) && (remainingPlies == 2)))) && (!petir_tools::blackMoveThreatensKing(position, move, quickEstimate))) && (!petir_tools::exposesWhiteKing(savedPosition, move)))) {
+                if ((((((quickEstimate == 0) || ((((legalMoveCount > 5) && (petir_search::searchStack[pas::sub(ply, 2)].phase > petir_header::killerMove4Phase)) && (petir_search::searchStack[pas::sub(ply, 1)].legalMoveCount <= 3)) && (!petir_search::searchStack[pas::sub(ply, 1)].mateThreatExtended))) && (legalMoveCount > 3)) && (petir_search::historyTried[movingPiece()][destinationSquare(toSquare)] >= petir_search::minHistoryTries)) && (petir_search::historySucceeded[movingPiece()][destinationSquare(toSquare)] <= pas::shiftRight(petir_search::historyTried[movingPiece()][destinationSquare(toSquare)], 3)))) {
+                    (newDepth = pas::decrement(newDepth, 8));
+                    reduction = 8;
+                    if ((petir_search::historySucceeded[movingPiece()][destinationSquare(toSquare)] <= pas::shiftRight(petir_search::historyTried[movingPiece()][destinationSquare(toSquare)], 4))) {
+                        (newDepth = pas::decrement(newDepth, 8));
+                        reduction = 16;
                     }
                     goto search1;
                 }
-                if ((rlevel <= 8)) {
-                    nilai = petir_ueval::eval(data, giliran, pas::negate(petir_header::_infinity), petir_header::_infinity, true);
-                    neval = pas::negate(nilai);
-                    petir_search::stack[depth].evaluated = true;
-                    petir_search::stack[depth].evalvalue = neval;
-                    if (((pas::add(pas::add(pas::add(nilai, tempi), petir_search::margin[rlevel]), 30) < t_alpha) && (!petir_tools::pawn_6_rank(giliran, data)))) {
-                        (newlevel = pas::decrement(newlevel, 24));
-                        areduce = 24;
+                if ((remainingPlies <= 8)) {
+                    score = petir_ueval::evaluate(position, sideToMove, pas::negate(petir_header::infinity), petir_header::infinity, true);
+                    staticEval = pas::negate(score);
+                    petir_search::searchStack[ply].evaluated = true;
+                    petir_search::searchStack[ply].staticEval = staticEval;
+                    if (((pas::add(pas::add(pas::add(score, quickEstimate), petir_search::futilityMargins[remainingPlies]), 30) < currentAlpha) && (!petir_tools::hasFreeSixthRankPawn(sideToMove, position)))) {
+                        (newDepth = pas::decrement(newDepth, 24));
+                        reduction = 24;
                     } else {
-                        if ((pas::add(pas::add(nilai, tempi), petir_search::margin[rlevel]) < t_alpha)) {
-                            (newlevel = pas::decrement(newlevel, 16));
-                            areduce = 16;
+                        if ((pas::add(pas::add(score, quickEstimate), petir_search::futilityMargins[remainingPlies]) < currentAlpha)) {
+                            (newDepth = pas::decrement(newDepth, 16));
+                            reduction = 16;
                         } else {
-                            if ((pas::sub(pas::add(pas::add(nilai, tempi), petir_search::margin[rlevel]), 5) < t_alpha)) {
-                                (newlevel = pas::decrement(newlevel, 8));
-                                areduce = 8;
+                            if ((pas::sub(pas::add(pas::add(score, quickEstimate), petir_search::futilityMargins[remainingPlies]), 5) < currentAlpha)) {
+                                (newDepth = pas::decrement(newDepth, 8));
+                                reduction = 8;
                             } else {
-                                if (((tempi > 0) && (pas::add(pas::add(pas::add(nilai, petir_search::margin[rlevel]), 40), pas::shr(tempi, 1)) < t_alpha))) {
-                                    newlevel = 0;
+                                if (((quickEstimate > 0) && (pas::add(pas::add(pas::add(score, petir_search::futilityMargins[remainingPlies]), 40), pas::shiftRight(quickEstimate, 1)) < currentAlpha))) {
+                                    newDepth = 0;
                                 } else {
-                                    if ((((goodcap > 1) && (tempi == 0)) && (nilai < t_alpha))) {
-                                        if ((goodcap >= 5)) {
-                                            (newlevel = pas::decrement(newlevel, 16));
-                                            areduce = 16;
+                                    if ((((bestCaptureGain > 1) && (quickEstimate == 0)) && (score < currentAlpha))) {
+                                        if ((bestCaptureGain >= 5)) {
+                                            (newDepth = pas::decrement(newDepth, 16));
+                                            reduction = 16;
                                         } else {
-                                            (newlevel = pas::decrement(newlevel, 8));
-                                            areduce = 8;
+                                            (newDepth = pas::decrement(newDepth, 8));
+                                            reduction = 8;
                                         }
                                     }
                                 }
@@ -502,179 +499,179 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
             }
         }
         // 4.39 search.pas:758: require poor history before reducing a quiet move.
-        if (!incheck && (depth <= 6) && (nodetype != petir_search::node_pv)
-            && (data.cp == 0) && (depth >= 2) && (legalmove > 12) && !mte
-            && (areduce == 0) && !petir_search::stack[pas::sub(depth, 1)].mte
-            && !petir_search::stack[pas::sub(depth, 2)].mte
-            && !petir_tools::pawn_7_rank(giliran, data) && !donotreduce
-            && !petir_tools::good_move(data, sto, giliran)
-            && (petir_search::hist_tried[get_moving_piece()][get_dest(sto)] >= petir_search::min_try)
-            && (petir_search::hist_succ[get_moving_piece()][get_dest(sto)] <= pas::shr(petir_search::hist_tried[get_moving_piece()][get_dest(sto)], 6))
-            && !petir_tools::menskak2(temp, giliran, moves)) {
-            (newlevel = pas::decrement(newlevel, 8));
-            areduce = 8;
+        if (!inCheck && (ply <= 6) && (nodeType != petir_search::pvNode)
+            && (position.lastCaptureType == 0) && (ply >= 2) && (legalMoveCount > 12) && !mateThreatExtended
+            && (reduction == 0) && !petir_search::searchStack[pas::sub(ply, 1)].mateThreatExtended
+            && !petir_search::searchStack[pas::sub(ply, 2)].mateThreatExtended
+            && !petir_tools::hasPawnOnSeventh(sideToMove, position) && !doNotReduce
+            && !petir_tools::isGoodMove(position, toSquare, sideToMove)
+            && (petir_search::historyTried[movingPiece()][destinationSquare(toSquare)] >= petir_search::minHistoryTries)
+            && (petir_search::historySucceeded[movingPiece()][destinationSquare(toSquare)] <= pas::shiftRight(petir_search::historyTried[movingPiece()][destinationSquare(toSquare)], 6))
+            && !petir_tools::moveGivesCheck(savedPosition, sideToMove, move)) {
+            (newDepth = pas::decrement(newDepth, 8));
+            reduction = 8;
             goto search1;
         }
-        if ((((((((((((((!incheck) && (rlevel >= 4)) && (depth >= 2)) && (nodetype != petir_search::node_pv)) && (((nodetype == petir_search::node_cut) && (legalmove > 3)) || ((nodetype == petir_search::node_all) && (legalmove > 6)))) && (!mte)) && (fase > petir_header::_killermoves3)) && (areduce == 0)) && (data.cp == 0)) && (!petir_tools::menskak2(temp, giliran, moves))) && (!petir_tools::pawn_7_rank(giliran, data))) && (!petir_tools::good_move(data, sto, giliran))) && (!donotreduce))) {
-            (newlevel = pas::decrement(newlevel, 8));
-            areduce = 8;
+        if ((((((((((((((!inCheck) && (remainingPlies >= 4)) && (ply >= 2)) && (nodeType != petir_search::pvNode)) && (((nodeType == petir_search::cutNode) && (legalMoveCount > 3)) || ((nodeType == petir_search::allNode) && (legalMoveCount > 6)))) && (!mateThreatExtended)) && (phase > petir_header::killerMove3Phase)) && (reduction == 0)) && (position.lastCaptureType == 0)) && (!petir_tools::moveGivesCheck(savedPosition, sideToMove, move))) && (!petir_tools::hasPawnOnSeventh(sideToMove, position))) && (!petir_tools::isGoodMove(position, toSquare, sideToMove))) && (!doNotReduce))) {
+            (newDepth = pas::decrement(newDepth, 8));
+            reduction = 8;
         }
         search1: ;
-        PETIR_ORDER_STAT(ostat.searching(areduce);)
-        if ((newlevel < 8)) {
-            if ((giliran == petir_header::_sisiputih)) {
-                if ((petir_tools::white_forkandpin(sto, data) && (cext > 0))) {
-                    newlevel = 8;
-                    cext = 0;
+        PETIR_ORDER_STAT(orderStats.searching(reduction);)
+        if ((newDepth < 8)) {
+            if ((sideToMove == petir_header::whiteSide)) {
+                if ((petir_tools::whiteForksOrWinsPawn(toSquare, position) && (extensionCredit > 0))) {
+                    newDepth = 8;
+                    extensionCredit = 0;
                 }
             } else {
-                if ((petir_tools::black_forkandpin(sto, data) && (cext > 0))) {
-                    newlevel = 8;
-                    cext = 0;
+                if ((petir_tools::blackForksOrWinsPawn(toSquare, position) && (extensionCredit > 0))) {
+                    newDepth = 8;
+                    extensionCredit = 0;
                 }
             }
         }
-        if ((newlevel < petir_header::fractional_ply)) {
-            if ((legalmove == 1)) {
-                nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(t_beta), pas::negate(t_alpha), data, 1, pas::add(depth, 1), cext, neval, pas::negate(nodetype)));
+        if ((newDepth < petir_header::plyUnits)) {
+            if ((legalMoveCount == 1)) {
+                score = pas::negate(petir_search::quiescenceSearch(pas::sub(3, sideToMove), pas::negate(currentBeta), pas::negate(currentAlpha), position, 1, pas::add(ply, 1), extensionCredit, staticEval, pas::negate(nodeType)));
             } else {
-                nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(t_beta), pas::negate(t_alpha), data, 1, pas::add(depth, 1), cext, neval, petir_search::node_cut));
+                score = pas::negate(petir_search::quiescenceSearch(pas::sub(3, sideToMove), pas::negate(currentBeta), pas::negate(currentAlpha), position, 1, pas::add(ply, 1), extensionCredit, staticEval, petir_search::cutNode));
             }
         } else {
-            if ((legalmove == 1)) {
-                nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(t_beta), pas::negate(t_alpha), data, false, pas::add(depth, 1), cext, nmtree, areduce, pas::negate(nodetype)));
+            if ((legalMoveCount == 1)) {
+                score = pas::negate(petir_search::mainSearch(newDepth, pas::sub(3, sideToMove), pas::negate(currentBeta), pas::negate(currentAlpha), position, false, pas::add(ply, 1), extensionCredit, inNullMoveTree, reduction, pas::negate(nodeType)));
             } else {
-                nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(t_beta), pas::negate(t_alpha), data, false, pas::add(depth, 1), cext, nmtree, areduce, petir_search::node_cut));
+                score = pas::negate(petir_search::mainSearch(newDepth, pas::sub(3, sideToMove), pas::negate(currentBeta), pas::negate(currentAlpha), position, false, pas::add(ply, 1), extensionCredit, inNullMoveTree, reduction, petir_search::cutNode));
             }
         }
         search2: ;
-        if(petir::search_should_stop()) {
-            petir_repetition::delrephash(data.hashkey,pas::sub(2,giliran));data=temp;return 0;
+        if(petir::searchShouldStop()) {
+            petir_repetition::removeRepetition(position.hashKey,pas::sub(2,sideToMove));position=savedPosition;return 0;
         }
-        if ((((nilai > t_alpha) && (nilai < beta)) && (legalmove > 1))) {
-            PETIR_ORDER_STAT(ostat.pvs_research();)
-            if ((areduce != 0)) {
-                (newlevel = pas::increment(newlevel, areduce));
+        if ((((score > currentAlpha) && (score < beta)) && (legalMoveCount > 1))) {
+            PETIR_ORDER_STAT(orderStats.pvsResearch();)
+            if ((reduction != 0)) {
+                (newDepth = pas::increment(newDepth, reduction));
             }
-            if ((newlevel < petir_header::fractional_ply)) {
-                nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(beta), pas::negate(t_alpha), data, 1, pas::add(depth, 1), cext, petir_search::noval, petir_search::node_pv));
+            if ((newDepth < petir_header::plyUnits)) {
+                score = pas::negate(petir_search::quiescenceSearch(pas::sub(3, sideToMove), pas::negate(beta), pas::negate(currentAlpha), position, 1, pas::add(ply, 1), extensionCredit, petir_search::noValue, petir_search::pvNode));
             } else {
-                nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(beta), pas::negate(t_alpha), data, false, pas::add(depth, 1), cext, nmtree, areduce, petir_search::node_pv));
+                score = pas::negate(petir_search::mainSearch(newDepth, pas::sub(3, sideToMove), pas::negate(beta), pas::negate(currentAlpha), position, false, pas::add(ply, 1), extensionCredit, inNullMoveTree, reduction, petir_search::pvNode));
             }
-            PETIR_ORDER_STAT(ostat.pvs_result(nilai > t_alpha);)
+            PETIR_ORDER_STAT(orderStats.pvsResult(score > currentAlpha);)
         } else {
-            if ((nilai >= beta)) {
-                if ((areduce != 0)) {
-                    PETIR_ORDER_STAT(ostat.lmr_research();)
-                    (newlevel = pas::increment(newlevel, areduce));
-                    areduce = 0;
-                    if ((newlevel < petir_header::fractional_ply)) {
-                        nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(nilai), pas::negate(t_alpha), data, 1, pas::add(depth, 1), cext, petir_search::noval, petir_search::node_pv));
+            if ((score >= beta)) {
+                if ((reduction != 0)) {
+                    PETIR_ORDER_STAT(orderStats.lmrResearch();)
+                    (newDepth = pas::increment(newDepth, reduction));
+                    reduction = 0;
+                    if ((newDepth < petir_header::plyUnits)) {
+                        score = pas::negate(petir_search::quiescenceSearch(pas::sub(3, sideToMove), pas::negate(score), pas::negate(currentAlpha), position, 1, pas::add(ply, 1), extensionCredit, petir_search::noValue, petir_search::pvNode));
                     } else {
-                        nilai = pas::negate(petir_search::mainsearch(newlevel, pas::sub(3, giliran), pas::negate(nilai), pas::negate(t_alpha), data, false, pas::add(depth, 1), cext, nmtree, areduce, petir_search::node_pv));
+                        score = pas::negate(petir_search::mainSearch(newDepth, pas::sub(3, sideToMove), pas::negate(score), pas::negate(currentAlpha), position, false, pas::add(ply, 1), extensionCredit, inNullMoveTree, reduction, petir_search::pvNode));
                     }
-                    PETIR_ORDER_STAT(ostat.lmr_result(nilai >= beta);)
+                    PETIR_ORDER_STAT(orderStats.lmrResult(score >= beta);)
                 }
             }
         }
         search3: ;
-        if(petir::search_should_stop()) {
-            petir_repetition::delrephash(data.hashkey,pas::sub(2,giliran));data=temp;return 0;
+        if(petir::searchShouldStop()) {
+            petir_repetition::removeRepetition(position.hashKey,pas::sub(2,sideToMove));position=savedPosition;return 0;
         }
-        if ((nilai > g)) {
-            g = nilai;
-            isscoredraw = scoredraw;
-            if ((nilai > t_alpha)) {
-                tmoves = moves;
-                t_alpha = nilai;
-                PETIR_ORDER_STAT(ostat.raised(legalmove);)
-                if ((g >= beta)) {
-                    PETIR_ORDER_STAT(ostat.cutoff(legalmove);)
-                    if ((data.cp == 0)) {
-                        (petir_search::hist_succ[get_moving_piece()][get_dest(sto)] = pas::increment(petir_search::hist_succ[get_moving_piece()][get_dest(sto)], pas::mul(rlevel, rlevel)));
+        if ((score > bestScore)) {
+            bestScore = score;
+            bestIsRepetitionDraw = isRepetitionDraw;
+            if ((score > currentAlpha)) {
+                bestMove = move;
+                currentAlpha = score;
+                PETIR_ORDER_STAT(orderStats.raised(legalMoveCount);)
+                if ((bestScore >= beta)) {
+                    PETIR_ORDER_STAT(orderStats.cutoff(legalMoveCount);)
+                    if ((position.lastCaptureType == 0)) {
+                        (petir_search::historySucceeded[movingPiece()][destinationSquare(toSquare)] = pas::increment(petir_search::historySucceeded[movingPiece()][destinationSquare(toSquare)], pas::mul(remainingPlies, remainingPlies)));
                     }
-                    if (((data.cp == 0) && (!incheck))) {
-                        petir_search::addhistory(rlevel, depth, moves, giliran, get_moving_piece());
-                        petir_search::update_continuation(cont, get_moving_piece(), sto, history_bonus(rlevel));
-                        petir_search::penalise_quiets(rlevel, giliran, temp, cont, quiets, quiet_count, moves);
+                    if (((position.lastCaptureType == 0) && (!inCheck))) {
+                        petir_search::addHistory(remainingPlies, ply, move, sideToMove, movingPiece());
+                        petir_search::updateContinuation(continuationTables, movingPiece(), toSquare, historyBonus(remainingPlies));
+                        petir_search::penaliseQuiets(remainingPlies, sideToMove, savedPosition, continuationTables, searchedQuiets, searchedQuietCount, move);
                     }
-                    petir_repetition::delrephash(data.hashkey, pas::sub(2, giliran));
-                    data = temp;
+                    petir_repetition::removeRepetition(position.hashKey, pas::sub(2, sideToMove));
+                    position = savedPosition;
                     break;
                 }
             }
         }
-        t_beta = pas::add(t_alpha, 1);
-        petir_repetition::delrephash(data.hashkey, pas::sub(2, giliran));
-        data = temp;
+        currentBeta = pas::add(currentAlpha, 1);
+        petir_repetition::removeRepetition(position.hashKey, pas::sub(2, sideToMove));
+        position = savedPosition;
     } while (!((1 == 2)));
-    if (petir::search_should_stop()) {
-        return return_value;
+    if (petir::searchShouldStop()) {
+        return result;
     }
-    PETIR_ORDER_STAT(ostat.finish(g, alpha, beta, legalmove);)
-    if ((legalmove == 0)) {
-        tmoves = petir_header::_no_move;
-        return_value = petir_header::contemp_draw;
-        g = return_value;
+    PETIR_ORDER_STAT(orderStats.finish(bestScore, alpha, beta, legalMoveCount);)
+    if ((legalMoveCount == 0)) {
+        bestMove = petir_header::noMove;
+        result = petir_header::drawScore;
+        bestScore = result;
     } else {
-        return_value = g;
-        if ((tmoves == petir_header::_no_move)) {
-            tmoves = hmoves;
+        result = bestScore;
+        if ((bestMove == petir_header::noMove)) {
+            bestMove = hashMove;
         }
     }
-    if ((!isscoredraw)) {
-        if ((g <= alpha)) {
-            petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::fail_low, data.move50count);
+    if ((!bestIsRepetitionDraw)) {
+        if ((bestScore <= alpha)) {
+            petir_hashing::storeHash(savedHashKey, sideToMove, searchDepth, bestMove, bestScore, petir_header::upperBound, position.fiftyMoveCounter);
         } else {
-            if ((g >= beta)) {
-                petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::fail_high, data.move50count);
+            if ((bestScore >= beta)) {
+                petir_hashing::storeHash(savedHashKey, sideToMove, searchDepth, bestMove, bestScore, petir_header::lowerBound, position.fiftyMoveCounter);
             } else {
-                petir_hashing::addtable(h, giliran, level, tmoves, g, petir_header::pv_node, data.move50count);
-                sto = (pas::shr(tmoves, 7) & 127);
-                if ((((tmoves != petir_header::_no_move) && (sto != petir_header::_en_passant)) && ((sto > 63) || (data.papan[sto] == 0)))) {
-                    petir_search::update_history(giliran, data.papan[(tmoves & 127)], (pas::shr(tmoves, 7) & 127), history_bonus(rlevel));
-                    petir_search::update_continuation(cont, data.papan[(tmoves & 127)], (pas::shr(tmoves, 7) & 127), history_bonus(rlevel));
-                    petir_search::penalise_quiets(rlevel, giliran, data, cont, quiets, quiet_count, tmoves);
+                petir_hashing::storeHash(savedHashKey, sideToMove, searchDepth, bestMove, bestScore, petir_header::exactBound, position.fiftyMoveCounter);
+                toSquare = (pas::shiftRight(bestMove, 7) & 127);
+                if ((((bestMove != petir_header::noMove) && (toSquare != petir_header::enPassantTarget)) && ((toSquare > 63) || (position.board[toSquare] == 0)))) {
+                    petir_search::updateHistory(sideToMove, position.board[(bestMove & 127)], (pas::shiftRight(bestMove, 7) & 127), historyBonus(remainingPlies));
+                    petir_search::updateContinuation(continuationTables, position.board[(bestMove & 127)], (pas::shiftRight(bestMove, 7) & 127), historyBonus(remainingPlies));
+                    petir_search::penaliseQuiets(remainingPlies, sideToMove, position, continuationTables, searchedQuiets, searchedQuietCount, bestMove);
                 }
             }
         }
     }
-    return return_value;
+    return result;
 }
 
-// Moves the entry toward +history_max for a bonus and toward -history_max for
+// Moves the entry toward +historyLimit for a bonus and toward -historyLimit for
 // a penalty; the step shrinks as the entry nears that limit.
-void update_history(std::int32_t giliran, std::int32_t piece, std::int32_t sto, std::int32_t bonus) {
-    auto& entry = (giliran == petir_header::_sisiputih ? petir_header::historyw : petir_header::historyb)[piece][sto];
-    entry += history_step(entry, bonus);
+void updateHistory(std::int32_t sideToMove, std::int32_t piece, std::int32_t toSquare, std::int32_t bonus) {
+    auto& entry = (sideToMove == petir_header::whiteSide ? petir_header::whiteHistory : petir_header::blackHistory)[piece][toSquare];
+    entry += historyStep(entry, bonus);
 }
 
 // The same update for the move's entry in each continuation-history table.
-void update_continuation(petir_header::piece_to_history* const* cont, std::int32_t piece, std::int32_t sto, std::int32_t bonus) {
-    for (std::int32_t i = 0; i < 2; ++i) {
-        if (cont[i] != nullptr) {
-            auto& entry = (*cont[i])[piece][sto];
-            entry = static_cast<std::int16_t>(entry + history_step(entry, bonus));
+void updateContinuation(petir_header::piece_to_history* const* continuationTables, std::int32_t piece, std::int32_t toSquare, std::int32_t bonus) {
+    for (std::int32_t tableIndex = 0; tableIndex < 2; ++tableIndex) {
+        if (continuationTables[tableIndex] != nullptr) {
+            auto& entry = (*continuationTables[tableIndex])[piece][toSquare];
+            entry = static_cast<std::int16_t>(entry + historyStep(entry, bonus));
         }
     }
 }
 
 // The other quiet moves searched at the node lose what the best one gains.
-void penalise_quiets(std::int32_t rlevel, std::int32_t giliran, const petir_header::tdata& data, petir_header::piece_to_history* const* cont, const std::int32_t* quiets, std::int32_t count, std::int32_t best) {
-    for (std::int32_t i = 0; i < count; ++i) {
-        if (quiets[i] != best) {
-            const std::int32_t piece = data.papan[(quiets[i] & 127)];
-            const std::int32_t sto = (pas::shr(quiets[i], 7) & 127);
-            petir_search::update_history(giliran, piece, sto, -history_bonus(rlevel));
-            petir_search::update_continuation(cont, piece, sto, -history_bonus(rlevel));
+void penaliseQuiets(std::int32_t plies, std::int32_t sideToMove, const petir_header::tdata& position, petir_header::piece_to_history* const* continuationTables, const std::int32_t* quietMoves, std::int32_t quietCount, std::int32_t bestMove) {
+    for (std::int32_t index = 0; index < quietCount; ++index) {
+        if (quietMoves[index] != bestMove) {
+            const std::int32_t piece = position.board[(quietMoves[index] & 127)];
+            const std::int32_t toSquare = (pas::shiftRight(quietMoves[index], 7) & 127);
+            petir_search::updateHistory(sideToMove, piece, toSquare, -historyBonus(plies));
+            petir_search::updateContinuation(continuationTables, piece, toSquare, -historyBonus(plies));
         }
     }
 }
 
 // search.pas:51
-void addhistory(std::int32_t rlevel, std::int32_t depth, std::int32_t moves, std::int32_t giliran, std::int32_t piece) {
-    petir_search::update_history(giliran, piece, (pas::shr(moves, 7) & 127), history_bonus(rlevel));
-    petir_header::killer0[depth] = moves;
+void addHistory(std::int32_t plies, std::int32_t ply, std::int32_t move, std::int32_t sideToMove, std::int32_t piece) {
+    petir_search::updateHistory(sideToMove, piece, (pas::shiftRight(move, 7) & 127), historyBonus(plies));
+    petir_header::firstKillers[ply] = move;
 }
 
 }

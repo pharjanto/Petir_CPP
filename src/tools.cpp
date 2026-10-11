@@ -1,1816 +1,1807 @@
 // Faithful translation of tools.pas; Delphi source is in original/.
 #include "petir.hpp"
 namespace petir_tools {
-std::int32_t anu{};
 namespace {
 // Empty-board geometry identifies potential pinners without occupancy lookups.
 template<bool Diagonal>
-constexpr std::array<std::uint64_t,64> make_slider_rays() {
+constexpr std::array<std::uint64_t,64> makeSliderRays() {
     std::array<std::uint64_t,64> rays{};
-    for(int from=0;from<64;++from)for(int to=0;to<64;++to) {
-        const int dx=from%8-to%8,dy=from/8-to/8;
-        if(from!=to && (Diagonal ? dx*dx==dy*dy : dx==0 || dy==0))
-            rays[from]|=UINT64_C(1)<<to;
+    for(int fromSquare=0;fromSquare<64;++fromSquare)for(int toSquare=0;toSquare<64;++toSquare) {
+        const int fileDelta=fromSquare%8-toSquare%8,rankDelta=fromSquare/8-toSquare/8;
+        if(fromSquare!=toSquare && (Diagonal ? fileDelta*fileDelta==rankDelta*rankDelta : fileDelta==0 || rankDelta==0))
+            rays[fromSquare]|=UINT64_C(1)<<toSquare;
     }
     return rays;
 }
-constexpr auto rook_rays=make_slider_rays<false>();
-constexpr auto bishop_rays=make_slider_rays<true>();
+constexpr auto rookRays=makeSliderRays<false>();
+constexpr auto bishopRays=makeSliderRays<true>();
 }
 
 // Used only for nonchecked move filtering. An unpinned nonking piece cannot
 // expose its king by moving; en passant still needs the post-move check.
-std::uint64_t pinned_pieces(const petir_header::tdata& data,int side) {
+std::uint64_t pinnedPieces(const petir_header::tdata& position,int side) {
     using namespace petir_bitboard_mask;
-    const bool white=side==petir_header::_sisiputih;
-    const auto king=white?data.kingwhite:data.kingblack;
-    const int square=firstbitp(pas::address(king));
-    const auto queens=white?data.queenblack:data.queenwhite;
-    auto pinners=((queens|(white?data.rookblack:data.rookwhite)) & rook_rays[square])
-                |((queens|(white?data.bishopblack:data.bishopwhite)) & bishop_rays[square]);
+    const bool isWhite=side==petir_header::whiteSide;
+    const auto kingBoard=isWhite?position.whiteKingBoard:position.blackKingBoard;
+    const int kingIndex=firstBit(pas::address(kingBoard));
+    const auto enemyQueens=isWhite?position.blackQueens:position.whiteQueens;
+    auto pinners=((enemyQueens|(isWhite?position.blackRooks:position.whiteRooks)) & rookRays[kingIndex])
+                |((enemyQueens|(isWhite?position.blackBishops:position.whiteBishops)) & bishopRays[kingIndex]);
     std::uint64_t pins=0;
     while(pinners) {
-        const int attacker=firstbitp(pas::address(pinners));
+        const int pinnerSquare=firstBit(pas::address(pinners));
         pinners &= pinners-1;
-        const auto blockers=pathmask[square][attacker] & data.allpieces;
+        const auto blockers=betweenMask[kingIndex][pinnerSquare] & position.allPieces;
         if(blockers && !(blockers & (blockers-1)))pins |= blockers;
     }
-    return pins & (white?data.whitepieces:data.blackpieces);
+    return pins & (isWhite?position.whitePieces:position.blackPieces);
 }
 
 // tools.pas:1620
-bool white_attacked(petir_header::tdata& data, std::int32_t pos) {
-    bool return_value{};
-    std::uint64_t attack{};
-    if ((pos > 63)) {
-        return_value = false;
-        return return_value;
+bool attackedByBlack(petir_header::tdata& position, std::int32_t square) {
+    bool result{};
+    std::uint64_t attackers{};
+    if ((square > 63)) {
+        result = false;
+        return result;
     }
-    if (((petir_bitboard_mask::knightmask[pos] & data.knightblack) != 0)) {
-        return_value = true;
-        return return_value;
+    if (((petir_bitboard_mask::knightAttacks[square] & position.blackKnights) != 0)) {
+        result = true;
+        return result;
     }
-    attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-    attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-    if (((attack & (data.queenblack | data.rookblack)) != 0)) {
-        return_value = true;
-        return return_value;
+    attackers = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+    attackers = (attackers | petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)]);
+    if (((attackers & (position.blackQueens | position.blackRooks)) != 0)) {
+        result = true;
+        return result;
     }
-    attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-    attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-    if (((attack & (data.queenblack | data.bishopblack)) != 0)) {
-        return_value = true;
-        return return_value;
+    attackers = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+    attackers = (attackers | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+    if (((attackers & (position.blackQueens | position.blackBishops)) != 0)) {
+        result = true;
+        return result;
     }
-    if (((((pos & 7) > 0) && (pos <= pas::sub(63, 7))) && (data.papan[pas::add(pos, 7)] == petir_header::_pionhitam))) {
-        return_value = true;
-        return return_value;
+    if (((((square & 7) > 0) && (square <= pas::sub(63, 7))) && (position.board[pas::add(square, 7)] == petir_header::blackPawn))) {
+        result = true;
+        return result;
     }
-    if (((((pos & 7) < 7) && (pos <= pas::sub(63, 9))) && (data.papan[pas::add(pos, 9)] == petir_header::_pionhitam))) {
-        return_value = true;
-        return return_value;
+    if (((((square & 7) < 7) && (square <= pas::sub(63, 9))) && (position.board[pas::add(square, 9)] == petir_header::blackPawn))) {
+        result = true;
+        return result;
     }
-    if (((petir_bitboard_mask::kingmask[pos] & data.kingblack) != 0)) {
-        return_value = true;
-        return return_value;
+    if (((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0)) {
+        result = true;
+        return result;
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 // tools.pas:1662
-bool black_attacked(petir_header::tdata& data, std::int32_t pos) {
-    bool return_value{};
-    std::uint64_t attack{};
-    if ((pos > 63)) {
-        return_value = false;
-        return return_value;
+bool attackedByWhite(petir_header::tdata& position, std::int32_t square) {
+    bool result{};
+    std::uint64_t attackers{};
+    if ((square > 63)) {
+        result = false;
+        return result;
     }
-    if (((petir_bitboard_mask::knightmask[pos] & data.knightwhite) != 0)) {
-        return_value = true;
-        return return_value;
+    if (((petir_bitboard_mask::knightAttacks[square] & position.whiteKnights) != 0)) {
+        result = true;
+        return result;
     }
-    attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-    attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-    if (((attack & (data.queenwhite | data.rookwhite)) != 0)) {
-        return_value = true;
-        return return_value;
+    attackers = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+    attackers = (attackers | petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)]);
+    if (((attackers & (position.whiteQueens | position.whiteRooks)) != 0)) {
+        result = true;
+        return result;
     }
-    attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-    attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-    if (((attack & (data.queenwhite | data.bishopwhite)) != 0)) {
-        return_value = true;
-        return return_value;
+    attackers = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+    attackers = (attackers | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+    if (((attackers & (position.whiteQueens | position.whiteBishops)) != 0)) {
+        result = true;
+        return result;
     }
-    if (((((pos & 7) < 7) && (pos > 6)) && (data.papan[pas::sub(pos, 7)] == petir_header::_pionputih))) {
-        return_value = true;
-        return return_value;
+    if (((((square & 7) < 7) && (square > 6)) && (position.board[pas::sub(square, 7)] == petir_header::whitePawn))) {
+        result = true;
+        return result;
     }
-    if (((((pos & 7) > 0) && (pos > 8)) && (data.papan[pas::sub(pos, 9)] == petir_header::_pionputih))) {
-        return_value = true;
-        return return_value;
+    if (((((square & 7) > 0) && (square > 8)) && (position.board[pas::sub(square, 9)] == petir_header::whitePawn))) {
+        result = true;
+        return result;
     }
-    if (((petir_bitboard_mask::kingmask[pos] & data.kingwhite) != 0)) {
-        return_value = true;
-        return return_value;
+    if (((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0)) {
+        result = true;
+        return result;
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 // tools.pas:1545
-bool white_checked(petir_header::tdata& data) {
-    bool return_value{};
-    std::uint64_t attack{};
-    std::int32_t pos{};
-    pos = petir_bitboard_mask::king_square(data.kingwhite);
-    if (((petir_bitboard_mask::knightmask[pos] & data.knightblack) != 0)) {
-        return_value = true;
-        return return_value;
+bool whiteInCheck(petir_header::tdata& position) {
+    bool result{};
+    std::uint64_t attackers{};
+    std::int32_t kingSquare{};
+    kingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    if (((petir_bitboard_mask::knightAttacks[kingSquare] & position.blackKnights) != 0)) {
+        result = true;
+        return result;
     }
-    attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-    attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-    if (((attack & (data.queenblack | data.rookblack)) != 0)) {
-        return_value = true;
-        return return_value;
+    attackers = petir_bitboard_mask::horizontalAttacks[kingSquare][(pas::shiftRight(position.allPieces, pas::add((kingSquare & 56), 1)) & 63)];
+    attackers = (attackers | petir_bitboard_mask::verticalAttacks[kingSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[kingSquare]) & 63)]);
+    if (((attackers & (position.blackQueens | position.blackRooks)) != 0)) {
+        result = true;
+        return result;
     }
-    attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-    attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-    if (((attack & (data.queenblack | data.bishopblack)) != 0)) {
-        return_value = true;
-        return return_value;
+    attackers = petir_bitboard_mask::diagonalA8H1Attacks[kingSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[kingSquare]) & 255)];
+    attackers = (attackers | petir_bitboard_mask::diagonalH8A1Attacks[kingSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[kingSquare]) & 255)]);
+    if (((attackers & (position.blackQueens | position.blackBishops)) != 0)) {
+        result = true;
+        return result;
     }
-    if (((petir_bitboard_mask::w_pawn_attack[pos] & data.pawnblack) != 0)) {
-        return_value = true;
-        return return_value;
+    if (((petir_bitboard_mask::whitePawnAttacks[kingSquare] & position.blackPawns) != 0)) {
+        result = true;
+        return result;
     }
-    if (((petir_bitboard_mask::kingmask[pos] & data.kingblack) != 0)) {
-        return_value = true;
-        return return_value;
+    if (((petir_bitboard_mask::kingAttacks[kingSquare] & position.blackKingBoard) != 0)) {
+        result = true;
+        return result;
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 // tools.pas:1581
-bool black_checked(petir_header::tdata& data) {
-    bool return_value{};
-    std::uint64_t attack{};
-    std::int32_t pos{};
-    pos = petir_bitboard_mask::king_square(data.kingblack);
-    if (((petir_bitboard_mask::knightmask[pos] & data.knightwhite) != 0)) {
-        return_value = true;
-        return return_value;
+bool blackInCheck(petir_header::tdata& position) {
+    bool result{};
+    std::uint64_t attackers{};
+    std::int32_t kingSquare{};
+    kingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    if (((petir_bitboard_mask::knightAttacks[kingSquare] & position.whiteKnights) != 0)) {
+        result = true;
+        return result;
     }
-    attack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-    attack = (attack | petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)]);
-    if (((attack & (data.queenwhite | data.rookwhite)) != 0)) {
-        return_value = true;
-        return return_value;
+    attackers = petir_bitboard_mask::horizontalAttacks[kingSquare][(pas::shiftRight(position.allPieces, pas::add((kingSquare & 56), 1)) & 63)];
+    attackers = (attackers | petir_bitboard_mask::verticalAttacks[kingSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[kingSquare]) & 63)]);
+    if (((attackers & (position.whiteQueens | position.whiteRooks)) != 0)) {
+        result = true;
+        return result;
     }
-    attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-    attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-    if (((attack & (data.queenwhite | data.bishopwhite)) != 0)) {
-        return_value = true;
-        return return_value;
+    attackers = petir_bitboard_mask::diagonalA8H1Attacks[kingSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[kingSquare]) & 255)];
+    attackers = (attackers | petir_bitboard_mask::diagonalH8A1Attacks[kingSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[kingSquare]) & 255)]);
+    if (((attackers & (position.whiteQueens | position.whiteBishops)) != 0)) {
+        result = true;
+        return result;
     }
-    if (((petir_bitboard_mask::b_pawn_attack[pos] & data.pawnwhite) != 0)) {
-        return_value = true;
-        return return_value;
+    if (((petir_bitboard_mask::blackPawnAttacks[kingSquare] & position.whitePawns) != 0)) {
+        result = true;
+        return result;
     }
-    if (((petir_bitboard_mask::kingmask[pos] & data.kingwhite) != 0)) {
-        return_value = true;
-        return return_value;
+    if (((petir_bitboard_mask::kingAttacks[kingSquare] & position.whiteKingBoard) != 0)) {
+        result = true;
+        return result;
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 // tools.pas:1514
-void clearkiller() {
-    std::int32_t a{};
-    std::int32_t pas_temp_1{};
-    pas_temp_1 = 63;
-    for (a = 0; a <= pas_temp_1; ++a) {
-        petir_header::killer0[a] = petir_header::_no_move;
-        petir_header::killer1[a] = petir_header::_no_move;
+void clearKillers() {
+    std::int32_t ply{};
+    std::int32_t lastPly{};
+    lastPly = 63;
+    for (ply = 0; ply <= lastPly; ++ply) {
+        petir_header::firstKillers[ply] = petir_header::noMove;
+        petir_header::secondKillers[ply] = petir_header::noMove;
     }
 }
 
 // tools.pas:1326
-bool white_open_check(petir_header::tdata& data, std::uint16_t moves) {
-    bool return_value{};
-    std::int32_t dn{};
-    std::int32_t pos2{};
-    std::int32_t adn{};
-    std::int32_t post{};
-    std::int32_t posraja{};
-    std::uint64_t temp{};
-    pos2 = (moves & 127);
-    posraja = petir_bitboard_mask::king_square(data.kingwhite);
-    dn = petir_bitboard_mask::direction[posraja][pos2];
-    if ((dn == 0)) {
-        return_value = false;
-        return return_value;
+bool exposesWhiteKing(petir_header::tdata& position, std::uint16_t move) {
+    bool result{};
+    std::int32_t direction{};
+    std::int32_t fromSquare{};
+    std::int32_t absoluteDirection{};
+    std::int32_t toSquare{};
+    std::int32_t kingSquare{};
+    std::uint64_t occupancyWithoutMover{};
+    fromSquare = (move & 127);
+    kingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    direction = petir_bitboard_mask::rayDirection[kingSquare][fromSquare];
+    if ((direction == 0)) {
+        result = false;
+        return result;
     }
-    adn = pas::abs(dn);
-    post = (pas::shr(moves, 7) & 127);
-    if ((post == petir_header::_en_passant)) {
-        if ((data.ep > (pos2 & 7))) {
-            post = pas::sub(pos2, 7);
+    absoluteDirection = pas::abs(direction);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    if ((toSquare == petir_header::enPassantTarget)) {
+        if ((position.enPassantFile > (fromSquare & 7))) {
+            toSquare = pas::sub(fromSquare, 7);
         } else {
-            post = pas::sub(pos2, 9);
+            toSquare = pas::sub(fromSquare, 9);
         }
     } else {
-        if ((post > 63)) {
-            return_value = false;
-            return return_value;
+        if ((toSquare > 63)) {
+            result = false;
+            return result;
         }
     }
-    if ((pas::abs(petir_bitboard_mask::direction[pos2][post]) == adn)) {
-        return_value = false;
-        return return_value;
+    if ((pas::abs(petir_bitboard_mask::rayDirection[fromSquare][toSquare]) == absoluteDirection)) {
+        result = false;
+        return result;
     }
-    if ((adn == 7)) {
-        temp = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[pos2]));
-        if (((petir_bitboard_mask::diaga8h1mask[posraja][(pas::shr(temp, petir_bitboard_mask::a8h1shiftmask[posraja]) & 255)] & (data.queenblack | data.bishopblack)) != 0)) {
-            return_value = true;
-            return return_value;
+    if ((absoluteDirection == 7)) {
+        occupancyWithoutMover = (position.allPiecesA8H1 & (~petir_bitboard_mask::rotatedA8H1SquareMask[fromSquare]));
+        if (((petir_bitboard_mask::diagonalA8H1Attacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::diagonalA8H1Shift[kingSquare]) & 255)] & (position.blackQueens | position.blackBishops)) != 0)) {
+            result = true;
+            return result;
         }
     } else {
-        if ((adn == 9)) {
-            temp = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[pos2]));
-            if (((petir_bitboard_mask::diagh8a1mask[posraja][(pas::shr(temp, petir_bitboard_mask::h8a1shiftmask[posraja]) & 255)] & (data.queenblack | data.bishopblack)) != 0)) {
-                return_value = true;
-                return return_value;
+        if ((absoluteDirection == 9)) {
+            occupancyWithoutMover = (position.allPiecesH8A1 & (~petir_bitboard_mask::rotatedH8A1SquareMask[fromSquare]));
+            if (((petir_bitboard_mask::diagonalH8A1Attacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::diagonalH8A1Shift[kingSquare]) & 255)] & (position.blackQueens | position.blackBishops)) != 0)) {
+                result = true;
+                return result;
             }
         } else {
-            if ((adn == 8)) {
-                temp = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[pos2]));
-                if (((petir_bitboard_mask::vertmask2[posraja][(pas::shr(temp, petir_bitboard_mask::vershiftmask[posraja]) & 63)] & (data.queenblack | data.rookblack)) != 0)) {
-                    return_value = true;
-                    return return_value;
+            if ((absoluteDirection == 8)) {
+                occupancyWithoutMover = (position.allPiecesRotated90 & (~petir_bitboard_mask::rotated90SquareMask[fromSquare]));
+                if (((petir_bitboard_mask::verticalAttacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::verticalShift[kingSquare]) & 63)] & (position.blackQueens | position.blackRooks)) != 0)) {
+                    result = true;
+                    return result;
                 }
             } else {
-                if ((adn == 1)) {
-                    temp = (data.allpieces & (~petir_bitboard_mask::bit(pos2)));
-                    if (((petir_bitboard_mask::horzmask2[posraja][(pas::shr(temp, pas::add((posraja & 56), 1)) & 63)] & (data.queenblack | data.rookblack)) != 0)) {
-                        return_value = true;
-                        return return_value;
+                if ((absoluteDirection == 1)) {
+                    occupancyWithoutMover = (position.allPieces & (~petir_bitboard_mask::squareBit(fromSquare)));
+                    if (((petir_bitboard_mask::horizontalAttacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, pas::add((kingSquare & 56), 1)) & 63)] & (position.blackQueens | position.blackRooks)) != 0)) {
+                        result = true;
+                        return result;
                     }
                 }
             }
         }
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 // tools.pas:1396
-bool white_open_check2(petir_header::tdata& data, std::uint16_t pos2, std::uint16_t post, std::uint16_t posraja) {
-    bool return_value{};
-    std::int32_t dn{};
-    std::int32_t adn{};
-    std::uint64_t temp{};
-    dn = petir_bitboard_mask::direction[posraja][pos2];
-    if ((dn == 0)) {
-        return_value = false;
-        return return_value;
+bool exposesWhiteKingFrom(petir_header::tdata& position, std::uint16_t fromSquare, std::uint16_t toSquare, std::uint16_t kingSquare) {
+    bool result{};
+    std::int32_t direction{};
+    std::int32_t absoluteDirection{};
+    std::uint64_t occupancyWithoutMover{};
+    direction = petir_bitboard_mask::rayDirection[kingSquare][fromSquare];
+    if ((direction == 0)) {
+        result = false;
+        return result;
     }
-    adn = pas::abs(dn);
-    if ((pas::abs(petir_bitboard_mask::direction[pos2][post]) == adn)) {
-        return_value = false;
-        return return_value;
+    absoluteDirection = pas::abs(direction);
+    if ((pas::abs(petir_bitboard_mask::rayDirection[fromSquare][toSquare]) == absoluteDirection)) {
+        result = false;
+        return result;
     }
-    if ((adn == 7)) {
-        temp = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[pos2]));
-        if (((petir_bitboard_mask::diaga8h1mask[posraja][(pas::shr(temp, petir_bitboard_mask::a8h1shiftmask[posraja]) & 255)] & (data.queenwhite | data.bishopwhite)) != 0)) {
-            return_value = true;
-            return return_value;
+    if ((absoluteDirection == 7)) {
+        occupancyWithoutMover = (position.allPiecesA8H1 & (~petir_bitboard_mask::rotatedA8H1SquareMask[fromSquare]));
+        if (((petir_bitboard_mask::diagonalA8H1Attacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::diagonalA8H1Shift[kingSquare]) & 255)] & (position.whiteQueens | position.whiteBishops)) != 0)) {
+            result = true;
+            return result;
         }
     } else {
-        if ((adn == 9)) {
-            temp = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[pos2]));
-            if (((petir_bitboard_mask::diagh8a1mask[posraja][(pas::shr(temp, petir_bitboard_mask::h8a1shiftmask[posraja]) & 255)] & (data.queenwhite | data.bishopwhite)) != 0)) {
-                return_value = true;
-                return return_value;
+        if ((absoluteDirection == 9)) {
+            occupancyWithoutMover = (position.allPiecesH8A1 & (~petir_bitboard_mask::rotatedH8A1SquareMask[fromSquare]));
+            if (((petir_bitboard_mask::diagonalH8A1Attacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::diagonalH8A1Shift[kingSquare]) & 255)] & (position.whiteQueens | position.whiteBishops)) != 0)) {
+                result = true;
+                return result;
             }
         } else {
-            if ((adn == 8)) {
-                temp = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[pos2]));
-                if (((petir_bitboard_mask::vertmask2[posraja][(pas::shr(temp, petir_bitboard_mask::vershiftmask[posraja]) & 63)] & (data.queenwhite | data.rookwhite)) != 0)) {
-                    return_value = true;
-                    return return_value;
+            if ((absoluteDirection == 8)) {
+                occupancyWithoutMover = (position.allPiecesRotated90 & (~petir_bitboard_mask::rotated90SquareMask[fromSquare]));
+                if (((petir_bitboard_mask::verticalAttacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::verticalShift[kingSquare]) & 63)] & (position.whiteQueens | position.whiteRooks)) != 0)) {
+                    result = true;
+                    return result;
                 }
             } else {
-                if ((adn == 1)) {
-                    temp = (data.allpieces & (~petir_bitboard_mask::bit(pos2)));
-                    if (((petir_bitboard_mask::horzmask2[posraja][(pas::shr(temp, pas::add((posraja & 56), 1)) & 63)] & (data.queenwhite | data.rookwhite)) != 0)) {
-                        return_value = true;
-                        return return_value;
+                if ((absoluteDirection == 1)) {
+                    occupancyWithoutMover = (position.allPieces & (~petir_bitboard_mask::squareBit(fromSquare)));
+                    if (((petir_bitboard_mask::horizontalAttacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, pas::add((kingSquare & 56), 1)) & 63)] & (position.whiteQueens | position.whiteRooks)) != 0)) {
+                        result = true;
+                        return result;
                     }
                 }
             }
         }
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 // tools.pas:1454
-bool black_open_check2(petir_header::tdata& data, std::uint16_t pos2, std::uint16_t post, std::uint16_t posraja) {
-    bool return_value{};
-    std::int32_t dn{};
-    std::int32_t adn{};
-    std::uint64_t temp{};
-    dn = petir_bitboard_mask::direction[posraja][pos2];
-    if ((dn == 0)) {
-        return_value = false;
-        return return_value;
+bool exposesBlackKingFrom(petir_header::tdata& position, std::uint16_t fromSquare, std::uint16_t toSquare, std::uint16_t kingSquare) {
+    bool result{};
+    std::int32_t direction{};
+    std::int32_t absoluteDirection{};
+    std::uint64_t occupancyWithoutMover{};
+    direction = petir_bitboard_mask::rayDirection[kingSquare][fromSquare];
+    if ((direction == 0)) {
+        result = false;
+        return result;
     }
-    adn = pas::abs(dn);
-    if ((pas::abs(petir_bitboard_mask::direction[pos2][post]) == adn)) {
-        return_value = false;
-        return return_value;
+    absoluteDirection = pas::abs(direction);
+    if ((pas::abs(petir_bitboard_mask::rayDirection[fromSquare][toSquare]) == absoluteDirection)) {
+        result = false;
+        return result;
     }
-    if ((adn == 7)) {
-        temp = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[pos2]));
-        if (((petir_bitboard_mask::diaga8h1mask[posraja][(pas::shr(temp, petir_bitboard_mask::a8h1shiftmask[posraja]) & 255)] & (data.queenblack | data.bishopblack)) != 0)) {
-            return_value = true;
-            return return_value;
+    if ((absoluteDirection == 7)) {
+        occupancyWithoutMover = (position.allPiecesA8H1 & (~petir_bitboard_mask::rotatedA8H1SquareMask[fromSquare]));
+        if (((petir_bitboard_mask::diagonalA8H1Attacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::diagonalA8H1Shift[kingSquare]) & 255)] & (position.blackQueens | position.blackBishops)) != 0)) {
+            result = true;
+            return result;
         }
     } else {
-        if ((adn == 9)) {
-            temp = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[pos2]));
-            if (((petir_bitboard_mask::diagh8a1mask[posraja][(pas::shr(temp, petir_bitboard_mask::h8a1shiftmask[posraja]) & 255)] & (data.queenblack | data.bishopblack)) != 0)) {
-                return_value = true;
-                return return_value;
+        if ((absoluteDirection == 9)) {
+            occupancyWithoutMover = (position.allPiecesH8A1 & (~petir_bitboard_mask::rotatedH8A1SquareMask[fromSquare]));
+            if (((petir_bitboard_mask::diagonalH8A1Attacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::diagonalH8A1Shift[kingSquare]) & 255)] & (position.blackQueens | position.blackBishops)) != 0)) {
+                result = true;
+                return result;
             }
         } else {
-            if ((adn == 8)) {
-                temp = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[pos2]));
-                if (((petir_bitboard_mask::vertmask2[posraja][(pas::shr(temp, petir_bitboard_mask::vershiftmask[posraja]) & 63)] & (data.queenblack | data.rookblack)) != 0)) {
-                    return_value = true;
-                    return return_value;
+            if ((absoluteDirection == 8)) {
+                occupancyWithoutMover = (position.allPiecesRotated90 & (~petir_bitboard_mask::rotated90SquareMask[fromSquare]));
+                if (((petir_bitboard_mask::verticalAttacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::verticalShift[kingSquare]) & 63)] & (position.blackQueens | position.blackRooks)) != 0)) {
+                    result = true;
+                    return result;
                 }
             } else {
-                if ((adn == 1)) {
-                    temp = (data.allpieces & (~petir_bitboard_mask::bit(pos2)));
-                    if (((petir_bitboard_mask::horzmask2[posraja][(pas::shr(temp, pas::add((posraja & 56), 1)) & 63)] & (data.queenblack | data.rookblack)) != 0)) {
-                        return_value = true;
-                        return return_value;
+                if ((absoluteDirection == 1)) {
+                    occupancyWithoutMover = (position.allPieces & (~petir_bitboard_mask::squareBit(fromSquare)));
+                    if (((petir_bitboard_mask::horizontalAttacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, pas::add((kingSquare & 56), 1)) & 63)] & (position.blackQueens | position.blackRooks)) != 0)) {
+                        result = true;
+                        return result;
                     }
                 }
             }
         }
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 // tools.pas:1253
-bool black_open_check(petir_header::tdata& data, std::uint16_t moves) {
-    bool return_value{};
-    std::int32_t dn{};
-    std::int32_t pos2{};
-    std::int32_t adn{};
-    std::int32_t post{};
-    std::int32_t posraja{};
-    std::uint64_t temp{};
-    pos2 = (moves & 127);
-    posraja = petir_bitboard_mask::king_square(data.kingblack);
-    dn = petir_bitboard_mask::direction[posraja][pos2];
-    if ((dn == 0)) {
-        return_value = false;
-        return return_value;
+bool exposesBlackKing(petir_header::tdata& position, std::uint16_t move) {
+    bool result{};
+    std::int32_t direction{};
+    std::int32_t fromSquare{};
+    std::int32_t absoluteDirection{};
+    std::int32_t toSquare{};
+    std::int32_t kingSquare{};
+    std::uint64_t occupancyWithoutMover{};
+    fromSquare = (move & 127);
+    kingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    direction = petir_bitboard_mask::rayDirection[kingSquare][fromSquare];
+    if ((direction == 0)) {
+        result = false;
+        return result;
     }
-    post = (pas::shr(moves, 7) & 127);
-    if ((post == petir_header::_en_passant)) {
-        if ((data.ep > (pos2 & 7))) {
-            post = pas::add(pos2, 9);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    if ((toSquare == petir_header::enPassantTarget)) {
+        if ((position.enPassantFile > (fromSquare & 7))) {
+            toSquare = pas::add(fromSquare, 9);
         } else {
-            post = pas::add(pos2, 7);
+            toSquare = pas::add(fromSquare, 7);
         }
     } else {
-        if ((post > 63)) {
-            return_value = false;
-            return return_value;
+        if ((toSquare > 63)) {
+            result = false;
+            return result;
         }
     }
-    adn = pas::abs(dn);
-    if ((pas::abs(petir_bitboard_mask::direction[pos2][post]) == adn)) {
-        return_value = false;
-        return return_value;
+    absoluteDirection = pas::abs(direction);
+    if ((pas::abs(petir_bitboard_mask::rayDirection[fromSquare][toSquare]) == absoluteDirection)) {
+        result = false;
+        return result;
     }
-    if ((adn == 7)) {
-        temp = (data.allpiecesa8h1 & (~petir_bitboard_mask::bit2nmaska8h1[pos2]));
-        if (((petir_bitboard_mask::diaga8h1mask[posraja][(pas::shr(temp, petir_bitboard_mask::a8h1shiftmask[posraja]) & 255)] & (data.queenwhite | data.bishopwhite)) != 0)) {
-            return_value = true;
-            return return_value;
+    if ((absoluteDirection == 7)) {
+        occupancyWithoutMover = (position.allPiecesA8H1 & (~petir_bitboard_mask::rotatedA8H1SquareMask[fromSquare]));
+        if (((petir_bitboard_mask::diagonalA8H1Attacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::diagonalA8H1Shift[kingSquare]) & 255)] & (position.whiteQueens | position.whiteBishops)) != 0)) {
+            result = true;
+            return result;
         }
     } else {
-        if ((adn == 9)) {
-            temp = (data.allpiecesh8a1 & (~petir_bitboard_mask::bit2nmaskh8a1[pos2]));
-            if (((petir_bitboard_mask::diagh8a1mask[posraja][(pas::shr(temp, petir_bitboard_mask::h8a1shiftmask[posraja]) & 255)] & (data.queenwhite | data.bishopwhite)) != 0)) {
-                return_value = true;
-                return return_value;
+        if ((absoluteDirection == 9)) {
+            occupancyWithoutMover = (position.allPiecesH8A1 & (~petir_bitboard_mask::rotatedH8A1SquareMask[fromSquare]));
+            if (((petir_bitboard_mask::diagonalH8A1Attacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::diagonalH8A1Shift[kingSquare]) & 255)] & (position.whiteQueens | position.whiteBishops)) != 0)) {
+                result = true;
+                return result;
             }
         } else {
-            if ((adn == 8)) {
-                temp = (data.allpiecesr90 & (~petir_bitboard_mask::bit2nmask90[pos2]));
-                if (((petir_bitboard_mask::vertmask2[posraja][(pas::shr(temp, petir_bitboard_mask::vershiftmask[posraja]) & 63)] & (data.queenwhite | data.rookwhite)) != 0)) {
-                    return_value = true;
-                    return return_value;
+            if ((absoluteDirection == 8)) {
+                occupancyWithoutMover = (position.allPiecesRotated90 & (~petir_bitboard_mask::rotated90SquareMask[fromSquare]));
+                if (((petir_bitboard_mask::verticalAttacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, petir_bitboard_mask::verticalShift[kingSquare]) & 63)] & (position.whiteQueens | position.whiteRooks)) != 0)) {
+                    result = true;
+                    return result;
                 }
             } else {
-                if ((adn == 1)) {
-                    temp = (data.allpieces & (~petir_bitboard_mask::bit(pos2)));
-                    if (((petir_bitboard_mask::horzmask2[posraja][(pas::shr(temp, pas::add((posraja & 56), 1)) & 63)] & (data.queenwhite | data.rookwhite)) != 0)) {
-                        return_value = true;
-                        return return_value;
+                if ((absoluteDirection == 1)) {
+                    occupancyWithoutMover = (position.allPieces & (~petir_bitboard_mask::squareBit(fromSquare)));
+                    if (((petir_bitboard_mask::horizontalAttacks[kingSquare][(pas::shiftRight(occupancyWithoutMover, pas::add((kingSquare & 56), 1)) & 63)] & (position.whiteQueens | position.whiteRooks)) != 0)) {
+                        result = true;
+                        return result;
                     }
                 }
             }
         }
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 }
 
 // tools.pas:1203
-bool isextension(petir_header::tdata& data, std::int32_t& newlevel, std::int32_t giliran, std::int32_t moves, std::int32_t& cext) {
-    bool return_value{};
-    std::uint8_t pos{};
-    std::int8_t d{};
-    return_value = false;
-    pos = (moves & 127);
-    if ((giliran == petir_header::_sisihitam)) {
-        pos = pas::sub(63, pos);
+bool extendPassedPawnPush(petir_header::tdata& position, std::int32_t& newDepth, std::int32_t sideToMove, std::int32_t move, std::int32_t& extensionCredit) {
+    bool result{};
+    std::uint8_t toSquare{};
+    result = false;
+    toSquare = (move & 127);
+    if ((sideToMove == petir_header::blackSide)) {
+        toSquare = pas::sub(63, toSquare);
     }
-    if ((pos <= petir_header::h4)) {
-        return return_value;
+    if ((toSquare <= petir_header::h4)) {
+        return result;
     }
-    if ((pos <= petir_header::h5)) {
-        if (((data.nilai_perwira_putih > 15) && (data.nilai_perwira_hitam > 15))) {
-            return return_value;
+    if ((toSquare <= petir_header::h5)) {
+        if (((position.whiteNonPawnMaterial > 15) && (position.blackNonPawnMaterial > 15))) {
+            return result;
         }
-        if ((newlevel > 24)) {
-            return return_value;
+        if ((newDepth > 24)) {
+            return result;
         }
-        if ((giliran == petir_header::_sisiputih)) {
-            if (((data.papan[pas::add(pos, 16)] != 0) || (data.papan[pas::add(pos, 24)] != 0))) {
-                return return_value;
+        if ((sideToMove == petir_header::whiteSide)) {
+            if (((position.board[pas::add(toSquare, 16)] != 0) || (position.board[pas::add(toSquare, 24)] != 0))) {
+                return result;
             }
-            if ((((pos & 7) < 7) && (data.papan[pas::add(pos, 17)] == petir_header::_pionhitam))) {
-                return return_value;
+            if ((((toSquare & 7) < 7) && (position.board[pas::add(toSquare, 17)] == petir_header::blackPawn))) {
+                return result;
             }
-            if ((((pos & 7) > 0) && (data.papan[pas::add(pos, 15)] == petir_header::_pionhitam))) {
-                return return_value;
+            if ((((toSquare & 7) > 0) && (position.board[pas::add(toSquare, 15)] == petir_header::blackPawn))) {
+                return result;
             }
-            return_value = true;
-            (newlevel = pas::increment(newlevel, 8));
-            (cext = pas::decrement(cext, 8));
-            return return_value;
+            result = true;
+            (newDepth = pas::increment(newDepth, 8));
+            (extensionCredit = pas::decrement(extensionCredit, 8));
+            return result;
         } else {
-            pos = (moves & 127);
-            if (((data.papan[pas::sub(pos, 16)] != 0) || (data.papan[pas::sub(pos, 24)] != 0))) {
-                return return_value;
+            toSquare = (move & 127);
+            if (((position.board[pas::sub(toSquare, 16)] != 0) || (position.board[pas::sub(toSquare, 24)] != 0))) {
+                return result;
             }
-            if ((((pos & 7) < 7) && (data.papan[pas::sub(pos, 15)] == petir_header::_pionputih))) {
-                return return_value;
+            if ((((toSquare & 7) < 7) && (position.board[pas::sub(toSquare, 15)] == petir_header::whitePawn))) {
+                return result;
             }
-            if ((((pos & 7) > 0) && (data.papan[pas::sub(pos, 17)] == petir_header::_pionputih))) {
-                return return_value;
+            if ((((toSquare & 7) > 0) && (position.board[pas::sub(toSquare, 17)] == petir_header::whitePawn))) {
+                return result;
             }
-            return_value = true;
-            (newlevel = pas::increment(newlevel, 8));
-            (cext = pas::decrement(cext, 8));
-            return return_value;
+            result = true;
+            (newDepth = pas::increment(newDepth, 8));
+            (extensionCredit = pas::decrement(extensionCredit, 8));
+            return result;
         }
-        return return_value;
+        return result;
     }
-    if (((data.nilai_perwira_putih <= 12) && (data.nilai_perwira_hitam <= 12))) {
-        (newlevel = pas::increment(newlevel, 8));
-        (cext = pas::decrement(cext, 8));
-        return_value = true;
-        return return_value;
+    if (((position.whiteNonPawnMaterial <= 12) && (position.blackNonPawnMaterial <= 12))) {
+        (newDepth = pas::increment(newDepth, 8));
+        (extensionCredit = pas::decrement(extensionCredit, 8));
+        result = true;
+        return result;
     } else {
-        if (((data.nilai_perwira_putih <= 17) && (data.nilai_perwira_hitam <= 17))) {
-            (newlevel = pas::increment(newlevel, 8));
-            (cext = pas::decrement(cext, 8));
-            return_value = true;
-            return return_value;
+        if (((position.whiteNonPawnMaterial <= 17) && (position.blackNonPawnMaterial <= 17))) {
+            (newDepth = pas::increment(newDepth, 8));
+            (extensionCredit = pas::decrement(extensionCredit, 8));
+            result = true;
+            return result;
         } else {
-            (newlevel = pas::increment(newlevel, petir_header::pushed_pawn_extension_midgame));
-            (cext = pas::decrement(cext, petir_header::pushed_pawn_extension_midgame));
-            return_value = true;
-            return return_value;
+            (newDepth = pas::increment(newDepth, petir_header::pawnPushExtensionMiddlegame));
+            (extensionCredit = pas::decrement(extensionCredit, petir_header::pawnPushExtensionMiddlegame));
+            result = true;
+            return result;
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:1179
-bool winningmaterial(std::int32_t ms, std::uint8_t giliran) {
-    bool return_value{};
-    return_value = false;
-    if (((giliran == petir_header::_sisihitam) && (petir_header::data.materialscore <= pas::negate(petir_header::_nilai_benteng)))) {
-        return_value = true;
+bool isWinningMaterial(std::int32_t materialScore, std::uint8_t sideToMove) {
+    bool result{};
+    result = false;
+    if (((sideToMove == petir_header::blackSide) && (petir_header::gamePosition.materialScore <= pas::negate(petir_header::rookValue)))) {
+        result = true;
     } else {
-        if (((giliran == petir_header::_sisiputih) && (petir_header::data.materialscore >= petir_header::_nilai_benteng))) {
-            return_value = true;
+        if (((sideToMove == petir_header::whiteSide) && (petir_header::gamePosition.materialScore >= petir_header::rookValue))) {
+            result = true;
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:1188
-bool losingmaterial(std::int32_t ms, std::uint8_t giliran) {
-    bool return_value{};
-    return_value = false;
-    if (((giliran == petir_header::_sisihitam) && (petir_header::data.materialscore >= petir_header::_nilai_benteng))) {
-        return_value = true;
+bool isLosingMaterial(std::int32_t materialScore, std::uint8_t sideToMove) {
+    bool result{};
+    result = false;
+    if (((sideToMove == petir_header::blackSide) && (petir_header::gamePosition.materialScore >= petir_header::rookValue))) {
+        result = true;
     } else {
-        if (((giliran == petir_header::_sisiputih) && (petir_header::data.materialscore <= pas::negate(petir_header::_nilai_benteng)))) {
-            return_value = true;
+        if (((sideToMove == petir_header::whiteSide) && (petir_header::gamePosition.materialScore <= pas::negate(petir_header::rookValue)))) {
+            result = true;
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:1160
-bool menskak(petir_header::tdata& data, std::int32_t giliran) {
-    bool return_value{};
-    std::int32_t pas_temp_1{};
-    return_value = false;
-    pas_temp_1 = giliran;
-    if (((pas_temp_1 == petir_header::_sisiputih))) {
-        if (petir_tools::black_checked(data)) {
-            return_value = true;
+bool opponentInCheck(petir_header::tdata& position, std::int32_t sideToMove) {
+    bool result{};
+    std::int32_t side{};
+    result = false;
+    side = sideToMove;
+    if (((side == petir_header::whiteSide))) {
+        if (petir_tools::blackInCheck(position)) {
+            result = true;
         }
     }
-    else if (((pas_temp_1 == petir_header::_sisihitam))) {
-        if (petir_tools::white_checked(data)) {
-            return_value = true;
+    else if (((side == petir_header::blackSide))) {
+        if (petir_tools::whiteInCheck(position)) {
+            result = true;
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:1169
-bool menskak2(petir_header::tdata& data, std::uint16_t giliran, std::uint16_t moves) {
-    bool return_value{};
-    std::int32_t pas_temp_1{};
-    return_value = false;
-    pas_temp_1 = giliran;
-    if (((pas_temp_1 == petir_header::_sisiputih))) {
-        if ((petir_tools::white_menskak(data, moves) || petir_tools::black_open_check(data, moves))) {
-            return_value = true;
+bool moveGivesCheck(petir_header::tdata& position, std::uint16_t sideToMove, std::uint16_t move) {
+    bool result{};
+    std::int32_t side{};
+    result = false;
+    side = sideToMove;
+    if (((side == petir_header::whiteSide))) {
+        if ((petir_tools::whiteMoveGivesCheck(position, move) || petir_tools::exposesBlackKing(position, move))) {
+            result = true;
         }
     }
-    else if (((pas_temp_1 == petir_header::_sisihitam))) {
-        if ((petir_tools::black_menskak(data, moves) || petir_tools::white_open_check(data, moves))) {
-            return_value = true;
+    else if (((side == petir_header::blackSide))) {
+        if ((petir_tools::blackMoveGivesCheck(position, move) || petir_tools::exposesWhiteKing(position, move))) {
+            result = true;
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:1197
-bool pawnpush(petir_header::tdata& data, std::uint16_t giliran, std::uint16_t moves) {
-    bool return_value{};
-    std::uint8_t pp{};
-    return return_value;
+bool isPawnPush(petir_header::tdata& position, std::uint16_t sideToMove, std::uint16_t move) {
+    bool result{};
+    return result;
 }
 
 // tools.pas:280
-bool capture(petir_header::tdata& data, std::uint16_t moves) {
-    bool return_value{};
-    std::uint8_t sto{};
-    return_value = true;
-    sto = (pas::shr(moves, 7) & 127);
-    if ((sto == petir_header::_en_passant)) {
-        return return_value;
+bool isCapture(petir_header::tdata& position, std::uint16_t move) {
+    bool result{};
+    std::uint8_t toSquare{};
+    result = true;
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    if ((toSquare == petir_header::enPassantTarget)) {
+        return result;
     }
-    if (((sto > 63) || (data.papan[sto] == 0))) {
-        return_value = false;
+    if (((toSquare > 63) || (position.board[toSquare] == 0))) {
+        result = false;
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:797
-bool white_forkandpin(std::int32_t move, petir_header::tdata& data) {
-    bool return_value{};
-    std::uint64_t t64{};
-    std::int32_t pos{};
-    std::int32_t c{};
-    std::int32_t pas_temp_1{};
-    return_value = false;
-    if ((move > 63)) {
-        return return_value;
+bool whiteForksOrWinsPawn(std::int32_t square, petir_header::tdata& position) {
+    bool result{};
+    std::uint64_t targets{};
+    std::int32_t targetSquare{};
+    std::int32_t attackedCount{};
+    std::int32_t movedPiece{};
+    result = false;
+    if ((square > 63)) {
+        return result;
     }
-    pas_temp_1 = data.papan[move];
-    if (((pas_temp_1 == petir_header::_pionputih))) {
-        c = 0;
-        if ((((move & 7) > 0) && (data.papan[pas::add(move, 7)] < pas::negate(1)))) {
-            (c = pas::increment(c, 1));
+    movedPiece = position.board[square];
+    if (((movedPiece == petir_header::whitePawn))) {
+        attackedCount = 0;
+        if ((((square & 7) > 0) && (position.board[pas::add(square, 7)] < pas::negate(1)))) {
+            (attackedCount = pas::increment(attackedCount, 1));
         } else {
-            return return_value;
+            return result;
         }
-        if ((((move & 7) < 7) && (data.papan[pas::add(move, 9)] < pas::negate(1)))) {
-            (c = pas::increment(c, 1));
+        if ((((square & 7) < 7) && (position.board[pas::add(square, 9)] < pas::negate(1)))) {
+            (attackedCount = pas::increment(attackedCount, 1));
         }
-        return_value = (c == 2);
+        result = (attackedCount == 2);
     }
-    else if (((pas_temp_1 == petir_header::_kudaputih))) {
-        t64 = (petir_bitboard_mask::knightmask[move] & data.blackpieces);
-        c = 0;
-        while ((t64 != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-            t64 = (t64 & petir_bitboard_mask::bitnot(pos));
-            if ((data.papan[pos] <= petir_header::_bentenghitam)) {
-                (c = pas::increment(c, 1));
+    else if (((movedPiece == petir_header::whiteKnight))) {
+        targets = (petir_bitboard_mask::knightAttacks[square] & position.blackPieces);
+        attackedCount = 0;
+        while ((targets != 0)) {
+            targetSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+            targets = (targets & petir_bitboard_mask::squareBitInverted(targetSquare));
+            if ((position.board[targetSquare] <= petir_header::blackRook)) {
+                (attackedCount = pas::increment(attackedCount, 1));
             }
-            if ((((data.papan[pos] == petir_header::_pionhitam) && (data.papan[pas::sub(pos, 8)] == petir_header::_pionputih)) && (petir_usee::see(petir_header::_sisiputih, data, move, pos) > 0))) {
-                return_value = true;
-                return return_value;
+            if ((((position.board[targetSquare] == petir_header::blackPawn) && (position.board[pas::sub(targetSquare, 8)] == petir_header::whitePawn)) && (petir_usee::staticExchange(petir_header::whiteSide, position, square, targetSquare) > 0))) {
+                result = true;
+                return result;
             }
         }
-        return_value = (c >= 2);
+        result = (attackedCount >= 2);
     }
-    else if (((pas_temp_1 == petir_header::_gajahputih))) {
-        if ((data.nilai_perwira_hitam <= 17)) {
-            t64 = petir_bitboard_mask::diaga8h1mask[move][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[move]) & 255)];
-            t64 = (t64 | petir_bitboard_mask::diagh8a1mask[move][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[move]) & 255)]);
-            t64 = (t64 & data.pawnblack);
-            while ((t64 != 0)) {
-                pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-                if (((data.papan[pas::sub(pos, 8)] == petir_header::_pionputih) && (petir_usee::see(petir_header::_sisiputih, data, move, pos) > 0))) {
-                    return_value = true;
-                    return return_value;
+    else if (((movedPiece == petir_header::whiteBishop))) {
+        if ((position.blackNonPawnMaterial <= 17)) {
+            targets = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+            targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+            targets = (targets & position.blackPawns);
+            while ((targets != 0)) {
+                targetSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+                if (((position.board[pas::sub(targetSquare, 8)] == petir_header::whitePawn) && (petir_usee::staticExchange(petir_header::whiteSide, position, square, targetSquare) > 0))) {
+                    result = true;
+                    return result;
                 }
-                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
+                targets = (targets & petir_bitboard_mask::squareBitInverted(targetSquare));
             }
         }
     }
-    else if (((pas_temp_1 == petir_header::_bentengputih))) {
-        if ((data.nilai_perwira_hitam <= 17)) {
-            t64 = petir_bitboard_mask::horzmask2[move][(pas::shr(data.allpieces, pas::add((move & 56), 1)) & 63)];
-            t64 = (t64 | petir_bitboard_mask::vertmask2[move][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[move]) & 63)]);
-            t64 = (t64 & data.pawnblack);
-            while ((t64 != 0)) {
-                pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-                if (((data.papan[pas::sub(pos, 8)] == petir_header::_pionputih) && (petir_usee::see(petir_header::_sisiputih, data, move, pos) > 0))) {
-                    return_value = true;
-                    return return_value;
+    else if (((movedPiece == petir_header::whiteRook))) {
+        if ((position.blackNonPawnMaterial <= 17)) {
+            targets = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+            targets = (targets | petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)]);
+            targets = (targets & position.blackPawns);
+            while ((targets != 0)) {
+                targetSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+                if (((position.board[pas::sub(targetSquare, 8)] == petir_header::whitePawn) && (petir_usee::staticExchange(petir_header::whiteSide, position, square, targetSquare) > 0))) {
+                    result = true;
+                    return result;
                 }
-                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
+                targets = (targets & petir_bitboard_mask::squareBitInverted(targetSquare));
             }
         }
     }
-    else if (((pas_temp_1 == petir_header::_rajaputih))) {
-        if ((data.nilai_perwira_hitam <= 3)) {
-            t64 = (petir_bitboard_mask::kingmask[move] & data.pawnblack);
-            while ((t64 != 0)) {
-                pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
-                if ((((petir_bitboard_mask::kingmask[pos] & data.kingblack) == 0) && ((petir_bitboard_mask::w_pawn_attack[pos] & data.pawnblack) == 0))) {
-                    return_value = true;
-                    return return_value;
+    else if (((movedPiece == petir_header::whiteKing))) {
+        if ((position.blackNonPawnMaterial <= 3)) {
+            targets = (petir_bitboard_mask::kingAttacks[square] & position.blackPawns);
+            while ((targets != 0)) {
+                targetSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+                targets = (targets & petir_bitboard_mask::squareBitInverted(targetSquare));
+                if ((((petir_bitboard_mask::kingAttacks[targetSquare] & position.blackKingBoard) == 0) && ((petir_bitboard_mask::whitePawnAttacks[targetSquare] & position.blackPawns) == 0))) {
+                    result = true;
+                    return result;
                 }
             }
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:890
-bool black_forkandpin(std::int32_t move, petir_header::tdata& data) {
-    bool return_value{};
-    std::uint64_t t64{};
-    std::int32_t pos{};
-    std::int32_t c{};
-    std::int32_t pas_temp_1{};
-    return_value = false;
-    if ((move > 63)) {
-        return return_value;
+bool blackForksOrWinsPawn(std::int32_t square, petir_header::tdata& position) {
+    bool result{};
+    std::uint64_t targets{};
+    std::int32_t targetSquare{};
+    std::int32_t attackedCount{};
+    std::int32_t movedPiece{};
+    result = false;
+    if ((square > 63)) {
+        return result;
     }
-    pas_temp_1 = data.papan[move];
-    if (((pas_temp_1 == petir_header::_pionhitam))) {
-        c = 0;
-        if ((((move & 7) > 0) && (data.papan[pas::sub(move, 9)] > 1))) {
-            (c = pas::increment(c, 1));
+    movedPiece = position.board[square];
+    if (((movedPiece == petir_header::blackPawn))) {
+        attackedCount = 0;
+        if ((((square & 7) > 0) && (position.board[pas::sub(square, 9)] > 1))) {
+            (attackedCount = pas::increment(attackedCount, 1));
         } else {
-            return return_value;
+            return result;
         }
-        if ((((move & 7) < 7) && (data.papan[pas::sub(move, 7)] > 1))) {
-            (c = pas::increment(c, 1));
+        if ((((square & 7) < 7) && (position.board[pas::sub(square, 7)] > 1))) {
+            (attackedCount = pas::increment(attackedCount, 1));
         } else {
-            return return_value;
+            return result;
         }
-        return_value = (c == 2);
+        result = (attackedCount == 2);
     }
-    else if (((pas_temp_1 == petir_header::_kudahitam))) {
-        t64 = (petir_bitboard_mask::knightmask[move] & data.whitepieces);
-        c = 0;
-        while ((t64 != 0)) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-            t64 = (t64 & petir_bitboard_mask::bitnot(pos));
-            if ((data.papan[pos] >= petir_header::_bentengputih)) {
-                (c = pas::increment(c, 1));
+    else if (((movedPiece == petir_header::blackKnight))) {
+        targets = (petir_bitboard_mask::knightAttacks[square] & position.whitePieces);
+        attackedCount = 0;
+        while ((targets != 0)) {
+            targetSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+            targets = (targets & petir_bitboard_mask::squareBitInverted(targetSquare));
+            if ((position.board[targetSquare] >= petir_header::whiteRook)) {
+                (attackedCount = pas::increment(attackedCount, 1));
             }
-            if ((((data.papan[pos] == petir_header::_pionputih) && (data.papan[pas::add(pos, 8)] == petir_header::_pionhitam)) && (petir_usee::see(petir_header::_sisihitam, data, move, pos) > 0))) {
-                return_value = true;
-                return return_value;
+            if ((((position.board[targetSquare] == petir_header::whitePawn) && (position.board[pas::add(targetSquare, 8)] == petir_header::blackPawn)) && (petir_usee::staticExchange(petir_header::blackSide, position, square, targetSquare) > 0))) {
+                result = true;
+                return result;
             }
         }
-        return_value = (c >= 2);
+        result = (attackedCount >= 2);
     }
-    else if (((pas_temp_1 == petir_header::_gajahhitam))) {
-        if ((data.nilai_perwira_putih <= 17)) {
-            t64 = petir_bitboard_mask::diaga8h1mask[move][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[move]) & 255)];
-            t64 = (t64 | petir_bitboard_mask::diagh8a1mask[move][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[move]) & 255)]);
-            t64 = (t64 & data.pawnwhite);
-            while ((t64 != 0)) {
-                pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-                if (((data.papan[pas::add(pos, 8)] == petir_header::_pionhitam) && (petir_usee::see(petir_header::_sisihitam, data, move, pos) > 0))) {
-                    return_value = true;
-                    return return_value;
+    else if (((movedPiece == petir_header::blackBishop))) {
+        if ((position.whiteNonPawnMaterial <= 17)) {
+            targets = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+            targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+            targets = (targets & position.whitePawns);
+            while ((targets != 0)) {
+                targetSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+                if (((position.board[pas::add(targetSquare, 8)] == petir_header::blackPawn) && (petir_usee::staticExchange(petir_header::blackSide, position, square, targetSquare) > 0))) {
+                    result = true;
+                    return result;
                 }
-                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
+                targets = (targets & petir_bitboard_mask::squareBitInverted(targetSquare));
             }
         }
     }
-    else if (((pas_temp_1 == petir_header::_bentenghitam))) {
-        if ((data.nilai_perwira_putih <= 17)) {
-            t64 = petir_bitboard_mask::horzmask2[move][(pas::shr(data.allpieces, pas::add((move & 56), 1)) & 63)];
-            t64 = (t64 | petir_bitboard_mask::vertmask2[move][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[move]) & 63)]);
-            t64 = (t64 & data.pawnwhite);
-            while ((t64 != 0)) {
-                pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-                if (((data.papan[pas::add(pos, 8)] == petir_header::_pionhitam) && (petir_usee::see(petir_header::_sisihitam, data, move, pos) > 0))) {
-                    return_value = true;
-                    return return_value;
+    else if (((movedPiece == petir_header::blackRook))) {
+        if ((position.whiteNonPawnMaterial <= 17)) {
+            targets = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+            targets = (targets | petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)]);
+            targets = (targets & position.whitePawns);
+            while ((targets != 0)) {
+                targetSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+                if (((position.board[pas::add(targetSquare, 8)] == petir_header::blackPawn) && (petir_usee::staticExchange(petir_header::blackSide, position, square, targetSquare) > 0))) {
+                    result = true;
+                    return result;
                 }
-                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
+                targets = (targets & petir_bitboard_mask::squareBitInverted(targetSquare));
             }
         }
     }
-    else if (((pas_temp_1 == petir_header::_rajahitam))) {
-        if ((data.nilai_perwira_putih <= 3)) {
-            t64 = (petir_bitboard_mask::kingmask[move] & data.pawnwhite);
-            while ((t64 != 0)) {
-                pos = petir_bitboard_mask::firstbitp(pas::address(t64));
-                t64 = (t64 & petir_bitboard_mask::bitnot(pos));
-                if ((((petir_bitboard_mask::kingmask[pos] & data.kingwhite) == 0) && ((petir_bitboard_mask::b_pawn_attack[pos] & data.pawnwhite) == 0))) {
-                    return_value = true;
-                    return return_value;
+    else if (((movedPiece == petir_header::blackKing))) {
+        if ((position.whiteNonPawnMaterial <= 3)) {
+            targets = (petir_bitboard_mask::kingAttacks[square] & position.whitePawns);
+            while ((targets != 0)) {
+                targetSquare = petir_bitboard_mask::firstBit(pas::address(targets));
+                targets = (targets & petir_bitboard_mask::squareBitInverted(targetSquare));
+                if ((((petir_bitboard_mask::kingAttacks[targetSquare] & position.whiteKingBoard) == 0) && ((petir_bitboard_mask::blackPawnAttacks[targetSquare] & position.whitePawns) == 0))) {
+                    result = true;
+                    return result;
                 }
             }
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:268
-std::int32_t captured_value(std::int32_t sto, petir_header::tdata& data) {
-    std::int32_t return_value{};
-    if ((data.cp == 0)) {
-        return_value = 0;
+std::int32_t capturedValue(std::int32_t toSquare, petir_header::tdata& position) {
+    std::int32_t result{};
+    if ((position.lastCaptureType == 0)) {
+        result = 0;
     } else {
-        if ((sto == petir_header::_en_passant)) {
-            return_value = petir_header::_nilai_pion;
+        if ((toSquare == petir_header::enPassantTarget)) {
+            result = petir_header::pawnValue;
         } else {
-            if ((sto >= petir_header::_rokadependek)) {
-                return_value = 0;
+            if ((toSquare >= petir_header::shortCastleTarget)) {
+                result = 0;
             } else {
-                return_value = petir_header::nilai_piece[data.papan[sto]];
+                result = petir_header::pieceValue[position.board[toSquare]];
             }
         }
-        (return_value = pas::increment(return_value, 50));
+        (result = pas::increment(result, 50));
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:497
-bool white_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece) {
-    bool return_value{};
-    std::uint64_t attack{};
-    std::uint64_t raja{};
-    std::uint64_t anu{};
-    std::uint8_t sto{};
-    std::uint8_t posraja{};
-    std::int32_t temp{};
-    std::int32_t x{};
-    std::int32_t y{};
-    std::int32_t pas_temp_1{};
-    threatpiece = 0;
-    posraja = petir_bitboard_mask::king_square(data.kingblack);
-    sto = (pas::shr(moves, 7) & 127);
-    if ((sto > 63)) {
-        if (((sto == petir_header::_rokadependek) || (sto == petir_header::_rokadepanjang))) {
-            threatpiece = 50;
-            return_value = false;
-            return return_value;
+bool whiteMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, std::int32_t& threatenedValue) {
+    bool result{};
+    std::uint64_t attackedSquares{};
+    std::uint64_t kingZone{};
+    std::uint64_t occupancyWithoutSlider{};
+    std::uint8_t toSquare{};
+    std::uint8_t kingSquare{};
+    std::int32_t square{};
+    std::int32_t file{};
+    std::int32_t rank{};
+    std::int32_t movedPiece{};
+    threatenedValue = 0;
+    kingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    if ((toSquare > 63)) {
+        if (((toSquare == petir_header::shortCastleTarget) || (toSquare == petir_header::longCastleTarget))) {
+            threatenedValue = 50;
+            result = false;
+            return result;
         }
-        return_value = true;
-        return return_value;
+        result = true;
+        return result;
     }
-    return_value = false;
-    attack = 0;
-    raja = (petir_bitboard_mask::kingmask[posraja] | petir_bitboard_mask::bit(posraja));
-    pas_temp_1 = data.papan[sto];
-    if (((pas_temp_1 == petir_header::_pionputih))) {
-        if ((sto >= petir_header::a7)) {
-            return_value = true;
-            return return_value;
+    result = false;
+    attackedSquares = 0;
+    kingZone = (petir_bitboard_mask::kingAttacks[kingSquare] | petir_bitboard_mask::squareBit(kingSquare));
+    movedPiece = position.board[toSquare];
+    if (((movedPiece == petir_header::whitePawn))) {
+        if ((toSquare >= petir_header::a7)) {
+            result = true;
+            return result;
         }
-        attack = petir_bitboard_mask::w_pawn_attack[sto];
+        attackedSquares = petir_bitboard_mask::whitePawnAttacks[toSquare];
     }
-    else if (((pas_temp_1 == petir_header::_kudaputih))) {
-        attack = petir_bitboard_mask::knightmask[sto];
+    else if (((movedPiece == petir_header::whiteKnight))) {
+        attackedSquares = petir_bitboard_mask::knightAttacks[toSquare];
     }
-    else if (((pas_temp_1 == petir_header::_gajahputih))) {
-        attack = 0;
-        x = (sto & 7);
-        y = pas::shr(sto, 3);
-        (x = pas::increment(x, 1));
-        (y = pas::increment(y, 1));
-        while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
-            temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if ((data.papan[temp] == petir_header::_pionputih)) {
-                (x = pas::increment(x, 1));
-                (y = pas::increment(y, 1));
-                temp = pas::add(pas::shl(y, 3), x);
-                attack = (attack | petir_bitboard_mask::bit(temp));
+    else if (((movedPiece == petir_header::whiteBishop))) {
+        attackedSquares = 0;
+        file = (toSquare & 7);
+        rank = pas::shiftRight(toSquare, 3);
+        (file = pas::increment(file, 1));
+        (rank = pas::increment(rank, 1));
+        while (((((file <= 7) && (rank <= 7)) && (file >= 0)) && (rank >= 0))) {
+            square = pas::add(pas::shiftLeft(rank, 3), file);
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if ((position.board[square] == petir_header::whitePawn)) {
+                (file = pas::increment(file, 1));
+                (rank = pas::increment(rank, 1));
+                square = pas::add(pas::shiftLeft(rank, 3), file);
+                attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
                 break;
             }
-            if ((data.papan[temp] == petir_header::_mentriputih)) {
-                (x = pas::increment(x, 1));
-                (y = pas::increment(y, 1));
+            if ((position.board[square] == petir_header::whiteQueen)) {
+                (file = pas::increment(file, 1));
+                (rank = pas::increment(rank, 1));
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            (x = pas::increment(x, 1));
-            (y = pas::increment(y, 1));
+            (file = pas::increment(file, 1));
+            (rank = pas::increment(rank, 1));
         }
-        x = (sto & 7);
-        y = pas::shr(sto, 3);
-        (x = pas::decrement(x, 1));
-        (y = pas::increment(y, 1));
-        while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
-            temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if ((data.papan[temp] == petir_header::_pionputih)) {
-                (x = pas::decrement(x, 1));
-                (y = pas::increment(y, 1));
-                temp = pas::add(pas::shl(y, 3), x);
-                attack = (attack | petir_bitboard_mask::bit(temp));
+        file = (toSquare & 7);
+        rank = pas::shiftRight(toSquare, 3);
+        (file = pas::decrement(file, 1));
+        (rank = pas::increment(rank, 1));
+        while (((((file <= 7) && (rank <= 7)) && (file >= 0)) && (rank >= 0))) {
+            square = pas::add(pas::shiftLeft(rank, 3), file);
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if ((position.board[square] == petir_header::whitePawn)) {
+                (file = pas::decrement(file, 1));
+                (rank = pas::increment(rank, 1));
+                square = pas::add(pas::shiftLeft(rank, 3), file);
+                attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
                 break;
             }
-            if ((data.papan[temp] == petir_header::_mentriputih)) {
-                (x = pas::decrement(x, 1));
-                (y = pas::increment(y, 1));
+            if ((position.board[square] == petir_header::whiteQueen)) {
+                (file = pas::decrement(file, 1));
+                (rank = pas::increment(rank, 1));
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            (x = pas::decrement(x, 1));
-            (y = pas::increment(y, 1));
+            (file = pas::decrement(file, 1));
+            (rank = pas::increment(rank, 1));
         }
-        x = (sto & 7);
-        y = pas::shr(sto, 3);
-        (x = pas::increment(x, 1));
-        (y = pas::decrement(y, 1));
-        while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
-            temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if ((data.papan[temp] == petir_header::_mentriputih)) {
-                (x = pas::increment(x, 1));
-                (y = pas::decrement(y, 1));
+        file = (toSquare & 7);
+        rank = pas::shiftRight(toSquare, 3);
+        (file = pas::increment(file, 1));
+        (rank = pas::decrement(rank, 1));
+        while (((((file <= 7) && (rank <= 7)) && (file >= 0)) && (rank >= 0))) {
+            square = pas::add(pas::shiftLeft(rank, 3), file);
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if ((position.board[square] == petir_header::whiteQueen)) {
+                (file = pas::increment(file, 1));
+                (rank = pas::decrement(rank, 1));
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            (x = pas::increment(x, 1));
-            (y = pas::decrement(y, 1));
+            (file = pas::increment(file, 1));
+            (rank = pas::decrement(rank, 1));
         }
-        x = (sto & 7);
-        y = pas::shr(sto, 3);
-        (x = pas::decrement(x, 1));
-        (y = pas::decrement(y, 1));
-        while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
-            temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if ((data.papan[temp] == petir_header::_mentriputih)) {
-                (x = pas::decrement(x, 1));
-                (y = pas::decrement(y, 1));
+        file = (toSquare & 7);
+        rank = pas::shiftRight(toSquare, 3);
+        (file = pas::decrement(file, 1));
+        (rank = pas::decrement(rank, 1));
+        while (((((file <= 7) && (rank <= 7)) && (file >= 0)) && (rank >= 0))) {
+            square = pas::add(pas::shiftLeft(rank, 3), file);
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if ((position.board[square] == petir_header::whiteQueen)) {
+                (file = pas::decrement(file, 1));
+                (rank = pas::decrement(rank, 1));
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            (x = pas::decrement(x, 1));
-            (y = pas::decrement(y, 1));
+            (file = pas::decrement(file, 1));
+            (rank = pas::decrement(rank, 1));
         }
     }
-    else if (((pas_temp_1 == petir_header::_bentengputih))) {
-        anu = (data.allpieces & (~data.queenwhite));
-        attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(anu, pas::add((sto & 56), 1)) & 63)];
-        temp = pas::add(sto, 8);
-        while ((temp <= 63)) {
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if (((data.papan[temp] == petir_header::_bentengputih) || (data.papan[temp] == petir_header::_mentriputih))) {
-                temp = pas::add(temp, 8);
+    else if (((movedPiece == petir_header::whiteRook))) {
+        occupancyWithoutSlider = (position.allPieces & (~position.whiteQueens));
+        attackedSquares = petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(occupancyWithoutSlider, pas::add((toSquare & 56), 1)) & 63)];
+        square = pas::add(toSquare, 8);
+        while ((square <= 63)) {
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if (((position.board[square] == petir_header::whiteRook) || (position.board[square] == petir_header::whiteQueen))) {
+                square = pas::add(square, 8);
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            temp = pas::add(temp, 8);
+            square = pas::add(square, 8);
         }
-        temp = pas::sub(sto, 8);
-        while ((temp >= 0)) {
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if (((data.papan[temp] == petir_header::_bentengputih) || (data.papan[temp] == petir_header::_mentriputih))) {
-                temp = pas::sub(temp, 8);
+        square = pas::sub(toSquare, 8);
+        while ((square >= 0)) {
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if (((position.board[square] == petir_header::whiteRook) || (position.board[square] == petir_header::whiteQueen))) {
+                square = pas::sub(square, 8);
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            temp = pas::sub(temp, 8);
+            square = pas::sub(square, 8);
         }
     }
-    else if (((pas_temp_1 == petir_header::_mentriputih))) {
-        attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)]);
-        anu = (data.allpieces & (~data.rookwhite));
-        attack = (attack | petir_bitboard_mask::horzmask2[sto][(pas::shr(anu, pas::add((sto & 56), 1)) & 63)]);
-        temp = pas::add(sto, 8);
-        while ((temp <= 63)) {
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if (((data.papan[temp] == petir_header::_bentengputih) || (data.papan[temp] == petir_header::_mentriputih))) {
-                temp = pas::add(temp, 8);
+    else if (((movedPiece == petir_header::whiteQueen))) {
+        attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+        attackedSquares = (attackedSquares | petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)]);
+        occupancyWithoutSlider = (position.allPieces & (~position.whiteRooks));
+        attackedSquares = (attackedSquares | petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(occupancyWithoutSlider, pas::add((toSquare & 56), 1)) & 63)]);
+        square = pas::add(toSquare, 8);
+        while ((square <= 63)) {
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if (((position.board[square] == petir_header::whiteRook) || (position.board[square] == petir_header::whiteQueen))) {
+                square = pas::add(square, 8);
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            temp = pas::add(temp, 8);
+            square = pas::add(square, 8);
         }
-        temp = pas::sub(sto, 8);
-        while ((temp >= 0)) {
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if (((data.papan[temp] == petir_header::_bentengputih) || (data.papan[temp] == petir_header::_mentriputih))) {
-                temp = pas::sub(temp, 8);
+        square = pas::sub(toSquare, 8);
+        while ((square >= 0)) {
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if (((position.board[square] == petir_header::whiteRook) || (position.board[square] == petir_header::whiteQueen))) {
+                square = pas::sub(square, 8);
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            temp = pas::sub(temp, 8);
+            square = pas::sub(square, 8);
         }
     }
-    else if (((pas_temp_1 == petir_header::_rajaputih))) {
-        attack = petir_bitboard_mask::kingmask[sto];
+    else if (((movedPiece == petir_header::whiteKing))) {
+        attackedSquares = petir_bitboard_mask::kingAttacks[toSquare];
     }
-    threatpiece = 0;
-    if (((attack & raja) != 0)) {
-        return_value = true;
-        return return_value;
+    threatenedValue = 0;
+    if (((attackedSquares & kingZone) != 0)) {
+        result = true;
+        return result;
     }
-    if (((attack & data.queenblack) != 0)) {
-        threatpiece = petir_header::_nilai_mentri;
+    if (((attackedSquares & position.blackQueens) != 0)) {
+        threatenedValue = petir_header::queenValue;
     } else {
-        if (((attack & data.rookblack) != 0)) {
-            threatpiece = petir_header::_nilai_benteng;
+        if (((attackedSquares & position.blackRooks) != 0)) {
+            threatenedValue = petir_header::rookValue;
         } else {
-            if (((attack & data.bishopblack) != 0)) {
-                threatpiece = petir_header::_nilai_gajah;
+            if (((attackedSquares & position.blackBishops) != 0)) {
+                threatenedValue = petir_header::bishopValue;
             } else {
-                if (((attack & data.knightblack) != 0)) {
-                    threatpiece = petir_header::_nilai_kuda;
+                if (((attackedSquares & position.blackKnights) != 0)) {
+                    threatenedValue = petir_header::knightValue;
                 } else {
-                    if (((attack & data.pawnblack) != 0)) {
-                        threatpiece = petir_header::_nilai_pion;
+                    if (((attackedSquares & position.blackPawns) != 0)) {
+                        threatenedValue = petir_header::pawnValue;
                     }
                 }
             }
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:298
-bool black_threat(petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece) {
-    bool return_value{};
-    std::uint64_t attack{};
-    std::uint64_t raja{};
-    std::uint64_t anu{};
-    std::uint8_t sto{};
-    std::uint8_t posraja{};
-    std::int32_t temp{};
-    std::int32_t x{};
-    std::int32_t y{};
-    std::int32_t pas_temp_1{};
-    threatpiece = 0;
-    posraja = petir_bitboard_mask::king_square(data.kingwhite);
-    sto = (pas::shr(moves, 7) & 127);
-    if ((sto > 63)) {
-        if (((sto == petir_header::_rokadependek) || (sto == petir_header::_rokadepanjang))) {
-            threatpiece = 50;
-            return_value = false;
-            return return_value;
+bool blackMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, std::int32_t& threatenedValue) {
+    bool result{};
+    std::uint64_t attackedSquares{};
+    std::uint64_t kingZone{};
+    std::uint64_t occupancyWithoutSlider{};
+    std::uint8_t toSquare{};
+    std::uint8_t kingSquare{};
+    std::int32_t square{};
+    std::int32_t file{};
+    std::int32_t rank{};
+    std::int32_t movedPiece{};
+    threatenedValue = 0;
+    kingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    if ((toSquare > 63)) {
+        if (((toSquare == petir_header::shortCastleTarget) || (toSquare == petir_header::longCastleTarget))) {
+            threatenedValue = 50;
+            result = false;
+            return result;
         }
-        return_value = true;
-        return return_value;
+        result = true;
+        return result;
     }
-    return_value = false;
-    attack = 0;
-    raja = (petir_bitboard_mask::kingmask[posraja] | petir_bitboard_mask::bit(posraja));
-    pas_temp_1 = data.papan[sto];
-    if (((pas_temp_1 == petir_header::_pionhitam))) {
-        if ((sto <= petir_header::h2)) {
-            return_value = true;
-            return return_value;
+    result = false;
+    attackedSquares = 0;
+    kingZone = (petir_bitboard_mask::kingAttacks[kingSquare] | petir_bitboard_mask::squareBit(kingSquare));
+    movedPiece = position.board[toSquare];
+    if (((movedPiece == petir_header::blackPawn))) {
+        if ((toSquare <= petir_header::h2)) {
+            result = true;
+            return result;
         }
-        attack = petir_bitboard_mask::b_pawn_attack[sto];
+        attackedSquares = petir_bitboard_mask::blackPawnAttacks[toSquare];
     }
-    else if (((pas_temp_1 == petir_header::_kudahitam))) {
-        attack = petir_bitboard_mask::knightmask[sto];
+    else if (((movedPiece == petir_header::blackKnight))) {
+        attackedSquares = petir_bitboard_mask::knightAttacks[toSquare];
     }
-    else if (((pas_temp_1 == petir_header::_gajahhitam))) {
-        attack = 0;
-        x = (sto & 7);
-        y = pas::shr(sto, 3);
-        (x = pas::increment(x, 1));
-        (y = pas::increment(y, 1));
-        while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
-            temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if ((data.papan[temp] == petir_header::_mentrihitam)) {
-                (x = pas::increment(x, 1));
-                (y = pas::increment(y, 1));
+    else if (((movedPiece == petir_header::blackBishop))) {
+        attackedSquares = 0;
+        file = (toSquare & 7);
+        rank = pas::shiftRight(toSquare, 3);
+        (file = pas::increment(file, 1));
+        (rank = pas::increment(rank, 1));
+        while (((((file <= 7) && (rank <= 7)) && (file >= 0)) && (rank >= 0))) {
+            square = pas::add(pas::shiftLeft(rank, 3), file);
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if ((position.board[square] == petir_header::blackQueen)) {
+                (file = pas::increment(file, 1));
+                (rank = pas::increment(rank, 1));
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            (x = pas::increment(x, 1));
-            (y = pas::increment(y, 1));
+            (file = pas::increment(file, 1));
+            (rank = pas::increment(rank, 1));
         }
-        x = (sto & 7);
-        y = pas::shr(sto, 3);
-        (x = pas::decrement(x, 1));
-        (y = pas::increment(y, 1));
-        while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
-            temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if ((data.papan[temp] == petir_header::_mentrihitam)) {
-                (x = pas::decrement(x, 1));
-                (y = pas::increment(y, 1));
+        file = (toSquare & 7);
+        rank = pas::shiftRight(toSquare, 3);
+        (file = pas::decrement(file, 1));
+        (rank = pas::increment(rank, 1));
+        while (((((file <= 7) && (rank <= 7)) && (file >= 0)) && (rank >= 0))) {
+            square = pas::add(pas::shiftLeft(rank, 3), file);
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if ((position.board[square] == petir_header::blackQueen)) {
+                (file = pas::decrement(file, 1));
+                (rank = pas::increment(rank, 1));
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            (x = pas::decrement(x, 1));
-            (y = pas::increment(y, 1));
+            (file = pas::decrement(file, 1));
+            (rank = pas::increment(rank, 1));
         }
-        x = (sto & 7);
-        y = pas::shr(sto, 3);
-        (x = pas::increment(x, 1));
-        (y = pas::decrement(y, 1));
-        while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
-            temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if ((data.papan[temp] == petir_header::_pionhitam)) {
-                (x = pas::increment(x, 1));
-                (y = pas::decrement(y, 1));
-                temp = pas::add(pas::shl(y, 3), x);
-                attack = (attack | petir_bitboard_mask::bit(temp));
+        file = (toSquare & 7);
+        rank = pas::shiftRight(toSquare, 3);
+        (file = pas::increment(file, 1));
+        (rank = pas::decrement(rank, 1));
+        while (((((file <= 7) && (rank <= 7)) && (file >= 0)) && (rank >= 0))) {
+            square = pas::add(pas::shiftLeft(rank, 3), file);
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if ((position.board[square] == petir_header::blackPawn)) {
+                (file = pas::increment(file, 1));
+                (rank = pas::decrement(rank, 1));
+                square = pas::add(pas::shiftLeft(rank, 3), file);
+                attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
                 break;
             }
-            if ((data.papan[temp] == petir_header::_mentrihitam)) {
-                (x = pas::increment(x, 1));
-                (y = pas::decrement(y, 1));
+            if ((position.board[square] == petir_header::blackQueen)) {
+                (file = pas::increment(file, 1));
+                (rank = pas::decrement(rank, 1));
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            (x = pas::increment(x, 1));
-            (y = pas::decrement(y, 1));
+            (file = pas::increment(file, 1));
+            (rank = pas::decrement(rank, 1));
         }
-        x = (sto & 7);
-        y = pas::shr(sto, 3);
-        (x = pas::decrement(x, 1));
-        (y = pas::decrement(y, 1));
-        while (((((x <= 7) && (y <= 7)) && (x >= 0)) && (y >= 0))) {
-            temp = pas::add(pas::shl(y, 3), x);
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if ((data.papan[temp] == petir_header::_pionhitam)) {
-                (x = pas::decrement(x, 1));
-                (y = pas::decrement(y, 1));
-                temp = pas::add(pas::shl(y, 3), x);
-                attack = (attack | petir_bitboard_mask::bit(temp));
+        file = (toSquare & 7);
+        rank = pas::shiftRight(toSquare, 3);
+        (file = pas::decrement(file, 1));
+        (rank = pas::decrement(rank, 1));
+        while (((((file <= 7) && (rank <= 7)) && (file >= 0)) && (rank >= 0))) {
+            square = pas::add(pas::shiftLeft(rank, 3), file);
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if ((position.board[square] == petir_header::blackPawn)) {
+                (file = pas::decrement(file, 1));
+                (rank = pas::decrement(rank, 1));
+                square = pas::add(pas::shiftLeft(rank, 3), file);
+                attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
                 break;
             }
-            if ((data.papan[temp] == petir_header::_mentrihitam)) {
-                (x = pas::decrement(x, 1));
-                (y = pas::decrement(y, 1));
+            if ((position.board[square] == petir_header::blackQueen)) {
+                (file = pas::decrement(file, 1));
+                (rank = pas::decrement(rank, 1));
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            (x = pas::decrement(x, 1));
-            (y = pas::decrement(y, 1));
+            (file = pas::decrement(file, 1));
+            (rank = pas::decrement(rank, 1));
         }
-        attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)]);
+        attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+        attackedSquares = (attackedSquares | petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)]);
     }
-    else if (((pas_temp_1 == petir_header::_bentenghitam))) {
-        anu = (data.allpieces & (~data.queenblack));
-        attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(anu, pas::add((sto & 56), 1)) & 63)];
-        temp = pas::add(sto, 8);
-        while ((temp <= 63)) {
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if (((data.papan[temp] == petir_header::_bentenghitam) || (data.papan[temp] == petir_header::_mentrihitam))) {
-                temp = pas::add(temp, 8);
+    else if (((movedPiece == petir_header::blackRook))) {
+        occupancyWithoutSlider = (position.allPieces & (~position.blackQueens));
+        attackedSquares = petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(occupancyWithoutSlider, pas::add((toSquare & 56), 1)) & 63)];
+        square = pas::add(toSquare, 8);
+        while ((square <= 63)) {
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if (((position.board[square] == petir_header::blackRook) || (position.board[square] == petir_header::blackQueen))) {
+                square = pas::add(square, 8);
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            temp = pas::add(temp, 8);
+            square = pas::add(square, 8);
         }
-        temp = pas::sub(sto, 8);
-        while ((temp >= 0)) {
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if (((data.papan[temp] == petir_header::_bentenghitam) || (data.papan[temp] == petir_header::_mentrihitam))) {
-                temp = pas::sub(temp, 8);
+        square = pas::sub(toSquare, 8);
+        while ((square >= 0)) {
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if (((position.board[square] == petir_header::blackRook) || (position.board[square] == petir_header::blackQueen))) {
+                square = pas::sub(square, 8);
                 continue;
             }
-            if ((data.papan[temp] != 0)) {
+            if ((position.board[square] != 0)) {
                 break;
             }
-            temp = pas::sub(temp, 8);
-        }
-    }
-    else if (((pas_temp_1 == petir_header::_mentrihitam))) {
-        attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)]);
-        anu = (data.allpieces & (~data.rookblack));
-        attack = (attack | petir_bitboard_mask::horzmask2[sto][(pas::shr(anu, pas::add((sto & 56), 1)) & 63)]);
-        temp = pas::add(sto, 8);
-        while ((temp <= 63)) {
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if (((data.papan[temp] == petir_header::_bentenghitam) || (data.papan[temp] == petir_header::_mentrihitam))) {
-                temp = pas::add(temp, 8);
-                continue;
-            }
-            if ((data.papan[temp] != 0)) {
-                break;
-            }
-            temp = pas::add(temp, 8);
-        }
-        temp = pas::sub(sto, 8);
-        while ((temp >= 0)) {
-            attack = (attack | petir_bitboard_mask::bit(temp));
-            if (((data.papan[temp] == petir_header::_bentenghitam) || (data.papan[temp] == petir_header::_mentrihitam))) {
-                temp = pas::sub(temp, 8);
-                continue;
-            }
-            if ((data.papan[temp] != 0)) {
-                break;
-            }
-            temp = pas::sub(temp, 8);
+            square = pas::sub(square, 8);
         }
     }
-    else if (((pas_temp_1 == petir_header::_rajahitam))) {
-        attack = petir_bitboard_mask::knightmask[sto];
+    else if (((movedPiece == petir_header::blackQueen))) {
+        attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+        attackedSquares = (attackedSquares | petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)]);
+        occupancyWithoutSlider = (position.allPieces & (~position.blackRooks));
+        attackedSquares = (attackedSquares | petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(occupancyWithoutSlider, pas::add((toSquare & 56), 1)) & 63)]);
+        square = pas::add(toSquare, 8);
+        while ((square <= 63)) {
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if (((position.board[square] == petir_header::blackRook) || (position.board[square] == petir_header::blackQueen))) {
+                square = pas::add(square, 8);
+                continue;
+            }
+            if ((position.board[square] != 0)) {
+                break;
+            }
+            square = pas::add(square, 8);
+        }
+        square = pas::sub(toSquare, 8);
+        while ((square >= 0)) {
+            attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+            if (((position.board[square] == petir_header::blackRook) || (position.board[square] == petir_header::blackQueen))) {
+                square = pas::sub(square, 8);
+                continue;
+            }
+            if ((position.board[square] != 0)) {
+                break;
+            }
+            square = pas::sub(square, 8);
+        }
     }
-    threatpiece = 0;
-    if (((attack & raja) != 0)) {
-        return_value = true;
-        return return_value;
+    else if (((movedPiece == petir_header::blackKing))) {
+        attackedSquares = petir_bitboard_mask::knightAttacks[toSquare];
     }
-    if (((attack & data.queenwhite) != 0)) {
-        threatpiece = petir_header::_nilai_mentri;
+    threatenedValue = 0;
+    if (((attackedSquares & kingZone) != 0)) {
+        result = true;
+        return result;
+    }
+    if (((attackedSquares & position.whiteQueens) != 0)) {
+        threatenedValue = petir_header::queenValue;
     } else {
-        if (((attack & data.rookwhite) != 0)) {
-            threatpiece = petir_header::_nilai_benteng;
+        if (((attackedSquares & position.whiteRooks) != 0)) {
+            threatenedValue = petir_header::rookValue;
         } else {
-            if (((attack & data.bishopwhite) != 0)) {
-                threatpiece = petir_header::_nilai_gajah;
+            if (((attackedSquares & position.whiteBishops) != 0)) {
+                threatenedValue = petir_header::bishopValue;
             } else {
-                if (((attack & data.knightwhite) != 0)) {
-                    threatpiece = petir_header::_nilai_kuda;
+                if (((attackedSquares & position.whiteKnights) != 0)) {
+                    threatenedValue = petir_header::knightValue;
                 } else {
-                    if (((attack & data.pawnwhite) != 0)) {
-                        threatpiece = petir_header::_nilai_pion;
+                    if (((attackedSquares & position.whitePawns) != 0)) {
+                        threatenedValue = petir_header::pawnValue;
                     }
                 }
             }
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:239
-bool pawn_7_rank(std::int32_t giliran, petir_header::tdata& data) {
-    bool return_value{};
-    std::int32_t a{};
-    if ((giliran == petir_header::_sisihitam)) {
-        return_value = ((petir_bitboard_mask::rank_mask[1] & data.pawnblack) != 0);
+bool hasPawnOnSeventh(std::int32_t sideToMove, petir_header::tdata& position) {
+    bool result{};
+    if ((sideToMove == petir_header::blackSide)) {
+        result = ((petir_bitboard_mask::rankMask[1] & position.blackPawns) != 0);
     } else {
-        return_value = ((petir_bitboard_mask::rank_mask[6] & data.pawnwhite) != 0);
+        result = ((petir_bitboard_mask::rankMask[6] & position.whitePawns) != 0);
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:251
-bool pawn_7_rankw(petir_header::tdata& data) {
-    bool return_value{};
-    std::int32_t a{};
-    return_value = ((petir_bitboard_mask::rank_mask[6] & data.pawnwhite) != 0);
-    return return_value;
+bool whiteHasPawnOnSeventh(petir_header::tdata& position) {
+    bool result{};
+    result = ((petir_bitboard_mask::rankMask[6] & position.whitePawns) != 0);
+    return result;
 }
 
 // tools.pas:259
-bool pawn_7_rankb(petir_header::tdata& data) {
-    bool return_value{};
-    std::int32_t a{};
-    return_value = ((petir_bitboard_mask::rank_mask[1] & data.pawnblack) != 0);
-    return return_value;
+bool blackHasPawnOnSeventh(petir_header::tdata& position) {
+    bool result{};
+    result = ((petir_bitboard_mask::rankMask[1] & position.blackPawns) != 0);
+    return result;
 }
 
 // tools.pas:143
-bool pawn_6_rank(std::int32_t giliran, petir_header::tdata& data) {
-    bool return_value{};
-    std::int32_t a{};
-    if ((giliran == petir_header::_sisihitam)) {
-        return_value = false;
-        if ((((data.papan[petir_header::d3] == petir_header::_pionhitam) && (data.papan[petir_header::d2] == 0)) && (data.papan[petir_header::d1] == 0))) {
-            return_value = true;
-            return return_value;
+bool hasFreeSixthRankPawn(std::int32_t sideToMove, petir_header::tdata& position) {
+    bool result{};
+    if ((sideToMove == petir_header::blackSide)) {
+        result = false;
+        if ((((position.board[petir_header::d3] == petir_header::blackPawn) && (position.board[petir_header::d2] == 0)) && (position.board[petir_header::d1] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::e3] == petir_header::_pionhitam) && (data.papan[petir_header::e2] == 0)) && (data.papan[petir_header::e1] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::e3] == petir_header::blackPawn) && (position.board[petir_header::e2] == 0)) && (position.board[petir_header::e1] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::a3] == petir_header::_pionhitam) && (data.papan[petir_header::a2] == 0)) && (data.papan[petir_header::a1] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::a3] == petir_header::blackPawn) && (position.board[petir_header::a2] == 0)) && (position.board[petir_header::a1] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::b3] == petir_header::_pionhitam) && (data.papan[petir_header::b2] == 0)) && (data.papan[petir_header::b1] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::b3] == petir_header::blackPawn) && (position.board[petir_header::b2] == 0)) && (position.board[petir_header::b1] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::c3] == petir_header::_pionhitam) && (data.papan[petir_header::c2] == 0)) && (data.papan[petir_header::c1] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::c3] == petir_header::blackPawn) && (position.board[petir_header::c2] == 0)) && (position.board[petir_header::c1] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::f3] == petir_header::_pionhitam) && (data.papan[petir_header::f2] == 0)) && (data.papan[petir_header::f1] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::f3] == petir_header::blackPawn) && (position.board[petir_header::f2] == 0)) && (position.board[petir_header::f1] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::g3] == petir_header::_pionhitam) && (data.papan[petir_header::g2] == 0)) && (data.papan[petir_header::g1] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::g3] == petir_header::blackPawn) && (position.board[petir_header::g2] == 0)) && (position.board[petir_header::g1] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::h3] == petir_header::_pionhitam) && (data.papan[petir_header::h2] == 0)) && (data.papan[petir_header::h1] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::h3] == petir_header::blackPawn) && (position.board[petir_header::h2] == 0)) && (position.board[petir_header::h1] == 0))) {
+            result = true;
+            return result;
         }
     } else {
-        return_value = false;
-        if ((((data.papan[petir_header::d6] == petir_header::_pionputih) && (data.papan[petir_header::d7] == 0)) && (data.papan[petir_header::d8] == 0))) {
-            return_value = true;
-            return return_value;
+        result = false;
+        if ((((position.board[petir_header::d6] == petir_header::whitePawn) && (position.board[petir_header::d7] == 0)) && (position.board[petir_header::d8] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::e6] == petir_header::_pionputih) && (data.papan[petir_header::e7] == 0)) && (data.papan[petir_header::e8] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::e6] == petir_header::whitePawn) && (position.board[petir_header::e7] == 0)) && (position.board[petir_header::e8] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::a6] == petir_header::_pionputih) && (data.papan[petir_header::a7] == 0)) && (data.papan[petir_header::a8] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::a6] == petir_header::whitePawn) && (position.board[petir_header::a7] == 0)) && (position.board[petir_header::a8] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::b6] == petir_header::_pionputih) && (data.papan[petir_header::b7] == 0)) && (data.papan[petir_header::b8] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::b6] == petir_header::whitePawn) && (position.board[petir_header::b7] == 0)) && (position.board[petir_header::b8] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::c6] == petir_header::_pionputih) && (data.papan[petir_header::c7] == 0)) && (data.papan[petir_header::c8] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::c6] == petir_header::whitePawn) && (position.board[petir_header::c7] == 0)) && (position.board[petir_header::c8] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::f6] == petir_header::_pionputih) && (data.papan[petir_header::f7] == 0)) && (data.papan[petir_header::f8] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::f6] == petir_header::whitePawn) && (position.board[petir_header::f7] == 0)) && (position.board[petir_header::f8] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::g6] == petir_header::_pionputih) && (data.papan[petir_header::g7] == 0)) && (data.papan[petir_header::g8] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::g6] == petir_header::whitePawn) && (position.board[petir_header::g7] == 0)) && (position.board[petir_header::g8] == 0))) {
+            result = true;
+            return result;
         }
-        if ((((data.papan[petir_header::h6] == petir_header::_pionputih) && (data.papan[petir_header::h7] == 0)) && (data.papan[petir_header::h8] == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((position.board[petir_header::h6] == petir_header::whitePawn) && (position.board[petir_header::h7] == 0)) && (position.board[petir_header::h8] == 0))) {
+            result = true;
+            return result;
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:107
-bool good_move_white(petir_header::tdata& data, std::int32_t move) {
-    bool return_value{};
-    return_value = false;
-    if ((move > 63)) {
-        return return_value;
+bool isGoodWhiteMove(petir_header::tdata& position, std::int32_t square) {
+    bool result{};
+    result = false;
+    if ((square > 63)) {
+        return result;
     }
-    if (((data.papan[move] == petir_header::_bentengputih) && (move >= petir_header::a7))) {
-        return_value = true;
+    if (((position.board[square] == petir_header::whiteRook) && (square >= petir_header::a7))) {
+        result = true;
     } else {
-        if (((data.papan[move] == petir_header::_pionputih) && ((petir_bitboard_mask::w_pion_bebas_mask[move] & data.pawnblack) == 0))) {
-            return_value = true;
+        if (((position.board[square] == petir_header::whitePawn) && ((petir_bitboard_mask::whitePassedPawnMask[square] & position.blackPawns) == 0))) {
+            result = true;
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:121
-bool good_move_black(petir_header::tdata& data, std::int32_t move) {
-    bool return_value{};
-    return_value = false;
-    if ((move > 63)) {
-        return return_value;
+bool isGoodBlackMove(petir_header::tdata& position, std::int32_t square) {
+    bool result{};
+    result = false;
+    if ((square > 63)) {
+        return result;
     }
-    if (((data.papan[move] == petir_header::_bentenghitam) && (move <= petir_header::h2))) {
-        return_value = true;
+    if (((position.board[square] == petir_header::blackRook) && (square <= petir_header::h2))) {
+        result = true;
     } else {
-        if (((data.papan[move] == petir_header::_pionhitam) && ((petir_bitboard_mask::b_pion_bebas_mask[move] & data.pawnwhite) == 0))) {
-            return_value = true;
+        if (((position.board[square] == petir_header::blackPawn) && ((petir_bitboard_mask::blackPassedPawnMask[square] & position.whitePawns) == 0))) {
+            result = true;
         }
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:290
-bool wb_threat(std::uint8_t giliran, petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece) {
-    bool return_value{};
-    if ((giliran == petir_header::_sisiputih)) {
-        return_value = petir_tools::white_threat(data, moves, threatpiece);
+bool moveThreatensKing(std::uint8_t sideToMove, petir_header::tdata& position, std::uint16_t move, std::int32_t& threatenedValue) {
+    bool result{};
+    if ((sideToMove == petir_header::whiteSide)) {
+        result = petir_tools::whiteMoveThreatensKing(position, move, threatenedValue);
     } else {
-        return_value = petir_tools::black_threat(data, moves, threatpiece);
+        result = petir_tools::blackMoveThreatensKing(position, move, threatenedValue);
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:99
-std::int32_t material(petir_header::tdata& data, std::int32_t giliran) {
-    std::int32_t return_value{};
-    if ((giliran == petir_header::_sisiputih)) {
-        return_value = data.nilai_perwira_putih;
+std::int32_t nonPawnMaterial(petir_header::tdata& position, std::int32_t side) {
+    std::int32_t result{};
+    if ((side == petir_header::whiteSide)) {
+        result = position.whiteNonPawnMaterial;
     } else {
-        return_value = data.nilai_perwira_hitam;
+        result = position.blackNonPawnMaterial;
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:44
-pas::String getfen(petir_header::tdata data, std::int32_t giliran) {
-    pas::String return_value{};
-    std::int32_t a{};
-    std::int32_t b{};
-    std::int32_t z{};
-    std::int32_t m{};
-    std::int32_t r{};
-    pas::String temp{};
-    std::int32_t lastempty{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    b = 0;
-    return_value = pas::String("");
-    temp = pas::String("");
-    lastempty = 0;
-    pas_temp_1 = 0;
-    for (a = 63; a >= pas_temp_1; --a) {
-        z = pas::mul((a / 8), 8);
-        m = pas::sub(7, (a % 8));
-        r = pas::add(z, m);
-        if ((data.papan[r] != 0)) {
-            if ((lastempty != 0)) {
-                temp = (temp + pas::inttostr(lastempty));
-                lastempty = 0;
+pas::String getFen(petir_header::tdata position, std::int32_t sideToMove) {
+    pas::String result{};
+    std::int32_t index{};
+    std::int32_t rankStart{};
+    std::int32_t mirroredFile{};
+    std::int32_t square{};
+    pas::String rankText{};
+    std::int32_t emptyCount{};
+    std::int32_t lastIndex{};
+    std::int32_t piece{};
+    result = pas::String("");
+    rankText = pas::String("");
+    emptyCount = 0;
+    lastIndex = 0;
+    for (index = 63; index >= lastIndex; --index) {
+        rankStart = pas::mul((index / 8), 8);
+        mirroredFile = pas::sub(7, (index % 8));
+        square = pas::add(rankStart, mirroredFile);
+        if ((position.board[square] != 0)) {
+            if ((emptyCount != 0)) {
+                rankText = (rankText + pas::intToStr(emptyCount));
+                emptyCount = 0;
             }
         }
-        pas_temp_2 = data.papan[r];
-        if (((pas_temp_2 == petir_header::_pionhitam))) {
-            temp = (temp + 'p');
+        piece = position.board[square];
+        if (((piece == petir_header::blackPawn))) {
+            rankText = (rankText + 'p');
         }
-        else if (((pas_temp_2 == petir_header::_kudahitam))) {
-            temp = (temp + 'n');
+        else if (((piece == petir_header::blackKnight))) {
+            rankText = (rankText + 'n');
         }
-        else if (((pas_temp_2 == petir_header::_gajahhitam))) {
-            temp = (temp + 'b');
+        else if (((piece == petir_header::blackBishop))) {
+            rankText = (rankText + 'b');
         }
-        else if (((pas_temp_2 == petir_header::_bentenghitam))) {
-            temp = (temp + 'r');
+        else if (((piece == petir_header::blackRook))) {
+            rankText = (rankText + 'r');
         }
-        else if (((pas_temp_2 == petir_header::_mentrihitam))) {
-            temp = (temp + 'q');
+        else if (((piece == petir_header::blackQueen))) {
+            rankText = (rankText + 'q');
         }
-        else if (((pas_temp_2 == petir_header::_rajahitam))) {
-            temp = (temp + 'k');
+        else if (((piece == petir_header::blackKing))) {
+            rankText = (rankText + 'k');
         }
-        else if (((pas_temp_2 == petir_header::_pionputih))) {
-            temp = (temp + 'P');
+        else if (((piece == petir_header::whitePawn))) {
+            rankText = (rankText + 'P');
         }
-        else if (((pas_temp_2 == petir_header::_kudaputih))) {
-            temp = (temp + 'N');
+        else if (((piece == petir_header::whiteKnight))) {
+            rankText = (rankText + 'N');
         }
-        else if (((pas_temp_2 == petir_header::_gajahputih))) {
-            temp = (temp + 'B');
+        else if (((piece == petir_header::whiteBishop))) {
+            rankText = (rankText + 'B');
         }
-        else if (((pas_temp_2 == petir_header::_bentengputih))) {
-            temp = (temp + 'R');
+        else if (((piece == petir_header::whiteRook))) {
+            rankText = (rankText + 'R');
         }
-        else if (((pas_temp_2 == petir_header::_mentriputih))) {
-            temp = (temp + 'Q');
+        else if (((piece == petir_header::whiteQueen))) {
+            rankText = (rankText + 'Q');
         }
-        else if (((pas_temp_2 == petir_header::_rajaputih))) {
-            temp = (temp + 'K');
+        else if (((piece == petir_header::whiteKing))) {
+            rankText = (rankText + 'K');
         }
-        else if (((pas_temp_2 == 0))) {
-            lastempty = pas::add(lastempty, 1);
+        else if (((piece == 0))) {
+            emptyCount = pas::add(emptyCount, 1);
         }
-        if (((a % 8) == 0)) {
-            if ((lastempty != 0)) {
-                temp = (temp + pas::inttostr(lastempty));
+        if (((index % 8) == 0)) {
+            if ((emptyCount != 0)) {
+                rankText = (rankText + pas::intToStr(emptyCount));
             }
-            return_value = (return_value + temp);
-            if (((a <= 56) && (a > 0))) {
-                return_value = (return_value + '/');
+            result = (result + rankText);
+            if (((index <= 56) && (index > 0))) {
+                result = (result + '/');
             }
-            temp = pas::String("");
-            lastempty = 0;
+            rankText = pas::String("");
+            emptyCount = 0;
         }
     }
-    return_value = (return_value + ' ');
-    if ((giliran == petir_header::_sisiputih)) {
-        return_value = (return_value + 'w');
+    result = (result + ' ');
+    if ((sideToMove == petir_header::whiteSide)) {
+        result = (result + 'w');
     } else {
-        return_value = (return_value + 'b');
+        result = (result + 'b');
     }
-    return_value = (return_value + pas::String(" - -"));
-    return return_value;
+    result = (result + pas::String(" - -"));
+    return result;
 }
 
 // tools.pas:135
-bool good_move(petir_header::tdata& data, std::int32_t move, std::int32_t giliran) {
-    bool return_value{};
-    if ((giliran == petir_header::_sisiputih)) {
-        return_value = petir_tools::good_move_white(data, move);
+bool isGoodMove(petir_header::tdata& position, std::int32_t square, std::int32_t sideToMove) {
+    bool result{};
+    if ((sideToMove == petir_header::whiteSide)) {
+        result = petir_tools::isGoodWhiteMove(position, square);
     } else {
-        return_value = petir_tools::good_move_black(data, move);
+        result = petir_tools::isGoodBlackMove(position, square);
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:691
-bool white_menskak(petir_header::tdata& data, std::uint16_t moves) {
-    bool return_value{};
-    std::uint8_t sfrom{};
-    std::uint8_t sto{};
-    std::int32_t posraja{};
-    std::int32_t promosi{};
-    std::uint64_t attack{};
+bool whiteMoveGivesCheck(petir_header::tdata& position, std::uint16_t move) {
+    bool result{};
+    std::uint8_t fromSquare{};
+    std::uint8_t toSquare{};
+    std::int32_t kingSquare{};
+    std::int32_t promotion{};
+    std::uint64_t attackedSquares{};
     std::int8_t piece{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    std::int32_t pas_temp_3{};
-    std::int32_t pas_temp_4{};
-    return_value = false;
-    posraja = petir_bitboard_mask::king_square(data.kingblack);
-    sfrom = (moves & 127);
-    sto = (pas::shr(moves, 7) & 127);
-    promosi = (pas::shr(moves, 14) & 7);
-    piece = data.papan[sfrom];
-    if ((promosi == petir_header::promosi_mentri)) {
-        piece = petir_header::_mentriputih;
+    std::int32_t movedPiece{};
+    std::int32_t bishopDirection{};
+    std::int32_t rookDirection{};
+    std::int32_t queenDirection{};
+    result = false;
+    kingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    fromSquare = (move & 127);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    promotion = (pas::shiftRight(move, 14) & 7);
+    piece = position.board[fromSquare];
+    if ((promotion == petir_header::queenPromotion)) {
+        piece = petir_header::whiteQueen;
     } else {
-        if ((promosi == petir_header::promosi_kuda)) {
-            piece = petir_header::_kudaputih;
+        if ((promotion == petir_header::knightPromotion)) {
+            piece = petir_header::whiteKnight;
         }
     }
-    if (((sto == 65) || (sto == 66))) {
-        if ((sto == 65)) {
-            sto = petir_header::f1;
+    if (((toSquare == 65) || (toSquare == 66))) {
+        if ((toSquare == 65)) {
+            toSquare = petir_header::f1;
         } else {
-            sto = petir_header::d1;
+            toSquare = petir_header::d1;
         }
-        piece = petir_header::_bentengputih;
+        piece = petir_header::whiteRook;
     } else {
-        if ((sto == 67)) {
-            if ((data.ep > (sfrom & 7))) {
-                sto = pas::add(sfrom, 9);
+        if ((toSquare == 67)) {
+            if ((position.enPassantFile > (fromSquare & 7))) {
+                toSquare = pas::add(fromSquare, 9);
             } else {
-                sto = pas::add(sfrom, 7);
+                toSquare = pas::add(fromSquare, 7);
             }
         }
     }
-    pas_temp_1 = piece;
-    if (((pas_temp_1 == petir_header::_pionputih))) {
-        if (((petir_bitboard_mask::w_pawn_attack[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
-            return_value = true;
+    movedPiece = piece;
+    if (((movedPiece == petir_header::whitePawn))) {
+        if (((petir_bitboard_mask::whitePawnAttacks[toSquare] & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+            result = true;
         }
     }
-    else if (((pas_temp_1 == petir_header::_kudaputih))) {
-        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
-            return_value = true;
+    else if (((movedPiece == petir_header::whiteKnight))) {
+        if (((petir_bitboard_mask::knightAttacks[toSquare] & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+            result = true;
         }
     }
-    else if (((pas_temp_1 == petir_header::_gajahputih))) {
-        pas_temp_2 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_2 == 7))) {
-            attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+    else if (((movedPiece == petir_header::whiteBishop))) {
+        bishopDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((bishopDirection == 7))) {
+            attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
-        else if (((pas_temp_2 == 9))) {
-            attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-    }
-    else if (((pas_temp_1 == petir_header::_bentengputih))) {
-        pas_temp_3 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_3 == 1))) {
-            attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_3 == 8))) {
-            attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+        else if (((bishopDirection == 9))) {
+            attackedSquares = petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
     }
-    else if (((pas_temp_1 == petir_header::_mentriputih))) {
-        pas_temp_4 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_4 == 1))) {
-            attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+    else if (((movedPiece == petir_header::whiteRook))) {
+        rookDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((rookDirection == 1))) {
+            attackedSquares = petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(position.allPieces, pas::add((toSquare & 56), 1)) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
-        else if (((pas_temp_4 == 8))) {
-            attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_4 == 7))) {
-            attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_4 == 9))) {
-            attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+        else if (((rookDirection == 8))) {
+            attackedSquares = petir_bitboard_mask::verticalAttacks[toSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[toSquare]) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
     }
-    return return_value;
+    else if (((movedPiece == petir_header::whiteQueen))) {
+        queenDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((queenDirection == 1))) {
+            attackedSquares = petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(position.allPieces, pas::add((toSquare & 56), 1)) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 8))) {
+            attackedSquares = petir_bitboard_mask::verticalAttacks[toSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[toSquare]) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 7))) {
+            attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 9))) {
+            attackedSquares = petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+    }
+    return result;
 }
 
 // tools.pas:787
-std::uint8_t ipopcount(std::uint64_t p) {
-    std::uint8_t return_value{};
-    return_value = 0;
-    while ((p != 0)) {
-        p = (p & (p - 1));
-        (return_value = pas::increment(return_value, 1));
+std::uint8_t popCount(std::uint64_t bits) {
+    std::uint8_t result{};
+    result = 0;
+    while ((bits != 0)) {
+        bits = (bits & (bits - 1));
+        (result = pas::increment(result, 1));
     }
-    return return_value;
+    return result;
 }
 
 // tools.pas:984
-bool black_menskak(petir_header::tdata& data, std::uint16_t moves) {
-    bool return_value{};
-    std::uint8_t sfrom{};
-    std::uint8_t sto{};
-    std::int32_t posraja{};
-    std::int32_t promosi{};
-    std::uint64_t attack{};
+bool blackMoveGivesCheck(petir_header::tdata& position, std::uint16_t move) {
+    bool result{};
+    std::uint8_t fromSquare{};
+    std::uint8_t toSquare{};
+    std::int32_t kingSquare{};
+    std::int32_t promotion{};
+    std::uint64_t attackedSquares{};
     std::int8_t piece{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    std::int32_t pas_temp_3{};
-    std::int32_t pas_temp_4{};
-    return_value = false;
-    posraja = petir_bitboard_mask::king_square(data.kingwhite);
-    sfrom = (moves & 127);
-    sto = (pas::shr(moves, 7) & 127);
-    promosi = (pas::shr(moves, 14) & 7);
-    piece = data.papan[sfrom];
-    if ((promosi == petir_header::promosi_mentri)) {
-        piece = petir_header::_mentrihitam;
+    std::int32_t movedPiece{};
+    std::int32_t bishopDirection{};
+    std::int32_t rookDirection{};
+    std::int32_t queenDirection{};
+    result = false;
+    kingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    fromSquare = (move & 127);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    promotion = (pas::shiftRight(move, 14) & 7);
+    piece = position.board[fromSquare];
+    if ((promotion == petir_header::queenPromotion)) {
+        piece = petir_header::blackQueen;
     } else {
-        if ((promosi == petir_header::promosi_kuda)) {
-            piece = petir_header::_kudahitam;
+        if ((promotion == petir_header::knightPromotion)) {
+            piece = petir_header::blackKnight;
         }
     }
-    if (((sto == 65) || (sto == 66))) {
-        if ((sto == 65)) {
-            sto = petir_header::f8;
+    if (((toSquare == 65) || (toSquare == 66))) {
+        if ((toSquare == 65)) {
+            toSquare = petir_header::f8;
         } else {
-            sto = petir_header::d8;
+            toSquare = petir_header::d8;
         }
-        piece = petir_header::_bentenghitam;
+        piece = petir_header::blackRook;
     } else {
-        if ((sto == 67)) {
-            if ((data.ep > (sfrom & 7))) {
-                sto = pas::sub(sfrom, 7);
+        if ((toSquare == 67)) {
+            if ((position.enPassantFile > (fromSquare & 7))) {
+                toSquare = pas::sub(fromSquare, 7);
             } else {
-                sto = pas::sub(sfrom, 9);
+                toSquare = pas::sub(fromSquare, 9);
             }
         }
     }
-    pas_temp_1 = piece;
-    if (((pas_temp_1 == petir_header::_pionhitam))) {
-        if (((petir_bitboard_mask::b_pawn_attack[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
-            return_value = true;
+    movedPiece = piece;
+    if (((movedPiece == petir_header::blackPawn))) {
+        if (((petir_bitboard_mask::blackPawnAttacks[toSquare] & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+            result = true;
         }
     }
-    else if (((pas_temp_1 == petir_header::_kudahitam))) {
-        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
-            return_value = true;
+    else if (((movedPiece == petir_header::blackKnight))) {
+        if (((petir_bitboard_mask::knightAttacks[toSquare] & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+            result = true;
         }
     }
-    else if (((pas_temp_1 == petir_header::_gajahhitam))) {
-        pas_temp_2 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_2 == 7))) {
-            attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+    else if (((movedPiece == petir_header::blackBishop))) {
+        bishopDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((bishopDirection == 7))) {
+            attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
-        else if (((pas_temp_2 == 9))) {
-            attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-    }
-    else if (((pas_temp_1 == petir_header::_bentenghitam))) {
-        pas_temp_3 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_3 == 1))) {
-            attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_3 == 8))) {
-            attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+        else if (((bishopDirection == 9))) {
+            attackedSquares = petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
     }
-    else if (((pas_temp_1 == petir_header::_mentrihitam))) {
-        pas_temp_4 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_4 == 1))) {
-            attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+    else if (((movedPiece == petir_header::blackRook))) {
+        rookDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((rookDirection == 1))) {
+            attackedSquares = petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(position.allPieces, pas::add((toSquare & 56), 1)) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
-        else if (((pas_temp_4 == 8))) {
-            attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_4 == 7))) {
-            attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_4 == 9))) {
-            attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+        else if (((rookDirection == 8))) {
+            attackedSquares = petir_bitboard_mask::verticalAttacks[toSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[toSquare]) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
     }
-    return return_value;
+    else if (((movedPiece == petir_header::blackQueen))) {
+        queenDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((queenDirection == 1))) {
+            attackedSquares = petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(position.allPieces, pas::add((toSquare & 56), 1)) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 8))) {
+            attackedSquares = petir_bitboard_mask::verticalAttacks[toSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[toSquare]) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 7))) {
+            attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 9))) {
+            attackedSquares = petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+    }
+    return result;
 }
 
 // tools.pas:1079
-bool black_menskak3(petir_header::tdata& data, std::uint16_t moves, std::int32_t& threatpiece) {
-    bool return_value{};
-    std::uint8_t sfrom{};
-    std::uint8_t sto{};
-    std::int32_t posraja{};
-    std::uint64_t attack{};
-    std::uint64_t raja{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    std::int32_t pas_temp_3{};
-    std::int32_t pas_temp_4{};
-    return_value = false;
-    posraja = petir_bitboard_mask::king_square(data.kingwhite);
-    sfrom = (moves & 127);
-    sto = (pas::shr(moves, 7) & 127);
-    if ((sto > 63)) {
-        return_value = true;
-        return return_value;
+bool blackMoveGivesCheckOrSpecial(petir_header::tdata& position, std::uint16_t move, std::int32_t& threatenedValue) {
+    bool result{};
+    std::uint8_t fromSquare{};
+    std::uint8_t toSquare{};
+    std::int32_t kingSquare{};
+    std::uint64_t attackedSquares{};
+    std::uint64_t kingBit{};
+    std::int32_t movedPiece{};
+    std::int32_t bishopDirection{};
+    std::int32_t rookDirection{};
+    std::int32_t queenDirection{};
+    result = false;
+    kingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    fromSquare = (move & 127);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    if ((toSquare > 63)) {
+        result = true;
+        return result;
     }
-    raja = petir_bitboard_mask::bit(posraja);
-    pas_temp_1 = data.papan[sfrom];
-    if (((pas_temp_1 == petir_header::_pionhitam))) {
-        if (((petir_bitboard_mask::b_pawn_attack[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
-            return_value = true;
+    kingBit = petir_bitboard_mask::squareBit(kingSquare);
+    movedPiece = position.board[fromSquare];
+    if (((movedPiece == petir_header::blackPawn))) {
+        if (((petir_bitboard_mask::blackPawnAttacks[toSquare] & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+            result = true;
         }
     }
-    else if (((pas_temp_1 == petir_header::_kudahitam))) {
-        if (((petir_bitboard_mask::knightmask[sto] & petir_bitboard_mask::bit(posraja)) != 0)) {
-            return_value = true;
+    else if (((movedPiece == petir_header::blackKnight))) {
+        if (((petir_bitboard_mask::knightAttacks[toSquare] & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+            result = true;
         }
     }
-    else if (((pas_temp_1 == petir_header::_gajahhitam))) {
-        pas_temp_2 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_2 == 7))) {
-            attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+    else if (((movedPiece == petir_header::blackBishop))) {
+        bishopDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((bishopDirection == 7))) {
+            attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
-        else if (((pas_temp_2 == 9))) {
-            attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-    }
-    else if (((pas_temp_1 == petir_header::_bentenghitam))) {
-        pas_temp_3 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_3 == 1))) {
-            attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_3 == 8))) {
-            attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+        else if (((bishopDirection == 9))) {
+            attackedSquares = petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
     }
-    else if (((pas_temp_1 == petir_header::_mentrihitam))) {
-        pas_temp_4 = pas::abs(petir_bitboard_mask::direction[sto][posraja]);
-        if (((pas_temp_4 == 1))) {
-            attack = petir_bitboard_mask::horzmask2[sto][(pas::shr(data.allpieces, pas::add((sto & 56), 1)) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+    else if (((movedPiece == petir_header::blackRook))) {
+        rookDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((rookDirection == 1))) {
+            attackedSquares = petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(position.allPieces, pas::add((toSquare & 56), 1)) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
-        else if (((pas_temp_4 == 8))) {
-            attack = petir_bitboard_mask::vertmask2[sto][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[sto]) & 63)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_4 == 7))) {
-            attack = petir_bitboard_mask::diaga8h1mask[sto][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
-            }
-        }
-        else if (((pas_temp_4 == 9))) {
-            attack = petir_bitboard_mask::diagh8a1mask[sto][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[sto]) & 255)];
-            if (((attack & petir_bitboard_mask::bit(posraja)) != 0)) {
-                return_value = true;
+        else if (((rookDirection == 8))) {
+            attackedSquares = petir_bitboard_mask::verticalAttacks[toSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[toSquare]) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
             }
         }
     }
-    return return_value;
+    else if (((movedPiece == petir_header::blackQueen))) {
+        queenDirection = pas::abs(petir_bitboard_mask::rayDirection[toSquare][kingSquare]);
+        if (((queenDirection == 1))) {
+            attackedSquares = petir_bitboard_mask::horizontalAttacks[toSquare][(pas::shiftRight(position.allPieces, pas::add((toSquare & 56), 1)) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 8))) {
+            attackedSquares = petir_bitboard_mask::verticalAttacks[toSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[toSquare]) & 63)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 7))) {
+            attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+        else if (((queenDirection == 9))) {
+            attackedSquares = petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)];
+            if (((attackedSquares & petir_bitboard_mask::squareBit(kingSquare)) != 0)) {
+                result = true;
+            }
+        }
+    }
+    return result;
 }
 
 }

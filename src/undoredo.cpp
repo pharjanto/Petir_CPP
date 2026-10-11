@@ -2,65 +2,65 @@
 #include "petir.hpp"
 namespace petir_undoredo {
 // undoredo.pas:24
-void resetundo(petir_undoredo::tundo& undo) {
+void resetUndo(petir_undoredo::tundo& undo) {
     undo.count = 0;
-    undo.max = 0;
+    undo.maxCount = 0;
 }
 
 // undoredo.pas:29
-void addundo(petir_undoredo::tundo& undo, petir_header::tdata data, std::int32_t whiteclock, std::int32_t blackclock) {
-    if ((undo.count == undo.max)) {
+void addUndo(petir_undoredo::tundo& undo, petir_header::tdata position, std::int32_t whiteClock, std::int32_t blackClock) {
+    if ((undo.count == undo.maxCount)) {
         (undo.count = pas::increment(undo.count, 1));
-        (undo.max = pas::increment(undo.max, 1));
-        undo.moves[undo.count].data = data;
-        undo.moves[undo.count].whiteclock = whiteclock;
-        undo.moves[undo.count].blackclock = blackclock;
+        (undo.maxCount = pas::increment(undo.maxCount, 1));
+        undo.entries[undo.count].position = position;
+        undo.entries[undo.count].whiteClock = whiteClock;
+        undo.entries[undo.count].blackClock = blackClock;
     } else {
         (undo.count = pas::increment(undo.count, 1));
-        undo.max = undo.count;
-        undo.moves[undo.count].data = data;
-        undo.moves[undo.count].whiteclock = whiteclock;
-        undo.moves[undo.count].blackclock = blackclock;
+        undo.maxCount = undo.count;
+        undo.entries[undo.count].position = position;
+        undo.entries[undo.count].whiteClock = whiteClock;
+        undo.entries[undo.count].blackClock = blackClock;
     }
 }
 
 // undoredo.pas:75
-bool takeback(petir_undoredo::tundo& undo, petir_header::tdata& data, std::int32_t& wc, std::int32_t& bc, std::uint8_t& giliran) {
-    bool return_value{};
-    return_value = false;
+bool takeBack(petir_undoredo::tundo& undo, petir_header::tdata& position, std::int32_t& whiteClock, std::int32_t& blackClock, std::uint8_t& sideToMove) {
+    bool result{};
+    result = false;
     if ((undo.count > 0)) {
-        return_value = true;
+        result = true;
     }
     if ((undo.count == 1)) {
         (undo.count = pas::decrement(undo.count, 0));
-        giliran = pas::sub(3, giliran);
+        sideToMove = pas::sub(3, sideToMove);
     } else {
         (undo.count = pas::decrement(undo.count, 1));
     }
-    giliran = pas::sub(3, giliran);
-    data = undo.moves[undo.count].data;
-    wc = undo.moves[undo.count].whiteclock;
-    bc = undo.moves[undo.count].blackclock;
-    return return_value;
+    sideToMove = pas::sub(3, sideToMove);
+    position = undo.entries[undo.count].position;
+    whiteClock = undo.entries[undo.count].whiteClock;
+    blackClock = undo.entries[undo.count].blackClock;
+    return result;
 }
 
 // undoredo.pas:52
-bool moveforward(petir_undoredo::tundo& undo, petir_header::tdata& data, std::int32_t& wc, std::int32_t& bc, std::uint8_t& giliran) {
-    bool return_value{};
-    return_value = false;
-    if ((undo.count < undo.max)) {
-        return_value = true;
-        if ((undo.count == pas::sub(undo.max, 1))) {
+bool moveForward(petir_undoredo::tundo& undo, petir_header::tdata& position, std::int32_t& whiteClock, std::int32_t& blackClock, std::uint8_t& sideToMove) {
+    bool result{};
+    result = false;
+    if ((undo.count < undo.maxCount)) {
+        result = true;
+        if ((undo.count == pas::sub(undo.maxCount, 1))) {
             (undo.count = pas::increment(undo.count, 1));
         } else {
             (undo.count = pas::increment(undo.count, 1));
         }
-        data = undo.moves[undo.count].data;
-        wc = undo.moves[undo.count].whiteclock;
-        bc = undo.moves[undo.count].blackclock;
-        giliran = pas::sub(3, giliran);
+        position = undo.entries[undo.count].position;
+        whiteClock = undo.entries[undo.count].whiteClock;
+        blackClock = undo.entries[undo.count].blackClock;
+        sideToMove = pas::sub(3, sideToMove);
     }
-    return return_value;
+    return result;
 }
 
 }

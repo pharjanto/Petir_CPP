@@ -2,304 +2,293 @@
 #include "petir.hpp"
 #include <algorithm>
 namespace petir_next {
-std::int32_t t1 = 0;
 // next.pas:54
-void nextbest_max(petir_header::tmovelist& a, std::int32_t cur, std::int32_t tot) {
-    auto* current = &a[cur];
-    if(tot<=cur)return;
+void selectBestMove(petir_header::tmovelist& moveList, std::int32_t currentIndex, std::int32_t lastIndex) {
+    auto* currentEntry = &moveList[currentIndex];
+    if(lastIndex<=currentIndex)return;
     // Checked endpoints establish a valid range without a capacity test for
     // every score. A branch-free maximum, then a scan for its first entry,
     // selects the same record as the first-maximum rule, preserving ties.
-    auto* const end = &a[tot]+1;
-    int best_score = current->score;
-    for(auto* entry = current+1; entry != end; ++entry) best_score = std::max(best_score, entry->score);
-    auto* best = current;
-    while(best->score != best_score) ++best;
-    if(best!=current)std::swap(*current,*best);
+    auto* const endEntry = &moveList[lastIndex]+1;
+    int bestScore = currentEntry->score;
+    for(auto* entry = currentEntry+1; entry != endEntry; ++entry) bestScore = std::max(bestScore, entry->score);
+    auto* bestEntry = currentEntry;
+    while(bestEntry->score != bestScore) ++bestEntry;
+    if(bestEntry!=currentEntry)std::swap(*currentEntry,*bestEntry);
 }
 
 // next.pas:113
-bool nextevasion(std::int32_t giliran, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t& hmoves, std::int32_t& curmove, std::int32_t& jml, std::int32_t& skakcount, petir_header::tmovelist& ml) {
-    bool return_value{};
-    std::int32_t a{};
-    std::int32_t pas_temp_1{};
-    return_value = false;
-    if ((fase == petir_header::_hashmove)) {
-        if ((curmove == 0)) {
-            if ((giliran == petir_header::_sisiputih)) {
-                petir_movgen::white_evasion(data, ml, jml, skakcount);
+bool nextEvasionMove(std::int32_t sideToMove, petir_header::tdata& position, std::int32_t& move, std::int32_t& phase, std::int32_t& hashMove, std::int32_t& currentIndex, std::int32_t& moveCount, std::int32_t& checkerCount, petir_header::tmovelist& moveList) {
+    bool result{};
+    std::int32_t index{};
+    std::int32_t lastIndex{};
+    result = false;
+    if ((phase == petir_header::hashMovePhase)) {
+        if ((currentIndex == 0)) {
+            if ((sideToMove == petir_header::whiteSide)) {
+                petir_movgen::generateWhiteEvasions(position, moveList, moveCount, checkerCount);
             } else {
-                petir_movgen::black_evasion(data, ml, jml, skakcount);
+                petir_movgen::generateBlackEvasions(position, moveList, moveCount, checkerCount);
             }
-            if ((jml == 0)) {
-                return_value = true;
-                return return_value;
+            if ((moveCount == 0)) {
+                result = true;
+                return result;
             }
-            pas_temp_1 = jml;
-            for (a = 1; a <= pas_temp_1; ++a) {
-                if ((ml[a].moves == hmoves)) {
-                    (ml[a].score = pas::increment(ml[a].score, 87000000));
+            lastIndex = moveCount;
+            for (index = 1; index <= lastIndex; ++index) {
+                if ((moveList[index].move == hashMove)) {
+                    (moveList[index].score = pas::increment(moveList[index].score, 87000000));
                     break;
                 }
             }
         }
-        (curmove = pas::increment(curmove, 1));
-        if ((curmove > jml)) {
-            moves = petir_header::_no_move;
-            return return_value;
+        (currentIndex = pas::increment(currentIndex, 1));
+        if ((currentIndex > moveCount)) {
+            move = petir_header::noMove;
+            return result;
         } else {
-            petir_next::nextbest_max(ml, curmove, jml);
-            moves = ml[curmove].moves;
-            return return_value;
+            petir_next::selectBestMove(moveList, currentIndex, moveCount);
+            move = moveList[currentIndex].move;
+            return result;
         }
     }
     habis: ;
-    if ((fase == pas::add(petir_header::_hashmove, 2))) {
-        moves = petir_header::_no_move;
-        return return_value;
+    if ((phase == pas::add(petir_header::hashMovePhase, 2))) {
+        move = petir_header::noMove;
+        return result;
     }
-    return return_value;
+    return result;
 }
 
 // Capture scores from the generators are the expected gain in pawns, so many
 // tie (pawn takes knight = knight takes rook). Keep the gain in the high bits
 // and, among equal gains, take the bigger victim and then the cheaper attacker
 // first. Knight underpromotions go to the bad captures. The gain is
-// score >> cap_gain_shift.
-static constexpr int cap_gain_shift = 6;
-static void rescore_captures(const petir_header::tdata& data, petir_header::tmovelist& mlcap, std::int32_t jmlcap) {
-    for (std::int32_t a = 1; a <= jmlcap; ++a) {
-        const std::int32_t m = mlcap[a].moves;
-        std::int32_t gain = mlcap[a].score;
-        if (((pas::shr(m, 14) & 7) == petir_header::promosi_kuda)) {
+// score >> captureGainShift.
+static constexpr int captureGainShift = 6;
+static void rescoreCaptures(const petir_header::tdata& position, petir_header::tmovelist& captureList, std::int32_t captureCount) {
+    for (std::int32_t index = 1; index <= captureCount; ++index) {
+        const std::int32_t move = captureList[index].move;
+        std::int32_t gain = captureList[index].score;
+        if (((pas::shiftRight(move, 14) & 7) == petir_header::knightPromotion)) {
             gain = -1;
         }
-        const std::int32_t sto = (pas::shr(m, 7) & 127);
-        const std::int32_t victim = (sto == petir_header::_en_passant) ? petir_header::_pionputih : pas::abs(data.papan[sto]);
-        const std::int32_t attacker = pas::abs(data.papan[(m & 127)]);
-        mlcap[a].score = (gain << cap_gain_shift) + (victim << 3) + (7 - attacker);
+        const std::int32_t toSquare = (pas::shiftRight(move, 7) & 127);
+        const std::int32_t victim = (toSquare == petir_header::enPassantTarget) ? petir_header::whitePawn : pas::abs(position.board[toSquare]);
+        const std::int32_t attacker = pas::abs(position.board[(move & 127)]);
+        captureList[index].score = (gain << captureGainShift) + (victim << 3) + (7 - attacker);
     }
 }
 
 // next.pas:155
-bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t hmoves, std::int32_t& curmovecap, std::int32_t& curmovenoncap, std::int32_t& jmlcap, std::int32_t& jmlnoncap, petir_header::tmovelist& ml, petir_header::tmovelist& mlcap, std::int32_t& goodcap, petir_header::piece_to_history* const* cont) {
-    bool return_value{};
-    std::int32_t a{};
-    std::int32_t killer0moves{};
-    std::int32_t killer1moves{};
-    std::int32_t nilai{};
-    std::int32_t killer0moves2{};
-    std::int32_t killer1moves2{};
-    bool found{};
-    bool sudahada{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    std::int32_t pas_temp_3{};
-    std::int32_t pas_temp_4{};
-    return_value = false;
-    if ((fase == petir_header::_hashmove)) {
-        (fase = pas::increment(fase, 1));
-        if ((hmoves != 0)) {
-            moves = hmoves;
-            return return_value;
+bool nextMove(std::int32_t sideToMove, std::int32_t ply, petir_header::tdata& position, std::int32_t& move, std::int32_t& phase, std::int32_t hashMove, std::int32_t& captureIndex, std::int32_t& quietIndex, std::int32_t& captureCount, std::int32_t& quietCount, petir_header::tmovelist& quietList, petir_header::tmovelist& captureList, std::int32_t& bestCaptureGain, petir_header::piece_to_history* const* continuationTables) {
+    bool result{};
+    std::int32_t index{};
+    std::int32_t lastTriedCapture{};
+    result = false;
+    if ((phase == petir_header::hashMovePhase)) {
+        (phase = pas::increment(phase, 1));
+        if ((hashMove != 0)) {
+            move = hashMove;
+            return result;
         }
     }
-    if ((fase == petir_header::_goodcaps)) {
-        if ((curmovecap == 0)) {
-            if ((giliran == petir_header::_sisiputih)) {
-                petir_movgen::white_movgen_caps(data, mlcap, jmlcap);
+    if ((phase == petir_header::goodCapturesPhase)) {
+        if ((captureIndex == 0)) {
+            if ((sideToMove == petir_header::whiteSide)) {
+                petir_movgen::generateWhiteCaptures(position, captureList, captureCount);
             } else {
-                petir_movgen::black_movgen_caps(data, mlcap, jmlcap);
+                petir_movgen::generateBlackCaptures(position, captureList, captureCount);
             }
-            rescore_captures(data, mlcap, jmlcap);
+            rescoreCaptures(position, captureList, captureCount);
         }
-        (curmovecap = pas::increment(curmovecap, 1));
-        if ((curmovecap > jmlcap)) {
-            (fase = pas::increment(fase, 1));
-            curmovenoncap = 0;
+        (captureIndex = pas::increment(captureIndex, 1));
+        if ((captureIndex > captureCount)) {
+            (phase = pas::increment(phase, 1));
+            quietIndex = 0;
         } else {
-            petir_next::nextbest_max(mlcap, curmovecap, jmlcap);
-            if ((mlcap[curmovecap].moves == hmoves)) {
-                (curmovecap = pas::increment(curmovecap, 1));
-                if ((curmovecap > jmlcap)) {
-                    (fase = pas::increment(fase, 1));
-                    curmovenoncap = 0;
+            petir_next::selectBestMove(captureList, captureIndex, captureCount);
+            if ((captureList[captureIndex].move == hashMove)) {
+                (captureIndex = pas::increment(captureIndex, 1));
+                if ((captureIndex > captureCount)) {
+                    (phase = pas::increment(phase, 1));
+                    quietIndex = 0;
                     goto other;
                 } else {
-                    petir_next::nextbest_max(mlcap, curmovecap, jmlcap);
+                    petir_next::selectBestMove(captureList, captureIndex, captureCount);
                 }
             }
-            if ((mlcap[curmovecap].score < 0)) {
+            if ((captureList[captureIndex].score < 0)) {
                 badcap: ;
-                (fase = pas::increment(fase, 1));
-                curmovenoncap = 0;
+                (phase = pas::increment(phase, 1));
+                quietIndex = 0;
                 goto other;
             }
-            moves = mlcap[curmovecap].moves;
-            const std::int32_t gain = (mlcap[curmovecap].score >> cap_gain_shift);
-            if ((gain > goodcap)) {
-                goodcap = gain;
+            move = captureList[captureIndex].move;
+            const std::int32_t gain = (captureList[captureIndex].score >> captureGainShift);
+            if ((gain > bestCaptureGain)) {
+                bestCaptureGain = gain;
             }
-            return return_value;
+            return result;
         }
     }
     other: ;
-    if ((fase == petir_header::_killermoves1)) {
-        (fase = pas::increment(fase, 1));
-        if (((petir_header::killer0[depth] != hmoves) && petir_valid::isvalid(data, petir_header::killer0[depth], giliran))) {
-            pas_temp_1 = pas::sub(curmovecap, 1);
-            for (a = 1; a <= pas_temp_1; ++a) {
-                if ((petir_header::killer0[depth] == mlcap[a].moves)) {
+    if ((phase == petir_header::killerMove1Phase)) {
+        (phase = pas::increment(phase, 1));
+        if (((petir_header::firstKillers[ply] != hashMove) && petir_valid::isValidMove(position, petir_header::firstKillers[ply], sideToMove))) {
+            lastTriedCapture = pas::sub(captureIndex, 1);
+            for (index = 1; index <= lastTriedCapture; ++index) {
+                if ((petir_header::firstKillers[ply] == captureList[index].move)) {
                     goto killer11;
                 }
             }
-            moves = petir_header::killer0[depth];
-            return return_value;
+            move = petir_header::firstKillers[ply];
+            return result;
         }
     }
     killer11: ;
-    // One killer per ply: after killer0 the quiet moves follow, ordered by
+    // One killer per ply: after firstKillers the quiet moves follow, ordered by
     // history.
-    if (((fase >= petir_header::_killermoves2) && (fase <= petir_header::_killermoves4))) {
-        fase = petir_header::_othermoves;
+    if (((phase >= petir_header::killerMove2Phase) && (phase <= petir_header::killerMove4Phase))) {
+        phase = petir_header::otherMovesPhase;
     }
-    if ((fase == petir_header::_othermoves)) {
-        if ((curmovenoncap == 0)) {
-            if ((giliran == petir_header::_sisiputih)) {
-                petir_movgen::white_movgen_noncaps(data, ml, jmlnoncap);
+    if ((phase == petir_header::otherMovesPhase)) {
+        if ((quietIndex == 0)) {
+            if ((sideToMove == petir_header::whiteSide)) {
+                petir_movgen::generateWhiteQuietMoves(position, quietList, quietCount);
             } else {
-                petir_movgen::black_movgen_noncaps(data, ml, jmlnoncap);
+                petir_movgen::generateBlackQuietMoves(position, quietList, quietCount);
             }
             // Add how each quiet move did after the previous move and after
             // our move before it.
-            if ((cont != nullptr) && ((cont[0] != nullptr) || (cont[1] != nullptr))) {
-                for (a = 1; a <= jmlnoncap; ++a) {
-                    const std::int32_t piece = data.papan[(ml[a].moves & 127)];
-                    const std::int32_t sto = (pas::shr(ml[a].moves, 7) & 127);
-                    for (std::int32_t i = 0; i < 2; ++i) {
-                        if ((cont[i] != nullptr)) {
-                            (ml[a].score = pas::increment(ml[a].score, (*cont[i])[piece][sto]));
+            if ((continuationTables != nullptr) && ((continuationTables[0] != nullptr) || (continuationTables[1] != nullptr))) {
+                for (index = 1; index <= quietCount; ++index) {
+                    const std::int32_t piece = position.board[(quietList[index].move & 127)];
+                    const std::int32_t toSquare = (pas::shiftRight(quietList[index].move, 7) & 127);
+                    for (std::int32_t tableIndex = 0; tableIndex < 2; ++tableIndex) {
+                        if ((continuationTables[tableIndex] != nullptr)) {
+                            (quietList[index].score = pas::increment(quietList[index].score, (*continuationTables[tableIndex])[piece][toSquare]));
                         }
                     }
                 }
             }
         }
-        (curmovenoncap = pas::increment(curmovenoncap, 1));
-        if ((curmovenoncap > jmlnoncap)) {
-            (fase = pas::increment(fase, 1));
+        (quietIndex = pas::increment(quietIndex, 1));
+        if ((quietIndex > quietCount)) {
+            (phase = pas::increment(phase, 1));
         } else {
-            if ((curmovenoncap <= 20)) {
-                petir_next::nextbest_max(ml, curmovenoncap, jmlnoncap);
+            if ((quietIndex <= 20)) {
+                petir_next::selectBestMove(quietList, quietIndex, quietCount);
             }
-            while (((ml[curmovenoncap].moves == hmoves) || (ml[curmovenoncap].moves == petir_header::killer0[depth]))) {
-                (curmovenoncap = pas::increment(curmovenoncap, 1));
-                if ((curmovenoncap > jmlnoncap)) {
-                    (fase = pas::increment(fase, 1));
+            while (((quietList[quietIndex].move == hashMove) || (quietList[quietIndex].move == petir_header::firstKillers[ply]))) {
+                (quietIndex = pas::increment(quietIndex, 1));
+                if ((quietIndex > quietCount)) {
+                    (phase = pas::increment(phase, 1));
                     goto fase3;
                 } else {
-                    if ((curmovenoncap <= 20)) {
-                        petir_next::nextbest_max(ml, curmovenoncap, jmlnoncap);
+                    if ((quietIndex <= 20)) {
+                        petir_next::selectBestMove(quietList, quietIndex, quietCount);
                     }
                 }
             }
-            moves = ml[curmovenoncap].moves;
-            return return_value;
+            move = quietList[quietIndex].move;
+            return result;
         }
     }
     fase3: ;
-    if ((fase == petir_header::_badcaps)) {
-        if ((curmovecap <= jmlcap)) {
-            petir_next::nextbest_max(mlcap, curmovecap, jmlcap);
-            while (((mlcap[curmovecap].moves == hmoves) || (mlcap[curmovecap].moves == petir_header::killer0[depth]))) {
-                (curmovecap = pas::increment(curmovecap, 1));
-                if ((curmovecap > jmlcap)) {
-                    (fase = pas::increment(fase, 1));
+    if ((phase == petir_header::badCapturesPhase)) {
+        if ((captureIndex <= captureCount)) {
+            petir_next::selectBestMove(captureList, captureIndex, captureCount);
+            while (((captureList[captureIndex].move == hashMove) || (captureList[captureIndex].move == petir_header::firstKillers[ply]))) {
+                (captureIndex = pas::increment(captureIndex, 1));
+                if ((captureIndex > captureCount)) {
+                    (phase = pas::increment(phase, 1));
                     goto fase4;
                 }
-                petir_next::nextbest_max(mlcap, curmovecap, jmlcap);
+                petir_next::selectBestMove(captureList, captureIndex, captureCount);
             }
-            moves = mlcap[curmovecap].moves;
-            (curmovecap = pas::increment(curmovecap, 1));
-            return return_value;
+            move = captureList[captureIndex].move;
+            (captureIndex = pas::increment(captureIndex, 1));
+            return result;
         } else {
-            (fase = pas::increment(fase, 1));
+            (phase = pas::increment(phase, 1));
         }
     }
     fase4: ;
-    if ((fase == petir_header::_finish)) {
-        moves = petir_header::_no_move;
+    if ((phase == petir_header::finishedPhase)) {
+        move = petir_header::noMove;
     }
-    return return_value;
+    return result;
 }
 
 // next.pas:77
-bool nextroot(std::int32_t giliran, std::int32_t& moves, std::int32_t& fase, std::int32_t& hmoves, std::int32_t& curmove, std::int32_t& jml, petir_header::tmovelist ml) {
-    bool return_value{};
-    if ((fase == petir_header::_hashmove)) {
-        (fase = pas::increment(fase, 1));
-        if (petir_valid::isvalid(petir_header::data, hmoves, giliran)) {
-            moves = hmoves;
-            return return_value;
+bool nextRootMove(std::int32_t sideToMove, std::int32_t& move, std::int32_t& phase, std::int32_t& hashMove, std::int32_t& currentIndex, std::int32_t& moveCount, petir_header::tmovelist moveList) {
+    bool result{};
+    if ((phase == petir_header::hashMovePhase)) {
+        (phase = pas::increment(phase, 1));
+        if (petir_valid::isValidMove(petir_header::gamePosition, hashMove, sideToMove)) {
+            move = hashMove;
+            return result;
         }
     }
-    if ((fase == pas::add(petir_header::_hashmove, 1))) {
-        (curmove = pas::increment(curmove, 1));
-        if ((curmove > jml)) {
-            moves = petir_header::_no_move;
-            return return_value;
+    if ((phase == pas::add(petir_header::hashMovePhase, 1))) {
+        (currentIndex = pas::increment(currentIndex, 1));
+        if ((currentIndex > moveCount)) {
+            move = petir_header::noMove;
+            return result;
         }
-        petir_next::nextbest_max(ml, curmove, jml);
-        if ((ml[curmove].moves == hmoves)) {
-            (curmove = pas::increment(curmove, 1));
-            if ((curmove > jml)) {
-                moves = petir_header::_no_move;
-                return return_value;
+        petir_next::selectBestMove(moveList, currentIndex, moveCount);
+        if ((moveList[currentIndex].move == hashMove)) {
+            (currentIndex = pas::increment(currentIndex, 1));
+            if ((currentIndex > moveCount)) {
+                move = petir_header::noMove;
+                return result;
             } else {
-                petir_next::nextbest_max(ml, curmove, jml);
+                petir_next::selectBestMove(moveList, currentIndex, moveCount);
             }
         }
-        moves = ml[curmove].moves;
-        return return_value;
+        move = moveList[currentIndex].move;
+        return result;
     }
-    return return_value;
+    return result;
 }
 
 // next.pas:15
-bool nextq(std::int32_t giliran, petir_header::tdata& data, std::int32_t& moves, std::int32_t& fase, std::int32_t& curmove, std::int32_t& jml, std::int32_t& score, std::int32_t ply, petir_header::tmovelist& ml) {
-    bool return_value{};
-    return_value = false;
-    if ((fase == 0)) {
-        if ((giliran == petir_header::_sisiputih)) {
-            if ((ply > 0)) {
-                petir_movgen::q_white_movgen(data, ml, jml);
+bool nextQuiescenceMove(std::int32_t sideToMove, petir_header::tdata& position, std::int32_t& move, std::int32_t& phase, std::int32_t& currentIndex, std::int32_t& moveCount, std::int32_t& score, std::int32_t checkPlies, petir_header::tmovelist& moveList) {
+    bool result{};
+    result = false;
+    if ((phase == 0)) {
+        if ((sideToMove == petir_header::whiteSide)) {
+            if ((checkPlies > 0)) {
+                petir_movgen::generateWhiteCapturesAndChecks(position, moveList, moveCount);
             } else {
-                petir_movgen::white_movgen_caps(data, ml, jml);
+                petir_movgen::generateWhiteCaptures(position, moveList, moveCount);
             }
         } else {
-            if ((ply > 0)) {
-                petir_movgen::q_black_movgen(data, ml, jml);
+            if ((checkPlies > 0)) {
+                petir_movgen::generateBlackCapturesAndChecks(position, moveList, moveCount);
             } else {
-                petir_movgen::black_movgen_caps(data, ml, jml);
+                petir_movgen::generateBlackCaptures(position, moveList, moveCount);
             }
         }
-        (fase = pas::increment(fase, 1));
-        if ((jml == 0)) {
-            return_value = true;
-            return return_value;
+        (phase = pas::increment(phase, 1));
+        if ((moveCount == 0)) {
+            result = true;
+            return result;
         }
     }
-    if ((fase == 1)) {
-        if ((curmove > jml)) {
-            moves = petir_header::_no_move;
-            return return_value;
+    if ((phase == 1)) {
+        if ((currentIndex > moveCount)) {
+            move = petir_header::noMove;
+            return result;
         }
-        petir_next::nextbest_max(ml, curmove, jml);
-        moves = ml[curmove].moves;
-        score = ml[curmove].score;
-        (curmove = pas::increment(curmove, 1));
-        return return_value;
+        petir_next::selectBestMove(moveList, currentIndex, moveCount);
+        move = moveList[currentIndex].move;
+        score = moveList[currentIndex].score;
+        (currentIndex = pas::increment(currentIndex, 1));
+        return result;
     }
-    return return_value;
+    return result;
 }
 
 }

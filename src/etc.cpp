@@ -2,85 +2,85 @@
 #include "petir.hpp"
 namespace petir_etc {
 // etc.pas:130
-void updateblackkey(std::int32_t moves, petir_header::tdata& data) {
-    std::int32_t captured_piece{};
+void updateBlackHashKey(std::int32_t move, petir_header::tdata& position) {
+    std::int32_t capturedPiece{};
     std::int32_t piece{};
-    std::int32_t sfrom{};
-    std::int32_t sto{};
-    std::int32_t promosi{};
-    sfrom = (moves & 127);
-    sto = (pas::shr(moves, 7) & 127);
-    promosi = (pas::shr(moves, 14) & 7);
-    if ((sto == petir_header::_rokadependek)) {
-        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentenghitam][petir_header::h8]);
-        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajahitam][petir_header::e8]);
-        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentenghitam][petir_header::f8]);
-        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajahitam][petir_header::g8]);
-        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~12))]);
-        data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-        data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t promotion{};
+    fromSquare = (move & 127);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    promotion = (pas::shiftRight(move, 14) & 7);
+    if ((toSquare == petir_header::shortCastleTarget)) {
+        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackRook][petir_header::h8]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackKing][petir_header::e8]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackRook][petir_header::f8]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackKing][petir_header::g8]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~12))]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
     } else {
-        if ((sto == petir_header::_rokadepanjang)) {
-            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentenghitam][petir_header::a8]);
-            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajahitam][petir_header::e8]);
-            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentenghitam][petir_header::d8]);
-            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajahitam][petir_header::c8]);
-            data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-            data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~12))]);
-            data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-            data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
+        if ((toSquare == petir_header::longCastleTarget)) {
+            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackRook][petir_header::a8]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackKing][petir_header::e8]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackRook][petir_header::d8]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackKing][petir_header::c8]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~12))]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
         } else {
-            if ((sto == petir_header::_en_passant)) {
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionhitam][sfrom]);
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionhitam][sto]);
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionputih][pas::add(sto, 8)]);
+            if ((toSquare == petir_header::enPassantTarget)) {
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackPawn][fromSquare]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackPawn][toSquare]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whitePawn][pas::add(toSquare, 8)]);
             } else {
-                piece = data.papan[sfrom];
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
-                captured_piece = data.papan[sto];
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[piece][sfrom]);
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[piece][sto]);
-                if ((captured_piece != 0)) {
-                    data.hashkey = (data.hashkey ^ petir_header::hashkey[captured_piece][sto]);
+                piece = position.board[fromSquare];
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
+                capturedPiece = position.board[toSquare];
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[piece][fromSquare]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[piece][toSquare]);
+                if ((capturedPiece != 0)) {
+                    position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[capturedPiece][toSquare]);
                 } else {
-                    if ((((data.papan[sfrom] == petir_header::_pionhitam) && (pas::sub(sfrom, sto) == 16)) && (((data.papan[pas::sub(sto, 1)] == petir_header::_pionputih) && ((sto % 8) >= 1)) || ((data.papan[pas::add(sto, 1)] == petir_header::_pionputih) && ((sto % 8) <= 6))))) {
-                        data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-                        data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[(sfrom % 8)]);
+                    if ((((position.board[fromSquare] == petir_header::blackPawn) && (pas::sub(fromSquare, toSquare) == 16)) && (((position.board[pas::sub(toSquare, 1)] == petir_header::whitePawn) && ((toSquare % 8) >= 1)) || ((position.board[pas::add(toSquare, 1)] == petir_header::whitePawn) && ((toSquare % 8) <= 6))))) {
+                        position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+                        position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[(fromSquare % 8)]);
                     }
                 }
-                if ((data.papan[sfrom] == petir_header::_bentenghitam)) {
-                    if ((sfrom == petir_header::h8)) {
-                        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-                        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~petir_header::bithitamsc))]);
+                if ((position.board[fromSquare] == petir_header::blackRook)) {
+                    if ((fromSquare == petir_header::h8)) {
+                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~petir_header::blackShortCastleRight))]);
                     } else {
-                        if ((sfrom == petir_header::a8)) {
-                            data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-                            data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~petir_header::bithitamlc))]);
+                        if ((fromSquare == petir_header::a8)) {
+                            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~petir_header::blackLongCastleRight))]);
                         }
                     }
                 } else {
-                    if ((data.papan[sfrom] == petir_header::_rajahitam)) {
-                        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-                        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~12))]);
+                    if ((position.board[fromSquare] == petir_header::blackKing)) {
+                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~12))]);
                     }
                 }
-                if ((promosi != 0)) {
-                    data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionhitam][sto]);
-                    if ((promosi == petir_header::promosi_mentri)) {
-                        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_mentrihitam][sto]);
+                if ((promotion != 0)) {
+                    position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackPawn][toSquare]);
+                    if ((promotion == petir_header::queenPromotion)) {
+                        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackQueen][toSquare]);
                     } else {
-                        if ((promosi == petir_header::promosi_kuda)) {
-                            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_kudahitam][sto]);
+                        if ((promotion == petir_header::knightPromotion)) {
+                            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackKnight][toSquare]);
                         } else {
-                            if ((promosi == petir_header::promosi_benteng)) {
-                                data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentenghitam][sto]);
+                            if ((promotion == petir_header::rookPromotion)) {
+                                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackRook][toSquare]);
                             } else {
-                                if ((promosi == petir_header::promosi_gajah)) {
-                                    data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_gajahhitam][sto]);
+                                if ((promotion == petir_header::bishopPromotion)) {
+                                    position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackBishop][toSquare]);
                                 }
                             }
                         }
@@ -92,85 +92,85 @@ void updateblackkey(std::int32_t moves, petir_header::tdata& data) {
 }
 
 // etc.pas:21
-void updatewhitekey(std::int32_t moves, petir_header::tdata& data) {
-    std::int32_t captured_piece{};
+void updateWhiteHashKey(std::int32_t move, petir_header::tdata& position) {
+    std::int32_t capturedPiece{};
     std::int32_t piece{};
-    std::int32_t sfrom{};
-    std::int32_t sto{};
-    std::int32_t promosi{};
-    sfrom = (moves & 127);
-    sto = (pas::shr(moves, 7) & 127);
-    promosi = (pas::shr(moves, 14) & 7);
-    if ((sto == petir_header::_rokadependek)) {
-        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentengputih][petir_header::h1]);
-        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajaputih][petir_header::e1]);
-        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentengputih][petir_header::f1]);
-        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajaputih][petir_header::g1]);
-        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~3))]);
-        data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-        data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
+    std::int32_t fromSquare{};
+    std::int32_t toSquare{};
+    std::int32_t promotion{};
+    fromSquare = (move & 127);
+    toSquare = (pas::shiftRight(move, 7) & 127);
+    promotion = (pas::shiftRight(move, 14) & 7);
+    if ((toSquare == petir_header::shortCastleTarget)) {
+        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteRook][petir_header::h1]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteKing][petir_header::e1]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteRook][petir_header::f1]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteKing][petir_header::g1]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~3))]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+        position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
     } else {
-        if ((sto == petir_header::_rokadepanjang)) {
-            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentengputih][petir_header::a1]);
-            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajaputih][petir_header::e1]);
-            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentengputih][petir_header::d1]);
-            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_rajaputih][petir_header::c1]);
-            data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-            data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~3))]);
-            data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-            data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
+        if ((toSquare == petir_header::longCastleTarget)) {
+            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteRook][petir_header::a1]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteKing][petir_header::e1]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteRook][petir_header::d1]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteKing][petir_header::c1]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~3))]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+            position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
         } else {
-            if ((sto == petir_header::_en_passant)) {
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionputih][sfrom]);
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionputih][sto]);
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionhitam][pas::sub(sto, 8)]);
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
+            if ((toSquare == petir_header::enPassantTarget)) {
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whitePawn][fromSquare]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whitePawn][toSquare]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackPawn][pas::sub(toSquare, 8)]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
             } else {
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-                data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[petir_header::_no_ep]);
-                piece = data.papan[sfrom];
-                captured_piece = data.papan[sto];
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[piece][sfrom]);
-                data.hashkey = (data.hashkey ^ petir_header::hashkey[piece][sto]);
-                if ((captured_piece != 0)) {
-                    data.hashkey = (data.hashkey ^ petir_header::hashkey[captured_piece][sto]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[petir_header::noEnPassant]);
+                piece = position.board[fromSquare];
+                capturedPiece = position.board[toSquare];
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[piece][fromSquare]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[piece][toSquare]);
+                if ((capturedPiece != 0)) {
+                    position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[capturedPiece][toSquare]);
                 } else {
-                    if ((((data.papan[sfrom] == petir_header::_pionputih) && (pas::sub(sto, sfrom) == 16)) && (((data.papan[pas::sub(sto, 1)] == petir_header::_pionhitam) && ((sto % 8) >= 1)) || ((data.papan[pas::add(sto, 1)] == petir_header::_pionhitam) && ((sto % 8) <= 6))))) {
-                        data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[data.ep]);
-                        data.hashkey = (data.hashkey ^ petir_header::enpassanthashkey[(sfrom % 8)]);
+                    if ((((position.board[fromSquare] == petir_header::whitePawn) && (pas::sub(toSquare, fromSquare) == 16)) && (((position.board[pas::sub(toSquare, 1)] == petir_header::blackPawn) && ((toSquare % 8) >= 1)) || ((position.board[pas::add(toSquare, 1)] == petir_header::blackPawn) && ((toSquare % 8) <= 6))))) {
+                        position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[position.enPassantFile]);
+                        position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[(fromSquare % 8)]);
                     }
                 }
-                if ((data.papan[sfrom] == petir_header::_bentengputih)) {
-                    if ((sfrom == petir_header::h1)) {
-                        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-                        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~petir_header::bitputihsc))]);
+                if ((position.board[fromSquare] == petir_header::whiteRook)) {
+                    if ((fromSquare == petir_header::h1)) {
+                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~petir_header::whiteShortCastleRight))]);
                     } else {
-                        if ((sfrom == petir_header::a1)) {
-                            data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-                            data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~petir_header::bitputihlc))]);
+                        if ((fromSquare == petir_header::a1)) {
+                            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~petir_header::whiteLongCastleRight))]);
                         }
                     }
                 } else {
-                    if ((data.papan[sfrom] == petir_header::_rajaputih)) {
-                        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[data.flagrokade]);
-                        data.hashkey = (data.hashkey ^ petir_header::rokadehashkey[(data.flagrokade & (~3))]);
+                    if ((position.board[fromSquare] == petir_header::whiteKing)) {
+                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~3))]);
                     }
                 }
-                if ((promosi != 0)) {
-                    data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_pionputih][sto]);
-                    if ((promosi == petir_header::promosi_mentri)) {
-                        data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_mentriputih][sto]);
+                if ((promotion != 0)) {
+                    position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whitePawn][toSquare]);
+                    if ((promotion == petir_header::queenPromotion)) {
+                        position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteQueen][toSquare]);
                     } else {
-                        if ((promosi == petir_header::promosi_kuda)) {
-                            data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_kudaputih][sto]);
+                        if ((promotion == petir_header::knightPromotion)) {
+                            position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteKnight][toSquare]);
                         } else {
-                            if ((promosi == petir_header::promosi_benteng)) {
-                                data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_bentengputih][sto]);
+                            if ((promotion == petir_header::rookPromotion)) {
+                                position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteRook][toSquare]);
                             } else {
-                                if ((promosi == petir_header::promosi_gajah)) {
-                                    data.hashkey = (data.hashkey ^ petir_header::hashkey[petir_header::_gajahputih][sto]);
+                                if ((promotion == petir_header::bishopPromotion)) {
+                                    position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteBishop][toSquare]);
                                 }
                             }
                         }
@@ -182,11 +182,11 @@ void updatewhitekey(std::int32_t moves, petir_header::tdata& data) {
 }
 
 // etc.pas:13
-void updatekey(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran) {
-    if ((giliran == petir_header::_sisiputih)) {
-        petir_etc::updatewhitekey(moves, data);
+void updateHashKey(petir_header::tdata& position, std::int32_t move, std::int32_t sideToMove) {
+    if ((sideToMove == petir_header::whiteSide)) {
+        petir_etc::updateWhiteHashKey(move, position);
     } else {
-        petir_etc::updateblackkey(moves, data);
+        petir_etc::updateBlackHashKey(move, position);
     }
 }
 

@@ -5,255 +5,251 @@ namespace petir_search {
 namespace {
 // Called only when the side to move is not in check. Prove a legal move exists
 // before stand pat, without generating every quiet move in the common case.
-bool has_legal_noncheck_move(petir_header::tdata& data, int side, petir_header::tmovelist& moves) {
-    const bool white=side==petir_header::_sisiputih;
-    auto pushes=(white?data.pawnwhite<<8:data.pawnblack>>8)&~data.allpieces;
-    while(pushes) {
-        const int to=petir_bitboard_mask::firstbitp(pas::address(pushes));
-        pushes&=pushes-1;
-        const int from=to+(white?-8:8);
-        const auto move=static_cast<std::uint16_t>(from|(to<<7));
-        if(!(white?petir_tools::white_open_check(data,move):petir_tools::black_open_check(data,move)))return true;
+bool hasLegalMoveWhenNotInCheck(petir_header::tdata& position, int sideToMove, petir_header::tmovelist& moveList) {
+    const bool isWhite=sideToMove==petir_header::whiteSide;
+    auto pawnPushes=(isWhite?position.whitePawns<<8:position.blackPawns>>8)&~position.allPieces;
+    while(pawnPushes) {
+        const int toSquare=petir_bitboard_mask::firstBit(pas::address(pawnPushes));
+        pawnPushes&=pawnPushes-1;
+        const int fromSquare=toSquare+(isWhite?-8:8);
+        const auto move=static_cast<std::uint16_t>(fromSquare|(toSquare<<7));
+        if(!(isWhite?petir_tools::exposesWhiteKing(position,move):petir_tools::exposesBlackKing(position,move)))return true;
     }
-    auto legal=[&](int move) {
-        auto child=data;
-        const auto nodes=petir_header::total_node;
-        if(white)petir_makemove::makewhitemove(move,child);else petir_makemove::makeblackmove(move,child);
-        petir_header::total_node=nodes;
-        return !(white?petir_tools::white_checked(child):petir_tools::black_checked(child));
+    auto isLegal=[&](int move) {
+        auto childPosition=position;
+        const auto savedNodeCount=petir_header::nodeCount;
+        if(isWhite)petir_makemove::makeWhiteMove(move,childPosition);else petir_makemove::makeBlackMove(move,childPosition);
+        petir_header::nodeCount=savedNodeCount;
+        return !(isWhite?petir_tools::whiteInCheck(childPosition):petir_tools::blackInCheck(childPosition));
     };
-    auto king=white?data.kingwhite:data.kingblack;
-    const int from=petir_bitboard_mask::firstbitp(pas::address(king));
-    auto targets=petir_bitboard_mask::kingmask[from]&~(white?data.whitepieces:data.blackpieces);
+    auto kingBoard=isWhite?position.whiteKingBoard:position.blackKingBoard;
+    const int fromSquare=petir_bitboard_mask::firstBit(pas::address(kingBoard));
+    auto targets=petir_bitboard_mask::kingAttacks[fromSquare]&~(isWhite?position.whitePieces:position.blackPieces);
     while(targets) {
-        const int to=petir_bitboard_mask::firstbitp(pas::address(targets));
+        const int toSquare=petir_bitboard_mask::firstBit(pas::address(targets));
         targets&=targets-1;
         // In a nonchecked position the old king square cannot shield an attack
         // on an adjacent destination, so an attack test suffices here.
-        if(!(white?petir_tools::white_attacked(data,to):petir_tools::black_attacked(data,to)))return true;
+        if(!(isWhite?petir_tools::attackedByBlack(position,toSquare):petir_tools::attackedByWhite(position,toSquare)))return true;
     }
-    int count=0;
-    if(white)petir_movgen::white_movgen_caps(data,moves,count);else petir_movgen::black_movgen_caps(data,moves,count);
-    for(int i=1;i<=count;++i)if(legal(moves[i].moves))return true;
-    if(white)petir_movgen::white_movgen_noncaps(data,moves,count);else petir_movgen::black_movgen_noncaps(data,moves,count);
-    for(int i=1;i<=count;++i)if(legal(moves[i].moves))return true;
+    int moveCount=0;
+    if(isWhite)petir_movgen::generateWhiteCaptures(position,moveList,moveCount);else petir_movgen::generateBlackCaptures(position,moveList,moveCount);
+    for(int index=1;index<=moveCount;++index)if(isLegal(moveList[index].move))return true;
+    if(isWhite)petir_movgen::generateWhiteQuietMoves(position,moveList,moveCount);else petir_movgen::generateBlackQuietMoves(position,moveList,moveCount);
+    for(int index=1;index<=moveCount;++index)if(isLegal(moveList[index].move))return true;
     return false;
 }
 }
 // search.pas:982
-std::int32_t q_search(std::int32_t giliran, std::int32_t alpha, std::int32_t beta, petir_header::tdata& data, std::int32_t ply, std::int32_t depth, std::int32_t cext, std::int32_t neval, std::int32_t nodetype) {
-    std::int32_t return_value{};
-    petir_header::tdata temp{};
-    petir_header::tmovelist ml;
-    std::uint8_t tstat{};
-    bool incheck{};
-    std::uint64_t pin_mask{};
-    std::int32_t v{};
-    std::int32_t tempnm{};
-    std::int32_t sc{};
-    std::int32_t t_alpha{};
-    std::int32_t t_beta{};
-    std::int32_t g{};
-    std::int32_t a{};
-    std::int32_t jml{};
-    std::int32_t nilai{};
-    std::int32_t e{};
-    std::int32_t sto{};
-    std::int32_t sfrom{};
-    bool abcd{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    std::int32_t pas_temp_4{};
+std::int32_t quiescenceSearch(std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, std::int32_t checkPlies, std::int32_t ply, std::int32_t extensionCredit, std::int32_t staticEval, std::int32_t nodeType) {
+    std::int32_t result{};
+    petir_header::tdata savedPosition{};
+    petir_header::tmovelist moveList;
+    bool inCheck{};
+    std::uint64_t pinnedMask{};
+    std::int32_t futilityScore{};
+    std::int32_t checkerCount{};
+    std::int32_t currentAlpha{};
+    std::int32_t currentBeta{};
+    std::int32_t bestScore{};
+    std::int32_t moveIndex{};
+    std::int32_t moveCount{};
+    std::int32_t score{};
+    std::int32_t standPat{};
+    std::int32_t toSquare{};
+    std::int32_t fromSquare{};
+    std::int32_t whiteEvasionCase{};
+    std::int32_t blackEvasionCase{};
+    std::int32_t lastMoveIndex{};
 // search.pas:991
-    auto cap_is_danger = [&]() -> bool {
-    bool return_value{};
-    if ((giliran == petir_header::_sisiputih)) {
-        if ((data.papan[sto] == petir_header::_mentrihitam)) {
-            return_value = true;
-            return return_value;
+    auto captureIsDangerous = [&]() -> bool {
+    bool result{};
+    if ((sideToMove == petir_header::whiteSide)) {
+        if ((position.board[toSquare] == petir_header::blackQueen)) {
+            result = true;
+            return result;
         }
-        if ((((ml[a].score > 0) && ((petir_bitboard_mask::kingmask[sto] & data.kingblack) != 0)) && (data.queenwhite != 0))) {
-            return_value = true;
-            return return_value;
+        if ((((moveList[moveIndex].score > 0) && ((petir_bitboard_mask::kingAttacks[toSquare] & position.blackKingBoard) != 0)) && (position.whiteQueens != 0))) {
+            result = true;
+            return result;
         }
-        if (((data.papan[(ml[a].moves & 127)] == 1) && (sto >= petir_header::a7))) {
-            return_value = true;
-            return return_value;
+        if (((position.board[(moveList[moveIndex].move & 127)] == 1) && (toSquare >= petir_header::a7))) {
+            result = true;
+            return result;
         }
-        if (((data.papan[sto] == pas::negate(1)) && (sto <= petir_header::h2))) {
-            return_value = true;
-            return return_value;
+        if (((position.board[toSquare] == pas::negate(1)) && (toSquare <= petir_header::h2))) {
+            result = true;
+            return result;
         }
     } else {
-        if ((data.papan[sto] == petir_header::_mentriputih)) {
-            return_value = true;
-            return return_value;
+        if ((position.board[toSquare] == petir_header::whiteQueen)) {
+            result = true;
+            return result;
         }
-        if ((((ml[a].score > 0) && ((petir_bitboard_mask::kingmask[sto] & data.kingwhite) != 0)) && (data.queenblack != 0))) {
-            return_value = true;
-            return return_value;
+        if ((((moveList[moveIndex].score > 0) && ((petir_bitboard_mask::kingAttacks[toSquare] & position.whiteKingBoard) != 0)) && (position.blackQueens != 0))) {
+            result = true;
+            return result;
         }
-        if (((data.papan[(ml[a].moves & 127)] == pas::negate(1)) && (sto <= petir_header::h2))) {
-            return_value = true;
-            return return_value;
+        if (((position.board[(moveList[moveIndex].move & 127)] == pas::negate(1)) && (toSquare <= petir_header::h2))) {
+            result = true;
+            return result;
         }
-        if (((data.papan[sto] == 1) && (sto >= petir_header::a7))) {
-            return_value = true;
-            return return_value;
+        if (((position.board[toSquare] == 1) && (toSquare >= petir_header::a7))) {
+            result = true;
+            return result;
         }
     }
-    return_value = false;
-    return return_value;
+    result = false;
+    return result;
 };
 
     // Portability guards: stop safely and keep the original 64-ply arrays in bounds.
-    if (petir::search_should_stop()) return 0;
-    if ((giliran == petir_header::_sisiputih)) {
-        incheck = petir_tools::white_checked(data);
+    if (petir::searchShouldStop()) return 0;
+    if ((sideToMove == petir_header::whiteSide)) {
+        inCheck = petir_tools::whiteInCheck(position);
     } else {
-        incheck = petir_tools::black_checked(data);
+        inCheck = petir_tools::blackInCheck(position);
     }
-    if ((!incheck)) {
+    if ((!inCheck)) {
         // Stalemate is terminal even when a cached evaluation would fail high.
-        if(!has_legal_noncheck_move(data,giliran,ml))return petir_header::contemp_draw;
-        if(depth>=63)return petir_ueval::eval(data,giliran,alpha,beta);
-        if ((neval == petir_search::noval)) {
-            e = petir_ueval::eval(data, giliran, alpha, beta);
+        if(!hasLegalMoveWhenNotInCheck(position,sideToMove,moveList))return petir_header::drawScore;
+        if(ply>=63)return petir_ueval::evaluate(position,sideToMove,alpha,beta);
+        if ((staticEval == petir_search::noValue)) {
+            standPat = petir_ueval::evaluate(position, sideToMove, alpha, beta);
         } else {
-            e = neval;
+            standPat = staticEval;
         }
-        if ((e >= beta)) {
-            return_value = e;
-            return return_value;
+        if ((standPat >= beta)) {
+            result = standPat;
+            return result;
         }
-        if ((e > alpha)) {
-            alpha = e;
+        if ((standPat > alpha)) {
+            alpha = standPat;
         }
     }
-    if ((giliran == petir_header::_sisiputih)) {
-        if (incheck) {
-            petir_movgen::white_evasion(data, ml, jml, sc);
-            pas_temp_1 = jml;
-            if (((pas_temp_1 == 1))) {
-                (ply = pas::increment(ply, 1));
+    if ((sideToMove == petir_header::whiteSide)) {
+        if (inCheck) {
+            petir_movgen::generateWhiteEvasions(position, moveList, moveCount, checkerCount);
+            whiteEvasionCase = moveCount;
+            if (((whiteEvasionCase == 1))) {
+                (checkPlies = pas::increment(checkPlies, 1));
             }
-            else if (((pas_temp_1 == 0))) {
-                return_value = pas::add(pas::negate(petir_header::_nilai_raja), depth);
-                return return_value;
+            else if (((whiteEvasionCase == 0))) {
+                result = pas::add(pas::negate(petir_header::kingValue), ply);
+                return result;
             }
         } else {
-            if ((ply > 0)) {
-                petir_movgen::q_white_movgen(data, ml, jml);
+            if ((checkPlies > 0)) {
+                petir_movgen::generateWhiteCapturesAndChecks(position, moveList, moveCount);
             } else {
-                petir_movgen::white_movgen_caps2(data, ml, jml);
+                petir_movgen::generateWhiteCapturesAndPushes(position, moveList, moveCount);
             }
         }
     } else {
-        if (incheck) {
-            petir_movgen::black_evasion(data, ml, jml, sc);
-            pas_temp_2 = jml;
-            if (((pas_temp_2 == 1))) {
-                (ply = pas::increment(ply, 1));
+        if (inCheck) {
+            petir_movgen::generateBlackEvasions(position, moveList, moveCount, checkerCount);
+            blackEvasionCase = moveCount;
+            if (((blackEvasionCase == 1))) {
+                (checkPlies = pas::increment(checkPlies, 1));
             }
-            else if (((pas_temp_2 == 0))) {
-                return_value = pas::add(pas::negate(petir_header::_nilai_raja), depth);
-                return return_value;
+            else if (((blackEvasionCase == 0))) {
+                result = pas::add(pas::negate(petir_header::kingValue), ply);
+                return result;
             }
         } else {
-            if ((ply > 0)) {
-                petir_movgen::q_black_movgen(data, ml, jml);
+            if ((checkPlies > 0)) {
+                petir_movgen::generateBlackCapturesAndChecks(position, moveList, moveCount);
             } else {
-                petir_movgen::black_movgen_caps2(data, ml, jml);
+                petir_movgen::generateBlackCapturesAndPushes(position, moveList, moveCount);
             }
         }
     }
-    if(depth>=63)return petir_ueval::eval(data,giliran,alpha,beta);
-    temp = data;
-    if (!incheck && jml == 0) {
-        return e;
+    if(ply>=63)return petir_ueval::evaluate(position,sideToMove,alpha,beta);
+    savedPosition = position;
+    if (!inCheck && moveCount == 0) {
+        return standPat;
     }
-    if ((!incheck)) {
-        g = e;
+    if ((!inCheck)) {
+        bestScore = standPat;
     } else {
-        g = pas::sub(pas::negate(petir_header::_infinity), 100);
+        bestScore = pas::sub(pas::negate(petir_header::infinity), 100);
     }
-    t_alpha = alpha;
-    t_beta = beta;
-    pin_mask = incheck?0:petir_tools::pinned_pieces(data,giliran);
-    pas_temp_4 = jml;
-    PETIR_ORDER_STAT(int ostat_searched = 0;)
-    for (a = 1; a <= pas_temp_4; ++a) {
-        if(petir::search_should_stop())return 0;
-        if ((a != jml)) {
-            petir_next::nextbest_max(ml, a, jml);
+    currentAlpha = alpha;
+    currentBeta = beta;
+    pinnedMask = inCheck?0:petir_tools::pinnedPieces(position,sideToMove);
+    lastMoveIndex = moveCount;
+    PETIR_ORDER_STAT(int searchedMoveCount = 0;)
+    for (moveIndex = 1; moveIndex <= lastMoveIndex; ++moveIndex) {
+        if(petir::searchShouldStop())return 0;
+        if ((moveIndex != moveCount)) {
+            petir_next::selectBestMove(moveList, moveIndex, moveCount);
         }
-        abcd = false;
-        sto = (pas::shr(ml[a].moves, 7) & 127);
-        if ((!incheck)) {
-            if ((ml[a].score < 0)) {
+        toSquare = (pas::shiftRight(moveList[moveIndex].move, 7) & 127);
+        if ((!inCheck)) {
+            if ((moveList[moveIndex].score < 0)) {
                 break;
             }
-            if ((((alpha == pas::sub(beta, 1)) && (sto <= 63)) && (data.papan[sto] != 0))) {
-                v = pas::add(pas::add(e, petir_header::nilai_piece[data.papan[sto]]), 70);
-                if (((((v < t_alpha) && (!petir_tools::menskak2(temp, giliran, ml[a].moves))) && (!petir_tools::pawn_7_rank(giliran, data))) && ((pas::shr(ml[a].moves, 14) & 7) == 0))) {
-                    if ((!cap_is_danger())) {
-                        if ((v > g)) {
-                            g = v;
+            if ((((alpha == pas::sub(beta, 1)) && (toSquare <= 63)) && (position.board[toSquare] != 0))) {
+                futilityScore = pas::add(pas::add(standPat, petir_header::pieceValue[position.board[toSquare]]), 70);
+                if (((((futilityScore < currentAlpha) && (!petir_tools::moveGivesCheck(savedPosition, sideToMove, moveList[moveIndex].move))) && (!petir_tools::hasPawnOnSeventh(sideToMove, position))) && ((pas::shiftRight(moveList[moveIndex].move, 14) & 7) == 0))) {
+                    if ((!captureIsDangerous())) {
+                        if ((futilityScore > bestScore)) {
+                            bestScore = futilityScore;
                         }
                         continue;
                     }
                 }
             }
-            sfrom = (ml[a].moves & 127);
-            if ((giliran == petir_header::_sisiputih)) {
-                if (((data.papan[sfrom] == petir_header::_rajaputih) && petir_tools::white_attacked(data, sto))) {
+            fromSquare = (moveList[moveIndex].move & 127);
+            if ((sideToMove == petir_header::whiteSide)) {
+                if (((position.board[fromSquare] == petir_header::whiteKing) && petir_tools::attackedByBlack(position, toSquare))) {
                     continue;
                 } else {
-                    if ((pin_mask & petir_bitboard_mask::bit(sfrom)) && petir_tools::white_open_check(data, ml[a].moves)) {
+                    if ((pinnedMask & petir_bitboard_mask::squareBit(fromSquare)) && petir_tools::exposesWhiteKing(position, moveList[moveIndex].move)) {
                         continue;
                     }
                 }
             } else {
-                if (((data.papan[sfrom] == petir_header::_rajahitam) && petir_tools::black_attacked(data, sto))) {
+                if (((position.board[fromSquare] == petir_header::blackKing) && petir_tools::attackedByWhite(position, toSquare))) {
                     continue;
                 } else {
-                    if ((pin_mask & petir_bitboard_mask::bit(sfrom)) && petir_tools::black_open_check(data, ml[a].moves)) {
+                    if ((pinnedMask & petir_bitboard_mask::squareBit(fromSquare)) && petir_tools::exposesBlackKing(position, moveList[moveIndex].move)) {
                         continue;
                     }
                 }
             }
         }
-        if ((giliran == petir_header::_sisiputih)) {
-            petir_makemove::makewhitemove(ml[a].moves, data);
+        if ((sideToMove == petir_header::whiteSide)) {
+            petir_makemove::makeWhiteMove(moveList[moveIndex].move, position);
         } else {
-            petir_makemove::makeblackmove(ml[a].moves, data);
+            petir_makemove::makeBlackMove(moveList[moveIndex].move, position);
         }
-        if ((sto == petir_header::_en_passant)) {
-            if ((((giliran == petir_header::_sisiputih) && petir_tools::white_checked(data)) || ((giliran == petir_header::_sisihitam) && petir_tools::black_checked(data)))) {
-                data = temp;
+        if ((toSquare == petir_header::enPassantTarget)) {
+            if ((((sideToMove == petir_header::whiteSide) && petir_tools::whiteInCheck(position)) || ((sideToMove == petir_header::blackSide) && petir_tools::blackInCheck(position)))) {
+                position = savedPosition;
                 continue;
             }
         }
-        PETIR_ORDER_STAT(++ostat_searched;)
-        nilai = pas::negate(petir_search::q_search(pas::sub(3, giliran), pas::negate(t_beta), pas::negate(t_alpha), data, pas::sub(ply, 1), pas::add(depth, 1), cext, petir_search::noval, pas::negate(nodetype)));
-        if(petir::search_should_stop()) {data=temp;return 0;}
-        if ((nilai >= beta)) {
-            PETIR_ORDER_STAT(petir_order_stats::q_cutoff(incheck, ostat_searched);)
-            data = temp;
-            return_value = nilai;
-            return return_value;
+        PETIR_ORDER_STAT(++searchedMoveCount;)
+        score = pas::negate(petir_search::quiescenceSearch(pas::sub(3, sideToMove), pas::negate(currentBeta), pas::negate(currentAlpha), position, pas::sub(checkPlies, 1), pas::add(ply, 1), extensionCredit, petir_search::noValue, pas::negate(nodeType)));
+        if(petir::searchShouldStop()) {position=savedPosition;return 0;}
+        if ((score >= beta)) {
+            PETIR_ORDER_STAT(petir_order_stats::quiescenceCutoff(inCheck, searchedMoveCount);)
+            position = savedPosition;
+            result = score;
+            return result;
         }
-        if ((nilai > g)) {
-            g = nilai;
-            if ((nilai > t_alpha)) {
-                t_alpha = nilai;
+        if ((score > bestScore)) {
+            bestScore = score;
+            if ((score > currentAlpha)) {
+                currentAlpha = score;
             }
         }
-        data = temp;
+        position = savedPosition;
     }
-    PETIR_ORDER_STAT(petir_order_stats::q_done(incheck, ostat_searched);)
-    return_value = g;
-    return return_value;
+    PETIR_ORDER_STAT(petir_order_stats::quiescenceDone(inCheck, searchedMoveCount);)
+    result = bestScore;
+    return result;
 }
 
 }

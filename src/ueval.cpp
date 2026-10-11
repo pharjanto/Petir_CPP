@@ -8,213 +8,213 @@
 #include <intrin.h>
 #endif
 namespace petir_ueval {
-int passed_pawn_activity(const petir_header::tdata& data, int pos, bool white) {
+int passedPawnActivity(const petir_header::tdata& position, int pawnSquare, bool isWhite) {
     using namespace petir_bitboard_mask;
     // Keep this refinement in endgames and leave KPK to its existing evaluator.
-    if (data.nilai_perwira_putih > 12 || data.nilai_perwira_hitam > 12) return 0;
-    const auto pawns = data.pawnwhite | data.pawnblack;
-    if (data.nilai_perwira_putih == 0 && data.nilai_perwira_hitam == 0
-        && !(pawns & (pawns - 1))) return 0;
-    const int rank = white ? pos / 8 : 7 - pos / 8;
+    if (position.whiteNonPawnMaterial > 12 || position.blackNonPawnMaterial > 12) return 0;
+    const auto allPawns = position.whitePawns | position.blackPawns;
+    if (position.whiteNonPawnMaterial == 0 && position.blackNonPawnMaterial == 0
+        && !(allPawns & (allPawns - 1))) return 0;
+    const int rank = isWhite ? pawnSquare / 8 : 7 - pawnSquare / 8;
     if (rank < 4 || rank > 6) return 0;
-    const int step = white ? 8 : -8;
-    const int block = pos + step;
+    const int step = isWhite ? 8 : -8;
+    const int blockSquare = pawnSquare + step;
     const int weight = rank - 3; // Fifth/sixth/seventh rank: 1/2/3.
-    const int own_king = king_square(white ? data.kingwhite : data.kingblack);
-    const int enemy_king = king_square(white ? data.kingblack : data.kingwhite);
-    const auto distance = [block](int king) {
-        return std::min(5, std::max(std::abs((king & 7) - (block & 7)),
-                                    std::abs(king / 8 - block / 8)));
+    const int ownKing = kingSquare(isWhite ? position.whiteKingBoard : position.blackKingBoard);
+    const int enemyKing = kingSquare(isWhite ? position.blackKingBoard : position.whiteKingBoard);
+    const auto kingDistance = [blockSquare](int king) {
+        return std::min(5, std::max(std::abs((king & 7) - (blockSquare & 7)),
+                                    std::abs(king / 8 - blockSquare / 8)));
     };
-    int bonus = 2 * weight * (distance(enemy_king) - distance(own_king));
-    if (data.papan[block] != 0) return bonus - 8 * weight;
+    int bonus = 2 * weight * (kingDistance(enemyKing) - kingDistance(ownKing));
+    if (position.board[blockSquare] != 0) return bonus - 8 * weight;
 
-    const auto enemy_rooks = white ? data.rookblack | data.queenblack
-                                  : data.rookwhite | data.queenwhite;
-    const auto enemy_bishops = white ? data.bishopblack | data.queenblack
-                                    : data.bishopwhite | data.queenwhite;
-    const auto enemy_knights = white ? data.knightblack : data.knightwhite;
-    const auto enemy_pawns = white ? data.pawnblack : data.pawnwhite;
-    const auto enemy_king_bits = white ? data.kingblack : data.kingwhite;
+    const auto enemyRooks = isWhite ? position.blackRooks | position.blackQueens
+                                  : position.whiteRooks | position.whiteQueens;
+    const auto enemyBishops = isWhite ? position.blackBishops | position.blackQueens
+                                    : position.whiteBishops | position.whiteQueens;
+    const auto enemyKnights = isWhite ? position.blackKnights : position.whiteKnights;
+    const auto enemyPawns = isWhite ? position.blackPawns : position.whitePawns;
+    const auto enemyKingBoard = isWhite ? position.blackKingBoard : position.whiteKingBoard;
     // A rook/queen behind the pawn attacks its future squares once it advances.
-    const auto rear = white ? rook_attack_down_mask[pos] : rook_attack_up_mask[pos];
-    const bool rear_attack = (vertmask2[pos][(data.allpiecesr90 >> vershiftmask[pos]) & 63]
-                              & rear & enemy_rooks) != 0;
-    const auto attacked = [&](int square) {
-        if (rear_attack || (knightmask[square] & enemy_knights)
-            || (kingmask[square] & enemy_king_bits)
-            || ((white ? w_pawn_attack[square] : b_pawn_attack[square]) & enemy_pawns)) return true;
-        const auto straight = horzmask2[square][(data.allpieces >> ((square & 56) + 1)) & 63]
-                            | vertmask2[square][(data.allpiecesr90 >> vershiftmask[square]) & 63];
-        if (straight & enemy_rooks) return true;
-        const auto diagonal = diaga8h1mask[square][(data.allpiecesa8h1 >> a8h1shiftmask[square]) & 255]
-                            | diagh8a1mask[square][(data.allpiecesh8a1 >> h8a1shiftmask[square]) & 255];
-        return (diagonal & enemy_bishops) != 0;
+    const auto rearRay = isWhite ? rookRayDownMask[pawnSquare] : rookRayUpMask[pawnSquare];
+    const bool rearAttack = (verticalAttacks[pawnSquare][(position.allPiecesRotated90 >> verticalShift[pawnSquare]) & 63]
+                              & rearRay & enemyRooks) != 0;
+    const auto isAttacked = [&](int square) {
+        if (rearAttack || (knightAttacks[square] & enemyKnights)
+            || (kingAttacks[square] & enemyKingBoard)
+            || ((isWhite ? whitePawnAttacks[square] : blackPawnAttacks[square]) & enemyPawns)) return true;
+        const auto straightAttacks = horizontalAttacks[square][(position.allPieces >> ((square & 56) + 1)) & 63]
+                            | verticalAttacks[square][(position.allPiecesRotated90 >> verticalShift[square]) & 63];
+        if (straightAttacks & enemyRooks) return true;
+        const auto diagonalAttacks = diagonalA8H1Attacks[square][(position.allPiecesA8H1 >> diagonalA8H1Shift[square]) & 255]
+                            | diagonalH8A1Attacks[square][(position.allPiecesH8A1 >> diagonalH8A1Shift[square]) & 255];
+        return (diagonalAttacks & enemyBishops) != 0;
     };
     // Geometric safety is deliberately conservative: defended but attacked
     // squares receive no safe-path bonus. This is not a promotion proof.
-    if (attacked(block)) return bonus - 6 * weight;
+    if (isAttacked(blockSquare)) return bonus - 6 * weight;
     bonus += 4 * weight;
-    for (int square = block + step; square >= 0 && square < 64; square += step)
-        if (data.papan[square] != 0 || attacked(square)) return bonus;
+    for (int square = blockSquare + step; square >= 0 && square < 64; square += step)
+        if (position.board[square] != 0 || isAttacked(square)) return bonus;
     return bonus + 4 * weight;
 }
 
 // Count each neighboring pair of foremost passers once, before promotion
 // shortcuts. The trailing pawn's rank determines the existing pair bonus.
-int connected_passed_pawns(const petir_header::tdata& data, bool white) {
+int connectedPassedPawns(const petir_header::tdata& position, bool isWhite) {
     using namespace petir_bitboard_mask;
-    const auto own = white ? data.pawnwhite : data.pawnblack;
-    const auto enemy = white ? data.pawnblack : data.pawnwhite;
-    int ranks[8];
+    const auto ownPawns = isWhite ? position.whitePawns : position.blackPawns;
+    const auto enemyPawns = isWhite ? position.blackPawns : position.whitePawns;
+    int passerRanks[8];
     for (int file = 0; file < 8; ++file) {
-        ranks[file] = -1;
-        const auto pawns = own & file_mask[file];
-        if (!pawns) continue;
-        const int square = white ? 63 - std::countl_zero(pawns) : std::countr_zero(pawns);
-        if ((white ? w_pion_bebas_mask[square] : b_pion_bebas_mask[square]) & enemy) continue;
-        ranks[file] = white ? square / 8 : 7 - square / 8;
+        passerRanks[file] = -1;
+        const auto filePawns = ownPawns & fileMask[file];
+        if (!filePawns) continue;
+        const int square = isWhite ? 63 - std::countl_zero(filePawns) : std::countr_zero(filePawns);
+        if ((isWhite ? whitePassedPawnMask[square] : blackPassedPawnMask[square]) & enemyPawns) continue;
+        passerRanks[file] = isWhite ? square / 8 : 7 - square / 8;
     }
     int bonus = 0;
     for (int file = 1; file < 8; ++file) {
-        if (ranks[file - 1] < 0 || ranks[file] < 0) continue;
-        const int rank = std::min(ranks[file - 1], ranks[file]);
-        const int separation = std::abs(ranks[file - 1] - ranks[file]);
-        bonus += nilai_pion_bebas_connected2;
+        if (passerRanks[file - 1] < 0 || passerRanks[file] < 0) continue;
+        const int rank = std::min(passerRanks[file - 1], passerRanks[file]);
+        const int separation = std::abs(passerRanks[file - 1] - passerRanks[file]);
+        bonus += connectedPassersBonus;
         if (rank >= 5)
-            bonus += separation == 0 ? nilai_pion_bebas_connected
-                   : separation == 1 ? nilai_pion_bebas_connected + 30
-                                     : nilai_pion_bebas_connected3;
+            bonus += separation == 0 ? connectedPassersFarAdvancedBonus
+                   : separation == 1 ? connectedPassersFarAdvancedBonus + 30
+                                     : connectedPassersAdvancedBonus;
         else if (rank >= 4) {
-            if (separation == 0) bonus += nilai_pion_bebas_connected3;
-            else if (separation == 1) bonus += nilai_pion_bebas_connected3 + 20;
+            if (separation == 0) bonus += connectedPassersAdvancedBonus;
+            else if (separation == 1) bonus += connectedPassersAdvancedBonus + 20;
         }
     }
     return bonus;
 }
 
 // Piece-owner perspective. Small additions to existing mobility/PST terms.
-int endgame_piece_activity(const petir_header::tdata& data, int pos, bool white) {
+int endgamePieceActivity(const petir_header::tdata& position, int pieceSquare, bool isWhite) {
     using namespace petir_bitboard_mask;
-    if (data.nilai_perwira_putih > 12 || data.nilai_perwira_hitam > 12) return 0;
-    if (!(data.pawnwhite | data.pawnblack)) return 0;
-    const int type = std::abs(data.papan[pos]);
-    if (type != 2 && type != 4) return 0;
-    const auto own = white ? data.whitepieces : data.blackpieces;
-    const auto enemy = white ? data.blackpieces : data.whitepieces;
-    const auto own_pawns = white ? data.pawnwhite : data.pawnblack;
-    const auto enemy_pawns = white ? data.pawnblack : data.pawnwhite;
-    const auto attacks = [&](int square, int piece) {
-        const int kind = std::abs(piece);
-        if (kind == 1) return piece > 0 ? w_pawn_attack[square] : b_pawn_attack[square];
-        if (kind == 2) return knightmask[square];
-        if (kind == 6) return kingmask[square];
+    if (position.whiteNonPawnMaterial > 12 || position.blackNonPawnMaterial > 12) return 0;
+    if (!(position.whitePawns | position.blackPawns)) return 0;
+    const int pieceType = std::abs(position.board[pieceSquare]);
+    if (pieceType != 2 && pieceType != 4) return 0;
+    const auto ownPieces = isWhite ? position.whitePieces : position.blackPieces;
+    const auto enemyPieces = isWhite ? position.blackPieces : position.whitePieces;
+    const auto ownPawns = isWhite ? position.whitePawns : position.blackPawns;
+    const auto enemyPawns = isWhite ? position.blackPawns : position.whitePawns;
+    const auto attacksFrom = [&](int square, int piece) {
+        const int pieceKind = std::abs(piece);
+        if (pieceKind == 1) return piece > 0 ? whitePawnAttacks[square] : blackPawnAttacks[square];
+        if (pieceKind == 2) return knightAttacks[square];
+        if (pieceKind == 6) return kingAttacks[square];
         std::uint64_t reach = 0;
-        if (kind == 4 || kind == 5)
-            reach = horzmask2[square][(data.allpieces >> ((square & 56) + 1)) & 63]
-                  | vertmask2[square][(data.allpiecesr90 >> vershiftmask[square]) & 63];
-        if (kind == 3 || kind == 5)
-            reach |= diaga8h1mask[square][(data.allpiecesa8h1 >> a8h1shiftmask[square]) & 255]
-                   | diagh8a1mask[square][(data.allpiecesh8a1 >> h8a1shiftmask[square]) & 255];
+        if (pieceKind == 4 || pieceKind == 5)
+            reach = horizontalAttacks[square][(position.allPieces >> ((square & 56) + 1)) & 63]
+                  | verticalAttacks[square][(position.allPiecesRotated90 >> verticalShift[square]) & 63];
+        if (pieceKind == 3 || pieceKind == 5)
+            reach |= diagonalA8H1Attacks[square][(position.allPiecesA8H1 >> diagonalA8H1Shift[square]) & 255]
+                   | diagonalH8A1Attacks[square][(position.allPiecesH8A1 >> diagonalH8A1Shift[square]) & 255];
         return reach;
     };
-    const auto attack_map = [&](std::uint64_t pieces) {
+    const auto attackMap = [&](std::uint64_t pieces) {
         std::uint64_t result = 0;
         while (pieces) {
             const int square = std::countr_zero(pieces);
             pieces &= pieces - 1;
-            result |= attacks(square, data.papan[square]);
+            result |= attacksFrom(square, position.board[square]);
         }
         return result;
     };
-    const auto enemy_attacks = attack_map(enemy);
-    const auto reach = attacks(pos, data.papan[pos]);
-    const auto square_bit = UINT64_C(1) << pos;
+    const auto enemyAttacks = attackMap(enemyPieces);
+    const auto reach = attacksFrom(pieceSquare, position.board[pieceSquare]);
+    const auto pieceBit = UINT64_C(1) << pieceSquare;
     // No extra activity reward while the piece itself is under attack.
     // This conservative geometric test does not resolve pins or exchanges.
-    if (enemy_attacks & square_bit) return 0;
-    if (type == 2) {
-        const int base = white ? nilai_kuda_outpost_w[pos] : nilai_kuda_outpost_b[pos];
-        if (!base || !((white ? b_pawn_attack[pos] : w_pawn_attack[pos]) & own_pawns)) return 0;
-        if ((white ? petir_evalmask::w_outpost_mask[pos] : petir_evalmask::b_outpost_mask[pos])
-            & enemy_pawns) return 0;
-        const int front = pos + (white ? 8 : -8);
-        const bool blockade = front >= 0 && front < 64
-                           && (enemy_pawns & (UINT64_C(1) << front));
+    if (enemyAttacks & pieceBit) return 0;
+    if (pieceType == 2) {
+        const int outpostBonus = isWhite ? whiteKnightOutpostBonus[pieceSquare] : blackKnightOutpostBonus[pieceSquare];
+        if (!outpostBonus || !((isWhite ? blackPawnAttacks[pieceSquare] : whitePawnAttacks[pieceSquare]) & ownPawns)) return 0;
+        if ((isWhite ? petir_evalmask::whiteOutpostMask[pieceSquare] : petir_evalmask::blackOutpostMask[pieceSquare])
+            & enemyPawns) return 0;
+        const int frontSquare = pieceSquare + (isWhite ? 8 : -8);
+        const bool isBlockade = frontSquare >= 0 && frontSquare < 64
+                           && (enemyPawns & (UINT64_C(1) << frontSquare));
         // Reward a supported, unchallengeable outpost only with a concrete
         // pawn target or an enemy pawn immediately blocked by this knight.
-        if (!(reach & enemy_pawns & ~enemy_attacks) && !blockade) return 0;
-        return base / 2 + (blockade ? 4 : 0);
+        if (!(reach & enemyPawns & ~enemyAttacks) && !isBlockade) return 0;
+        return outpostBonus / 2 + (isBlockade ? 4 : 0);
     }
-    const int safe = std::popcount(reach & ~own & ~enemy_attacks);
-    int bonus = 2 * std::min(6, safe) - 6; // -6..+6, on top of raw mobility.
-    bonus += 4 * std::min(2, std::popcount(reach & enemy_pawns & ~enemy_attacks));
-    if (safe <= 3) {
-        const auto other_defenders = attack_map(own & ~square_bit);
-        const auto tied_pawns = reach & own_pawns & enemy_attacks & ~other_defenders;
-        bonus -= 3 * std::min(2, std::popcount(tied_pawns));
+    const int safeSquares = std::popcount(reach & ~ownPieces & ~enemyAttacks);
+    int bonus = 2 * std::min(6, safeSquares) - 6; // -6..+6, on top of raw mobility.
+    bonus += 4 * std::min(2, std::popcount(reach & enemyPawns & ~enemyAttacks));
+    if (safeSquares <= 3) {
+        const auto otherDefenders = attackMap(ownPieces & ~pieceBit);
+        const auto tiedPawns = reach & ownPawns & enemyAttacks & ~otherDefenders;
+        bonus -= 3 * std::min(2, std::popcount(tiedPawns));
     }
     return bonus;
 }
 
 // Percent of the evaluation retained in exactly KRP versus KR. This is
 // soft positional scaling, never an exact draw claim or a tablebase probe.
-int rook_pawn_scale(const petir_header::tdata& data, int side_to_move) {
+int rookPawnScale(const petir_header::tdata& position, int sideToMove) {
     using namespace petir_bitboard_mask;
-    const auto pawns = data.pawnwhite | data.pawnblack;
-    if (std::popcount(pawns) != 1 || std::popcount(data.rookwhite) != 1
-        || std::popcount(data.rookblack) != 1
-        || (data.queenwhite | data.queenblack | data.bishopwhite | data.bishopblack
-            | data.knightwhite | data.knightblack)) return 100;
-    const bool white = data.pawnwhite != 0;
-    const int pawn = king_square(pawns);
-    const int strong_king = king_square(white ? data.kingwhite : data.kingblack);
-    const int weak_king = king_square(white ? data.kingblack : data.kingwhite);
-    const int strong_rook = king_square(white ? data.rookwhite : data.rookblack);
-    const int weak_rook = king_square(white ? data.rookblack : data.rookwhite);
-    const auto rook_attacks = [&](int square) {
-        return horzmask2[square][(data.allpieces >> ((square & 56) + 1)) & 63]
-             | vertmask2[square][(data.allpiecesr90 >> vershiftmask[square]) & 63];
+    const auto pawns = position.whitePawns | position.blackPawns;
+    if (std::popcount(pawns) != 1 || std::popcount(position.whiteRooks) != 1
+        || std::popcount(position.blackRooks) != 1
+        || (position.whiteQueens | position.blackQueens | position.whiteBishops | position.blackBishops
+            | position.whiteKnights | position.blackKnights)) return 100;
+    const bool pawnIsWhite = position.whitePawns != 0;
+    const int pawnSquare = kingSquare(pawns);
+    const int strongKing = kingSquare(pawnIsWhite ? position.whiteKingBoard : position.blackKingBoard);
+    const int weakKing = kingSquare(pawnIsWhite ? position.blackKingBoard : position.whiteKingBoard);
+    const int strongRook = kingSquare(pawnIsWhite ? position.whiteRooks : position.blackRooks);
+    const int weakRook = kingSquare(pawnIsWhite ? position.blackRooks : position.whiteRooks);
+    const auto rookAttacksFrom = [&](int square) {
+        return horizontalAttacks[square][(position.allPieces >> ((square & 56) + 1)) & 63]
+             | verticalAttacks[square][(position.allPiecesRotated90 >> verticalShift[square]) & 63];
     };
-    const auto strong_attack = rook_attacks(strong_rook);
-    const auto weak_attack = rook_attacks(weak_rook);
-    const auto pawn_attack = white ? w_pawn_attack[pawn] : b_pawn_attack[pawn];
+    const auto strongRookAttacks = rookAttacksFrom(strongRook);
+    const auto weakRookAttacks = rookAttacksFrom(weakRook);
+    const auto pawnAttacks = pawnIsWhite ? whitePawnAttacks[pawnSquare] : blackPawnAttacks[pawnSquare];
     const auto bit = [](int square) { return UINT64_C(1) << square; };
     // Avoid tactical exceptions: checks or either rook under direct attack.
-    if ((weak_attack & (bit(strong_king) | bit(strong_rook)))
-        || (strong_attack & (bit(weak_king) | bit(weak_rook)))
-        || (pawn_attack & (bit(weak_king) | bit(weak_rook)))
-        || (kingmask[weak_king] & bit(strong_rook))
-        || (kingmask[strong_king] & bit(weak_rook))) return 50;
+    if ((weakRookAttacks & (bit(strongKing) | bit(strongRook)))
+        || (strongRookAttacks & (bit(weakKing) | bit(weakRook)))
+        || (pawnAttacks & (bit(weakKing) | bit(weakRook)))
+        || (kingAttacks[weakKing] & bit(strongRook))
+        || (kingAttacks[strongKing] & bit(weakRook))) return 50;
     // Normalize the pawn owner to White and the pawn to files a-d.
-    const int flip = (white ? 0 : 56) ^ ((pawn & 7) >= 4 ? 7 : 0);
-    const int p = pawn ^ flip, sk = strong_king ^ flip, wk = weak_king ^ flip;
-    const int sr = strong_rook ^ flip, wr = weak_rook ^ flip;
-    const int file = p & 7, rank = p / 8, promotion = 56 + file;
-    const auto distance = [](int a, int b) {
-        return std::max(std::abs((a & 7) - (b & 7)), std::abs(a / 8 - b / 8));
+    const int flip = (pawnIsWhite ? 0 : 56) ^ ((pawnSquare & 7) >= 4 ? 7 : 0);
+    const int pawn = pawnSquare ^ flip, strongKingSquare = strongKing ^ flip, weakKingSquare = weakKing ^ flip;
+    const int strongRookSquare = strongRook ^ flip, weakRookSquare = weakRook ^ flip;
+    const int file = pawn & 7, rank = pawn / 8, promotionSquare = 56 + file;
+    const auto distance = [](int first, int second) {
+        return std::max(std::abs((first & 7) - (second & 7)), std::abs(first / 8 - second / 8));
     };
     // Established third-rank defense, with lateral room for the rook.
-    if (rank <= 4 && sk / 8 <= 4 && distance(wk, promotion) <= 1 && wr / 8 == 5
-        && std::abs((wr & 7) - file) >= 2
-        && std::abs((wr & 7) - (wk & 7)) >= 2) return 25;
+    if (rank <= 4 && strongKingSquare / 8 <= 4 && distance(weakKingSquare, promotionSquare) <= 1 && weakRookSquare / 8 == 5
+        && std::abs((weakRookSquare & 7) - file) >= 2
+        && std::abs((weakRookSquare & 7) - (weakKingSquare & 7)) >= 2) return 25;
     // King on the promotion square, rear checks, attacking king too far away.
-    if (rank >= 5 && wk == promotion && wr / 8 == 0 && distance(sk, p) >= 2) return 25;
+    if (rank >= 5 && weakKingSquare == promotionSquare && weakRookSquare / 8 == 0 && distance(strongKingSquare, pawn) >= 2) return 25;
     // Rook pawn with its own rook trapped in front and a distant defending king.
-    if (p == 48 && sr == 56 && (wk == 54 || wk == 55) && (wr & 7) == 0
-        && wr / 8 <= 2 && ((sk & 7) >= 3 || sk / 8 <= 4)) return 25;
+    if (pawn == 48 && strongRookSquare == 56 && (weakKingSquare == 54 || weakKingSquare == 55) && (weakRookSquare & 7) == 0
+        && weakRookSquare / 8 <= 2 && ((strongKingSquare & 7) >= 3 || strongKingSquare / 8 <= 4)) return 25;
     // Favorable seventh-rank non-rook pawn: king on promotion square,
     // distant defending king, usable rook and the pawn owner's move.
-    if (rank == 6 && file != 0 && sk == promotion && std::abs((wk & 7) - file) >= 2
-        && wk / 8 >= 5 && sr / 8 <= 3 && (sr & 7) != file && distance(wk, sr) >= 3
-        && side_to_move == (white ? petir_header::_sisiputih : petir_header::_sisihitam)
-        && !(weak_attack & bit(pawn)) && !(kingmask[weak_king] & bit(pawn))) return 100;
+    if (rank == 6 && file != 0 && strongKingSquare == promotionSquare && std::abs((weakKingSquare & 7) - file) >= 2
+        && weakKingSquare / 8 >= 5 && strongRookSquare / 8 <= 3 && (strongRookSquare & 7) != file && distance(weakKingSquare, strongRookSquare) >= 3
+        && sideToMove == (pawnIsWhite ? petir_header::whiteSide : petir_header::blackSide)
+        && !(weakRookAttacks & bit(pawnSquare)) && !(kingAttacks[weakKing] & bit(pawnSquare))) return 100;
     return 50;
 }
 
 namespace {
 // These helpers are only used in loops that have already checked bits != 0.
-int pop_lsb(std::uint64_t& bits) {
+int popLowestBit(std::uint64_t& bits) {
 #if defined(_MSC_VER) && defined(_M_X64)
     unsigned long square;
     _BitScanForward64(&square, bits);
@@ -225,7 +225,7 @@ int pop_lsb(std::uint64_t& bits) {
     return static_cast<int>(square);
 }
 
-int pop_msb(std::uint64_t& bits) {
+int popHighestBit(std::uint64_t& bits) {
 #if defined(_MSC_VER) && defined(_M_X64)
     unsigned long square;
     _BitScanReverse64(&square, bits);
@@ -236,7 +236,7 @@ int pop_msb(std::uint64_t& bits) {
     return static_cast<int>(square);
 }
 
-std::uint8_t pawn_files(std::uint64_t pawns) {
+std::uint8_t pawnFiles(std::uint64_t pawns) {
     pawns |= pawns >> 32;
     pawns |= pawns >> 16;
     pawns |= pawns >> 8;
@@ -244,25 +244,25 @@ std::uint8_t pawn_files(std::uint64_t pawns) {
 }
 
 #if defined(_MSC_VER) && defined(_M_X64)
-const bool has_native_popcount = [] {
-    int cpu_info[4];
-    __cpuid(cpu_info, 1);
-    return (cpu_info[2] & (1 << 23)) != 0;
+const bool hasNativePopcount = [] {
+    int cpuInfo[4];
+    __cpuid(cpuInfo, 1);
+    return (cpuInfo[2] & (1 << 23)) != 0;
 }();
 #endif
 
 template<bool NativePopcount>
-std::uint8_t count_bits(std::uint64_t bits) {
+std::uint8_t countBits(std::uint64_t bits) {
 #if defined(_MSC_VER) && defined(_M_X64)
     if constexpr (NativePopcount) {
         return static_cast<std::uint8_t>(__popcnt64(bits));
     } else {
         // Keep a hardware-independent path for CPUs without POPCNT.
         return static_cast<std::uint8_t>(
-            petir_evalmask::mobmask[bits & 0xffff]
-            + petir_evalmask::mobmask[(bits >> 16) & 0xffff]
-            + petir_evalmask::mobmask[(bits >> 32) & 0xffff]
-            + petir_evalmask::mobmask[bits >> 48]);
+            petir_evalmask::bitCountTable[bits & 0xffff]
+            + petir_evalmask::bitCountTable[(bits >> 16) & 0xffff]
+            + petir_evalmask::bitCountTable[(bits >> 32) & 0xffff]
+            + petir_evalmask::bitCountTable[bits >> 48]);
     }
 #else
     return static_cast<std::uint8_t>(std::popcount(bits));
@@ -271,1420 +271,1410 @@ std::uint8_t count_bits(std::uint64_t bits) {
 
 // ueval.pas:850
 template<bool NativePopcount>
-std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr) {
-    std::int32_t return_value{};
-    bool kingotherside{};
-    bool draw2{};
-    std::int32_t attacker{};
-    std::int32_t defender{};
-    bool tempb{};
-    bool tempb2{};
-    bool real_endgame{};
-    bool early_endgame{};
+std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, bool opponentPerspective) {
+    std::int32_t result{};
+    bool kingsOnOppositeWings{};
+    bool likelyDraw{};
+    bool stackedOnFile{};
+    bool nearEnemyKingWing{};
+    bool realEndgame{};
+    bool earlyEndgame{};
     bool endgame{};
-    std::int32_t nilai{};
-    std::uint64_t attack{};
-    std::uint64_t piecepos{};
-    std::int32_t pos{};
-    std::int32_t h{};
-    std::int32_t temp{};
-    std::int32_t tempx{};
-    std::int32_t tempi{};
-    std::int32_t temp2{};
-    std::int32_t posrajaputih{};
-    std::int32_t posrajahitam{};
-    std::int32_t xrajaputih{};
-    std::int32_t yrajaputih{};
-    std::int32_t xrajahitam{};
-    std::int32_t yrajahitam{};
-    std::int32_t filerajaputih{};
-    std::int32_t filerajahitam{};
-    std::int32_t pionbebasputih{};
-    std::int32_t pionbebashitam{};
-    std::int32_t blackkingpressure{};
-    std::int32_t whitekingpressure{};
-    std::int32_t m{};
-    std::int32_t posgajah{};
-    std::int32_t m1{};
-    std::int32_t m2{};
-    std::int32_t m3{};
-    std::int32_t temp3{};
-    std::int32_t temp4{};
-    std::uint64_t horattack{};
-    std::uint64_t verattack{};
-    std::uint64_t pawnwattack{};
-    std::uint64_t pawnbattack{};
-    std::uint64_t temp64{};
-    std::uint64_t tempk64{};
-    std::uint64_t temp264{};
-    std::uint64_t whitekingattack{};
-    std::uint64_t blackkingattack{};
-    bool wevalks{};
-    bool bevalks{};
-    std::int32_t nppputih{};
-    std::int32_t npphitam{};
-    std::int32_t npionputih{};
-    std::int32_t npionhitam{};
-    std::int32_t black_attacker{};
-    std::int32_t white_attacker{};
-    std::int32_t realgiliran{};
-    std::uint64_t rookwattack{};
-    std::uint64_t rookbattack{};
-    std::uint64_t bishopwattack{};
-    std::uint64_t bishopbattack{};
-    std::uint64_t queenbattack{};
-    std::uint64_t queenwattack{};
-    std::uint64_t knightwattack{};
-    std::uint64_t knightbattack{};
-    std::int32_t pas_temp_1{};
-    std::int32_t pas_temp_2{};
-    std::int32_t pas_temp_3{};
-    std::int32_t pas_temp_4{};
-    std::int32_t pas_temp_5{};
-    std::int32_t pas_temp_6{};
-    draw2 = false;
-    if (((petir_ueval::isdraw(data, draw2) || ((infhr == false) && petir_ueval::anotherdraw(data, giliran))) || ((infhr == true) && petir_ueval::anotherdraw(data, pas::sub(3, giliran))))) {
-        return_value = petir_header::contemp_draw;
-        return return_value;
+    std::int32_t score{};
+    std::uint64_t attacks{};
+    std::uint64_t pieces{};
+    std::int32_t square{};
+    std::int32_t rookFile{};
+    std::int32_t termScore{};
+    std::int32_t file{};
+    std::int32_t weightedTerm{};
+    std::int32_t pawnsOnBishopColor{};
+    std::int32_t whiteKingSquare{};
+    std::int32_t blackKingSquare{};
+    std::int32_t whiteKingFile{};
+    std::int32_t blackKingFile{};
+    std::int32_t whitePassedFiles{};
+    std::int32_t blackPassedFiles{};
+    std::int32_t blackKingPressure{};
+    std::int32_t whiteKingPressure{};
+    std::int32_t lazyMargin{};
+    std::int32_t bishopSquare{};
+    std::int32_t pawnTally{};
+    std::int32_t scratchValue{};
+    std::uint64_t rankAttacks{};
+    std::uint64_t fileAttacks{};
+    std::uint64_t whitePawnAttackMap{};
+    std::uint64_t blackPawnAttackMap{};
+    std::uint64_t scratchBits{};
+    std::uint64_t kingZoneHits{};
+    std::uint64_t queenMobilitySquares{};
+    std::uint64_t whiteKingZone{};
+    std::uint64_t blackKingZone{};
+    bool evaluateWhiteKingSafety{};
+    bool evaluateBlackKingSafety{};
+    std::int32_t whitePassedCount{};
+    std::int32_t blackPassedCount{};
+    std::int32_t whitePawnCount{};
+    std::int32_t blackPawnCount{};
+    std::int32_t blackAttackerCount{};
+    std::int32_t whiteAttackerCount{};
+    std::int32_t realSideToMove{};
+    std::uint64_t whiteRookAttackMap{};
+    std::uint64_t blackRookAttackMap{};
+    std::uint64_t whiteBishopAttackMap{};
+    std::uint64_t blackBishopAttackMap{};
+    std::uint64_t blackQueenAttackMap{};
+    std::uint64_t whiteQueenAttackMap{};
+    std::uint64_t whiteKnightAttackMap{};
+    std::uint64_t blackKnightAttackMap{};
+    std::int32_t blackBishopCase{};
+    std::int32_t whiteBishopCase{};
+    std::int32_t whiteSupporterCase{};
+    std::int32_t blackSupporterCase{};
+    std::int32_t whiteAttackerCase{};
+    std::int32_t blackAttackerCase{};
+    likelyDraw = false;
+    if (((petir_ueval::isMaterialDraw(position, likelyDraw) || ((opponentPerspective == false) && petir_ueval::isTheoreticalDraw(position, sideToMove))) || ((opponentPerspective == true) && petir_ueval::isTheoreticalDraw(position, pas::sub(3, sideToMove))))) {
+        result = petir_header::drawScore;
+        return result;
     }
-    npionhitam = 0;
-    npionputih = 0;
-    nppputih = 0;
-    npphitam = 0;
-    realgiliran = giliran;
-    if (infhr) {
-        realgiliran = pas::sub(3, giliran);
+    blackPawnCount = 0;
+    whitePawnCount = 0;
+    whitePassedCount = 0;
+    blackPassedCount = 0;
+    realSideToMove = sideToMove;
+    if (opponentPerspective) {
+        realSideToMove = pas::sub(3, sideToMove);
     }
-    white_attacker = 0;
-    black_attacker = 0;
-    nilai = data.materialscore;
-    if ((((data.papan[petir_header::h6] == petir_header::_gajahputih) && (data.papan[petir_header::g5] == petir_header::_pionhitam)) && ((data.papan[petir_header::f6] == petir_header::_pionhitam) || (petir_usee::see(petir_header::_sisiputih, data, petir_header::h6, petir_header::g5) < 0)))) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_trapped2));
+    whiteAttackerCount = 0;
+    blackAttackerCount = 0;
+    score = position.materialScore;
+    if ((((position.board[petir_header::h6] == petir_header::whiteBishop) && (position.board[petir_header::g5] == petir_header::blackPawn)) && ((position.board[petir_header::f6] == petir_header::blackPawn) || (petir_usee::staticExchange(petir_header::whiteSide, position, petir_header::h6, petir_header::g5) < 0)))) {
+        (score = pas::decrement(score, petir_ueval::trappedBishopPenalty2));
     }
-    if ((((data.papan[petir_header::a6] == petir_header::_gajahputih) && (data.papan[petir_header::b5] == petir_header::_pionhitam)) && ((data.papan[petir_header::c6] == petir_header::_pionhitam) || (petir_usee::see(petir_header::_sisiputih, data, petir_header::a6, petir_header::b5) < 0)))) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_trapped2));
+    if ((((position.board[petir_header::a6] == petir_header::whiteBishop) && (position.board[petir_header::b5] == petir_header::blackPawn)) && ((position.board[petir_header::c6] == petir_header::blackPawn) || (petir_usee::staticExchange(petir_header::whiteSide, position, petir_header::a6, petir_header::b5) < 0)))) {
+        (score = pas::decrement(score, petir_ueval::trappedBishopPenalty2));
     }
-    if ((((data.papan[petir_header::h3] == petir_header::_gajahhitam) && (data.papan[petir_header::g4] == petir_header::_pionputih)) && ((data.papan[petir_header::f3] == petir_header::_pionputih) || (petir_usee::see(petir_header::_sisihitam, data, petir_header::h3, petir_header::g4) < 0)))) {
-        (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_trapped2));
+    if ((((position.board[petir_header::h3] == petir_header::blackBishop) && (position.board[petir_header::g4] == petir_header::whitePawn)) && ((position.board[petir_header::f3] == petir_header::whitePawn) || (petir_usee::staticExchange(petir_header::blackSide, position, petir_header::h3, petir_header::g4) < 0)))) {
+        (score = pas::increment(score, petir_ueval::trappedBishopPenalty2));
     }
-    if ((((data.papan[petir_header::a3] == petir_header::_gajahhitam) && (data.papan[petir_header::b4] == petir_header::_pionputih)) && ((data.papan[petir_header::c3] == petir_header::_pionputih) || (petir_usee::see(petir_header::_sisihitam, data, petir_header::a3, petir_header::b4) < 0)))) {
-        (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_trapped2));
+    if ((((position.board[petir_header::a3] == petir_header::blackBishop) && (position.board[petir_header::b4] == petir_header::whitePawn)) && ((position.board[petir_header::c3] == petir_header::whitePawn) || (petir_usee::staticExchange(petir_header::blackSide, position, petir_header::a3, petir_header::b4) < 0)))) {
+        (score = pas::increment(score, petir_ueval::trappedBishopPenalty2));
     }
-    if ((((data.papan[petir_header::h7] == petir_header::_gajahputih) && (((data.papan[petir_header::g7] == petir_header::_pionhitam) && (realgiliran == petir_header::_sisihitam)) || (data.papan[petir_header::g6] == petir_header::_pionhitam))) && ((data.papan[petir_header::f7] == petir_header::_pionhitam) || (petir_usee::see(petir_header::_sisiputih, data, petir_header::h7, petir_header::g6) < 0)))) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_trapped));
+    if ((((position.board[petir_header::h7] == petir_header::whiteBishop) && (((position.board[petir_header::g7] == petir_header::blackPawn) && (realSideToMove == petir_header::blackSide)) || (position.board[petir_header::g6] == petir_header::blackPawn))) && ((position.board[petir_header::f7] == petir_header::blackPawn) || (petir_usee::staticExchange(petir_header::whiteSide, position, petir_header::h7, petir_header::g6) < 0)))) {
+        (score = pas::decrement(score, petir_ueval::trappedBishopPenalty));
     }
-    if ((((data.papan[petir_header::a7] == petir_header::_gajahputih) && (((data.papan[petir_header::b7] == petir_header::_pionhitam) && (realgiliran == petir_header::_sisihitam)) || (data.papan[petir_header::b6] == petir_header::_pionhitam))) && ((data.papan[petir_header::c7] == petir_header::_pionhitam) || (petir_usee::see(petir_header::_sisiputih, data, petir_header::a7, petir_header::b6) < 0)))) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_trapped));
+    if ((((position.board[petir_header::a7] == petir_header::whiteBishop) && (((position.board[petir_header::b7] == petir_header::blackPawn) && (realSideToMove == petir_header::blackSide)) || (position.board[petir_header::b6] == petir_header::blackPawn))) && ((position.board[petir_header::c7] == petir_header::blackPawn) || (petir_usee::staticExchange(petir_header::whiteSide, position, petir_header::a7, petir_header::b6) < 0)))) {
+        (score = pas::decrement(score, petir_ueval::trappedBishopPenalty));
     }
-    if ((((data.papan[petir_header::h2] == petir_header::_gajahhitam) && (((data.papan[petir_header::g2] == petir_header::_pionputih) && (realgiliran == petir_header::_sisiputih)) || (data.papan[petir_header::g3] == petir_header::_pionputih))) && ((data.papan[petir_header::f2] == petir_header::_pionputih) || (petir_usee::see(petir_header::_sisihitam, data, petir_header::h2, petir_header::g3) < 0)))) {
-        (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_trapped));
+    if ((((position.board[petir_header::h2] == petir_header::blackBishop) && (((position.board[petir_header::g2] == petir_header::whitePawn) && (realSideToMove == petir_header::whiteSide)) || (position.board[petir_header::g3] == petir_header::whitePawn))) && ((position.board[petir_header::f2] == petir_header::whitePawn) || (petir_usee::staticExchange(petir_header::blackSide, position, petir_header::h2, petir_header::g3) < 0)))) {
+        (score = pas::increment(score, petir_ueval::trappedBishopPenalty));
     }
-    if ((((data.papan[petir_header::a2] == petir_header::_gajahhitam) && (((data.papan[petir_header::b2] == petir_header::_pionputih) && (realgiliran == petir_header::_sisiputih)) || (data.papan[petir_header::b3] == petir_header::_pionputih))) && ((data.papan[petir_header::c2] == petir_header::_pionputih) || (petir_usee::see(petir_header::_sisihitam, data, petir_header::a2, petir_header::b3) < 0)))) {
-        (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_trapped));
+    if ((((position.board[petir_header::a2] == petir_header::blackBishop) && (((position.board[petir_header::b2] == petir_header::whitePawn) && (realSideToMove == petir_header::whiteSide)) || (position.board[petir_header::b3] == petir_header::whitePawn))) && ((position.board[petir_header::c2] == petir_header::whitePawn) || (petir_usee::staticExchange(petir_header::blackSide, position, petir_header::a2, petir_header::b3) < 0)))) {
+        (score = pas::increment(score, petir_ueval::trappedBishopPenalty));
     }
-    if ((((data.papan[petir_header::a8] == petir_header::_kudaputih) && (petir_usee::see(petir_header::_sisiputih, data, petir_header::a8, petir_header::c7) < 0)) && (petir_usee::see(petir_header::_sisiputih, data, petir_header::a8, petir_header::b6) < 0))) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_kuda_trapped));
+    if ((((position.board[petir_header::a8] == petir_header::whiteKnight) && (petir_usee::staticExchange(petir_header::whiteSide, position, petir_header::a8, petir_header::c7) < 0)) && (petir_usee::staticExchange(petir_header::whiteSide, position, petir_header::a8, petir_header::b6) < 0))) {
+        (score = pas::decrement(score, petir_ueval::trappedKnightPenalty));
     }
-    if ((((data.papan[petir_header::h8] == petir_header::_kudaputih) && (petir_usee::see(petir_header::_sisiputih, data, petir_header::h8, petir_header::f7) < 0)) && (petir_usee::see(petir_header::_sisiputih, data, petir_header::h8, petir_header::g6) < 0))) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_kuda_trapped));
+    if ((((position.board[petir_header::h8] == petir_header::whiteKnight) && (petir_usee::staticExchange(petir_header::whiteSide, position, petir_header::h8, petir_header::f7) < 0)) && (petir_usee::staticExchange(petir_header::whiteSide, position, petir_header::h8, petir_header::g6) < 0))) {
+        (score = pas::decrement(score, petir_ueval::trappedKnightPenalty));
     }
-    if ((((data.papan[petir_header::a1] == petir_header::_kudahitam) && (petir_usee::see(petir_header::_sisihitam, data, petir_header::a1, petir_header::c2) < 0)) && (petir_usee::see(petir_header::_sisihitam, data, petir_header::a1, petir_header::b3) < 0))) {
-        (nilai = pas::increment(nilai, petir_ueval::nilai_kuda_trapped));
+    if ((((position.board[petir_header::a1] == petir_header::blackKnight) && (petir_usee::staticExchange(petir_header::blackSide, position, petir_header::a1, petir_header::c2) < 0)) && (petir_usee::staticExchange(petir_header::blackSide, position, petir_header::a1, petir_header::b3) < 0))) {
+        (score = pas::increment(score, petir_ueval::trappedKnightPenalty));
     }
-    if ((((data.papan[petir_header::h1] == petir_header::_kudahitam) && (petir_usee::see(petir_header::_sisihitam, data, petir_header::h1, petir_header::f2) < 0)) && (petir_usee::see(petir_header::_sisihitam, data, petir_header::h1, petir_header::g3) < 0))) {
-        (nilai = pas::increment(nilai, petir_ueval::nilai_kuda_trapped));
+    if ((((position.board[petir_header::h1] == petir_header::blackKnight) && (petir_usee::staticExchange(petir_header::blackSide, position, petir_header::h1, petir_header::f2) < 0)) && (petir_usee::staticExchange(petir_header::blackSide, position, petir_header::h1, petir_header::g3) < 0))) {
+        (score = pas::increment(score, petir_ueval::trappedKnightPenalty));
     }
-    m1 = nilai;
-    if (((data.nilai_perwira_putih < 16) || (data.nilai_perwira_hitam < 16))) {
-        real_endgame = ((data.nilai_perwira_putih <= 10) && (data.nilai_perwira_hitam <= 10));
-        endgame = ((data.nilai_perwira_putih <= 12) && (data.nilai_perwira_hitam <= 12));
-        if (real_endgame) {
-            (nilai = pas::increment(nilai, pas::shl(count_bits<NativePopcount>(data.pawnwhite), 3)));
-            (nilai = pas::decrement(nilai, pas::shl(count_bits<NativePopcount>(data.pawnblack), 3)));
+    if (((position.whiteNonPawnMaterial < 16) || (position.blackNonPawnMaterial < 16))) {
+        realEndgame = ((position.whiteNonPawnMaterial <= 10) && (position.blackNonPawnMaterial <= 10));
+        endgame = ((position.whiteNonPawnMaterial <= 12) && (position.blackNonPawnMaterial <= 12));
+        if (realEndgame) {
+            (score = pas::increment(score, pas::shiftLeft(countBits<NativePopcount>(position.whitePawns), 3)));
+            (score = pas::decrement(score, pas::shiftLeft(countBits<NativePopcount>(position.blackPawns), 3)));
         } else {
-            (nilai = pas::increment(nilai, pas::shl(count_bits<NativePopcount>(data.pawnwhite), 2)));
-            (nilai = pas::decrement(nilai, pas::shl(count_bits<NativePopcount>(data.pawnblack), 2)));
+            (score = pas::increment(score, pas::shiftLeft(countBits<NativePopcount>(position.whitePawns), 2)));
+            (score = pas::decrement(score, pas::shiftLeft(countBits<NativePopcount>(position.blackPawns), 2)));
         }
-        if (((((data.nilai_perwira_putih == 12) && (data.nilai_perwira_hitam == 12)) && (data.queenblack != 0)) && (data.queenwhite != 0))) {
-            if ((data.knightwhite != 0)) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_qb_endgame));
+        if (((((position.whiteNonPawnMaterial == 12) && (position.blackNonPawnMaterial == 12)) && (position.blackQueens != 0)) && (position.whiteQueens != 0))) {
+            if ((position.whiteKnights != 0)) {
+                (score = pas::increment(score, petir_ueval::queenKnightEndgameBonus));
             }
-            if ((data.knightblack != 0)) {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_qb_endgame));
+            if ((position.blackKnights != 0)) {
+                (score = pas::decrement(score, petir_ueval::queenKnightEndgameBonus));
             }
         }
-        early_endgame = true;
+        earlyEndgame = true;
     } else {
         endgame = false;
-        early_endgame = false;
-        real_endgame = false;
+        earlyEndgame = false;
+        realEndgame = false;
     }
-    if ((realgiliran == petir_header::_sisiputih)) {
-        (nilai = pas::increment(nilai, 10));
+    if ((realSideToMove == petir_header::whiteSide)) {
+        (score = pas::increment(score, 10));
     } else {
-        (nilai = pas::decrement(nilai, 10));
+        (score = pas::decrement(score, 10));
     }
-    if (((data.nilai_perwira_putih > 17) && (data.nilai_perwira_hitam > 17))) {
-        if ((((data.papan[petir_header::f1] == petir_header::_rajaputih) || (data.papan[petir_header::g1] == petir_header::_rajaputih)) && (((data.papan[petir_header::h1] == petir_header::_bentengputih) || (data.papan[petir_header::g1] == petir_header::_bentengputih)) || (data.papan[petir_header::h2] == petir_header::_bentengputih)))) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_blocked_rook));
+    if (((position.whiteNonPawnMaterial > 17) && (position.blackNonPawnMaterial > 17))) {
+        if ((((position.board[petir_header::f1] == petir_header::whiteKing) || (position.board[petir_header::g1] == petir_header::whiteKing)) && (((position.board[petir_header::h1] == petir_header::whiteRook) || (position.board[petir_header::g1] == petir_header::whiteRook)) || (position.board[petir_header::h2] == petir_header::whiteRook)))) {
+            (score = pas::decrement(score, petir_ueval::rookBlockedByKingPenalty));
         }
-        if ((((data.papan[petir_header::c1] == petir_header::_rajaputih) || (data.papan[petir_header::b1] == petir_header::_rajaputih)) && (((data.papan[petir_header::a1] == petir_header::_bentengputih) || (data.papan[petir_header::a2] == petir_header::_bentengputih)) || (data.papan[petir_header::b1] == petir_header::_bentengputih)))) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_blocked_rook));
+        if ((((position.board[petir_header::c1] == petir_header::whiteKing) || (position.board[petir_header::b1] == petir_header::whiteKing)) && (((position.board[petir_header::a1] == petir_header::whiteRook) || (position.board[petir_header::a2] == petir_header::whiteRook)) || (position.board[petir_header::b1] == petir_header::whiteRook)))) {
+            (score = pas::decrement(score, petir_ueval::rookBlockedByKingPenalty));
         }
-        if ((((data.papan[petir_header::f8] == petir_header::_rajahitam) || (data.papan[petir_header::g8] == petir_header::_rajahitam)) && (((data.papan[petir_header::h8] == petir_header::_bentenghitam) || (data.papan[petir_header::g8] == petir_header::_bentenghitam)) || (data.papan[petir_header::h7] == petir_header::_bentenghitam)))) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_blocked_rook));
+        if ((((position.board[petir_header::f8] == petir_header::blackKing) || (position.board[petir_header::g8] == petir_header::blackKing)) && (((position.board[petir_header::h8] == petir_header::blackRook) || (position.board[petir_header::g8] == petir_header::blackRook)) || (position.board[petir_header::h7] == petir_header::blackRook)))) {
+            (score = pas::increment(score, petir_ueval::rookBlockedByKingPenalty));
         }
-        if ((((data.papan[petir_header::c8] == petir_header::_rajahitam) || (data.papan[petir_header::b8] == petir_header::_rajahitam)) && (((data.papan[petir_header::a8] == petir_header::_bentenghitam) || (data.papan[petir_header::b8] == petir_header::_bentenghitam)) || (data.papan[petir_header::a7] == petir_header::_bentenghitam)))) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_blocked_rook));
+        if ((((position.board[petir_header::c8] == petir_header::blackKing) || (position.board[petir_header::b8] == petir_header::blackKing)) && (((position.board[petir_header::a8] == petir_header::blackRook) || (position.board[petir_header::b8] == petir_header::blackRook)) || (position.board[petir_header::a7] == petir_header::blackRook)))) {
+            (score = pas::increment(score, petir_ueval::rookBlockedByKingPenalty));
         }
     }
     // Complete evaluation when its score needs the later draw scaling.
-    if (!draw2 && data.move50count < 80 && alpha == pas::sub(beta, 1)) {
-        m = petir_ueval::dynamiclazy(data);
+    if (!likelyDraw && position.fiftyMoveCounter < 80 && alpha == pas::sub(beta, 1)) {
+        lazyMargin = petir_ueval::lazyMarginAdjustment(position);
         if (endgame) {
-            (m = pas::increment(m, 600));
+            (lazyMargin = pas::increment(lazyMargin, 600));
         } else {
-            if (early_endgame) {
-                (m = pas::increment(m, 200));
+            if (earlyEndgame) {
+                (lazyMargin = pas::increment(lazyMargin, 200));
             }
         }
-        if ((giliran == petir_header::_sisiputih)) {
-            temp = nilai;
+        if ((sideToMove == petir_header::whiteSide)) {
+            termScore = score;
         } else {
-            temp = pas::negate(nilai);
+            termScore = pas::negate(score);
         }
-        if ((pas::add(pas::add(temp, 280), m) < alpha)) {
-            return_value = temp;
-            return return_value;
+        if ((pas::add(pas::add(termScore, 280), lazyMargin) < alpha)) {
+            result = termScore;
+            return result;
         }
-        if ((pas::sub(temp, pas::add(280, m)) > beta)) {
-            return_value = temp;
-            return return_value;
+        if ((pas::sub(termScore, pas::add(280, lazyMargin)) > beta)) {
+            result = termScore;
+            return result;
         }
     }
-    whitekingpressure = 0;
-    blackkingpressure = 0;
-    wevalks = true;
-    bevalks = true;
+    whiteKingPressure = 0;
+    blackKingPressure = 0;
+    evaluateWhiteKingSafety = true;
+    evaluateBlackKingSafety = true;
     if (endgame) {
-        wevalks = false;
-        bevalks = false;
+        evaluateWhiteKingSafety = false;
+        evaluateBlackKingSafety = false;
     } else {
-        if ((data.queenblack == 0)) {
-            wevalks = false;
+        if ((position.blackQueens == 0)) {
+            evaluateWhiteKingSafety = false;
         }
-        if ((data.queenwhite == 0)) {
-            bevalks = false;
+        if ((position.whiteQueens == 0)) {
+            evaluateBlackKingSafety = false;
         }
     }
-    pawnwattack = 0;
-    pawnbattack = 0;
-    pionbebasputih = 0;
-    pionbebashitam = 0;
-    posrajahitam = petir_bitboard_mask::king_square(data.kingblack);
-    posrajaputih = petir_bitboard_mask::king_square(data.kingwhite);
-    filerajaputih = (posrajaputih & 7);
-    filerajahitam = (posrajahitam & 7);
-    if (early_endgame) {
-        kingotherside = false;
+    whitePawnAttackMap = 0;
+    blackPawnAttackMap = 0;
+    whitePassedFiles = 0;
+    blackPassedFiles = 0;
+    blackKingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+    whiteKingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+    whiteKingFile = (whiteKingSquare & 7);
+    blackKingFile = (blackKingSquare & 7);
+    if (earlyEndgame) {
+        kingsOnOppositeWings = false;
     } else {
-        kingotherside = ((((data.wc == petir_header::rokadependek) && (data.bc == petir_header::rokadepanjang)) || ((data.bc == petir_header::rokadependek) && (data.wc == petir_header::rokadepanjang))) || (pas::abs(pas::sub(filerajaputih, filerajahitam)) >= 3));
+        kingsOnOppositeWings = ((((position.whiteCastleType == petir_header::castledShort) && (position.blackCastleType == petir_header::castledLong)) || ((position.blackCastleType == petir_header::castledShort) && (position.whiteCastleType == petir_header::castledLong))) || (pas::abs(pas::sub(whiteKingFile, blackKingFile)) >= 3));
     }
-    whitekingattack = (petir_bitboard_mask::kingmask[posrajaputih] | data.kingwhite);
-    blackkingattack = (petir_bitboard_mask::kingmask[posrajahitam] | data.kingblack);
-    rookwattack = 0;
-    rookbattack = 0;
-    queenwattack = 0;
-    queenbattack = 0;
-    knightwattack = 0;
-    knightbattack = 0;
-    bishopwattack = 0;
-    bishopbattack = 0;
-    if (((data.bc == petir_header::norokade) && ((data.flagrokade & petir_header::bithitamnoc) == 0))) {
-        if ((data.queenwhite != 0)) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_nggakbisarokade));
+    whiteKingZone = (petir_bitboard_mask::kingAttacks[whiteKingSquare] | position.whiteKingBoard);
+    blackKingZone = (petir_bitboard_mask::kingAttacks[blackKingSquare] | position.blackKingBoard);
+    whiteRookAttackMap = 0;
+    blackRookAttackMap = 0;
+    whiteQueenAttackMap = 0;
+    blackQueenAttackMap = 0;
+    whiteKnightAttackMap = 0;
+    blackKnightAttackMap = 0;
+    whiteBishopAttackMap = 0;
+    blackBishopAttackMap = 0;
+    if (((position.blackCastleType == petir_header::notCastled) && ((position.castleRights & petir_header::blackCastleRights) == 0))) {
+        if ((position.whiteQueens != 0)) {
+            (score = pas::increment(score, petir_ueval::lostCastlingPenalty));
         } else {
-            (nilai = pas::increment(nilai, pas::shr(petir_ueval::nilai_nggakbisarokade, 1)));
-        }
-    } else {
-        if ((data.bc != petir_header::norokade)) {
-            if (((data.bc == petir_header::rokadepanjang) && (data.wc == petir_header::rokadependek))) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_rokade_wrong_side));
-            } else {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_rokade));
-            }
-        }
-    }
-    if (((data.wc == petir_header::norokade) && ((data.flagrokade & petir_header::bitputihnoc) == 0))) {
-        if ((data.queenblack != 0)) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_nggakbisarokade));
-        } else {
-            (nilai = pas::decrement(nilai, pas::shr(petir_ueval::nilai_nggakbisarokade, 1)));
+            (score = pas::increment(score, pas::shiftRight(petir_ueval::lostCastlingPenalty, 1)));
         }
     } else {
-        if ((data.wc != petir_header::norokade)) {
-            if (((data.wc == petir_header::rokadepanjang) && (data.bc == petir_header::rokadependek))) {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_rokade_wrong_side));
+        if ((position.blackCastleType != petir_header::notCastled)) {
+            if (((position.blackCastleType == petir_header::castledLong) && (position.whiteCastleType == petir_header::castledShort))) {
+                (score = pas::increment(score, petir_ueval::castledWrongSideBonus));
             } else {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_rokade));
+                (score = pas::decrement(score, petir_ueval::castledBonus));
             }
         }
     }
-    if ((((data.queenblack != 0) && (data.nilai_perwira_hitam >= 16)) || (data.nilai_perwira_hitam >= 19))) {
-        temp = 0;
-        if ((filerajaputih >= 5)) {
-            if (((petir_bitboard_mask::file_mask[6] & data.pawnwhite) == 0)) {
-                (temp = pas::increment(temp, 4));
-                if (((petir_bitboard_mask::file_mask[6] & data.pawnblack) == 0)) {
-                    (temp = pas::increment(temp, 1));
-                }
-            } else {
-                if (((data.papan[14] != petir_header::_pionputih) && (data.papan[22] != petir_header::_pionputih))) {
-                    (temp = pas::increment(temp, 2));
-                }
-            }
-            if (((petir_bitboard_mask::file_mask[7] & data.pawnwhite) == 0)) {
-                (temp = pas::increment(temp, 2));
-                if (((petir_bitboard_mask::file_mask[7] & data.pawnblack) == 0)) {
-                    (temp = pas::increment(temp, 1));
-                }
-            } else {
-                if (((data.papan[15] != petir_header::_pionputih) && (data.papan[23] != petir_header::_pionputih))) {
-                    (temp = pas::increment(temp, 2));
-                }
-            }
-            if (((petir_bitboard_mask::file_mask[5] & data.pawnwhite) == 0)) {
-                (temp = pas::increment(temp, 1));
-            }
-            if (((data.papan[petir_header::g2] != petir_header::_gajahputih) && (data.papan[petir_header::g2] != petir_header::_pionputih))) {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_no_fianchetto));
-            }
-            if ((data.wc != data.bc)) {
-                (temp = pas::increment(temp, 1));
-            }
-            if ((data.queenblack == 0)) {
-                temp = (temp / 2);
-            }
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_pawn_shield[temp]));
+    if (((position.whiteCastleType == petir_header::notCastled) && ((position.castleRights & petir_header::whiteCastleRights) == 0))) {
+        if ((position.blackQueens != 0)) {
+            (score = pas::decrement(score, petir_ueval::lostCastlingPenalty));
         } else {
-            if ((filerajaputih <= 2)) {
-                if (((petir_bitboard_mask::file_mask[0] & data.pawnwhite) == 0)) {
-                    (temp = pas::increment(temp, 3));
-                    if (((petir_bitboard_mask::file_mask[0] & data.pawnblack) == 0)) {
-                        (temp = pas::increment(temp, 1));
-                    }
-                } else {
-                    if (((data.papan[8] != petir_header::_pionputih) && (data.papan[16] != petir_header::_pionputih))) {
-                        (temp = pas::increment(temp, 2));
-                    }
-                }
-                if (((petir_bitboard_mask::file_mask[1] & data.pawnwhite) == 0)) {
-                    (temp = pas::increment(temp, 4));
-                    if (((petir_bitboard_mask::file_mask[1] & data.pawnblack) == 0)) {
-                        (temp = pas::increment(temp, 1));
-                    }
-                } else {
-                    if (((data.papan[9] != petir_header::_pionputih) && (data.papan[17] != petir_header::_pionputih))) {
-                        (temp = pas::increment(temp, 2));
-                    }
-                }
-                if (((petir_bitboard_mask::file_mask[2] & data.pawnwhite) == 0)) {
-                    (temp = pas::increment(temp, 1));
-                }
-                if (((data.papan[petir_header::b2] != petir_header::_gajahputih) && (data.papan[petir_header::b2] != petir_header::_pionputih))) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_no_fianchetto));
-                }
-                if ((data.wc != data.bc)) {
-                    (temp = pas::increment(temp, 1));
-                }
-                if ((data.queenblack == 0)) {
-                    temp = (temp / 2);
-                }
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_pawn_shield[temp]));
+            (score = pas::decrement(score, pas::shiftRight(petir_ueval::lostCastlingPenalty, 1)));
+        }
+    } else {
+        if ((position.whiteCastleType != petir_header::notCastled)) {
+            if (((position.whiteCastleType == petir_header::castledLong) && (position.blackCastleType == petir_header::castledShort))) {
+                (score = pas::decrement(score, petir_ueval::castledWrongSideBonus));
             } else {
-                tempx = filerajaputih;
-                if ((tempx > 0)) {
-                    if (((petir_bitboard_mask::file_mask[pas::sub(tempx, 1)] & data.pawnwhite) == 0)) {
-                        (temp = pas::increment(temp, 2));
-                    }
-                }
-                if (((petir_bitboard_mask::file_mask[tempx] & data.pawnwhite) == 0)) {
-                    (temp = pas::increment(temp, 2));
-                }
-                if ((tempx < 7)) {
-                    if (((petir_bitboard_mask::file_mask[pas::add(tempx, 1)] & data.pawnwhite) == 0)) {
-                        (temp = pas::increment(temp, 2));
-                    }
-                }
-                if ((data.queenblack == 0)) {
-                    temp = (temp / 2);
-                }
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_pawn_shield[temp]));
+                (score = pas::increment(score, petir_ueval::castledBonus));
             }
         }
     }
-    if ((((data.queenwhite != 0) && (data.nilai_perwira_putih >= 16)) || (data.nilai_perwira_putih >= 19))) {
-        temp = 0;
-        if ((filerajahitam >= 5)) {
-            if (((petir_bitboard_mask::file_mask[6] & data.pawnblack) == 0)) {
-                (temp = pas::increment(temp, 4));
-                if (((petir_bitboard_mask::file_mask[6] & data.pawnwhite) == 0)) {
-                    (temp = pas::increment(temp, 1));
+    if ((((position.blackQueens != 0) && (position.blackNonPawnMaterial >= 16)) || (position.blackNonPawnMaterial >= 19))) {
+        termScore = 0;
+        if ((whiteKingFile >= 5)) {
+            if (((petir_bitboard_mask::fileMask[6] & position.whitePawns) == 0)) {
+                (termScore = pas::increment(termScore, 4));
+                if (((petir_bitboard_mask::fileMask[6] & position.blackPawns) == 0)) {
+                    (termScore = pas::increment(termScore, 1));
                 }
             } else {
-                if (((data.papan[54] != petir_header::_pionhitam) && (data.papan[46] != petir_header::_pionhitam))) {
-                    (temp = pas::increment(temp, 2));
+                if (((position.board[14] != petir_header::whitePawn) && (position.board[22] != petir_header::whitePawn))) {
+                    (termScore = pas::increment(termScore, 2));
                 }
             }
-            if (((petir_bitboard_mask::file_mask[7] & data.pawnblack) == 0)) {
-                (temp = pas::increment(temp, 2));
-                if (((petir_bitboard_mask::file_mask[7] & data.pawnwhite) == 0)) {
-                    (temp = pas::increment(temp, 1));
+            if (((petir_bitboard_mask::fileMask[7] & position.whitePawns) == 0)) {
+                (termScore = pas::increment(termScore, 2));
+                if (((petir_bitboard_mask::fileMask[7] & position.blackPawns) == 0)) {
+                    (termScore = pas::increment(termScore, 1));
                 }
             } else {
-                if (((data.papan[55] != petir_header::_pionhitam) && (data.papan[47] != petir_header::_pionhitam))) {
-                    (temp = pas::increment(temp, 2));
+                if (((position.board[15] != petir_header::whitePawn) && (position.board[23] != petir_header::whitePawn))) {
+                    (termScore = pas::increment(termScore, 2));
                 }
             }
-            if (((petir_bitboard_mask::file_mask[5] & data.pawnblack) == 0)) {
-                (temp = pas::increment(temp, 1));
+            if (((petir_bitboard_mask::fileMask[5] & position.whitePawns) == 0)) {
+                (termScore = pas::increment(termScore, 1));
             }
-            if (((data.papan[petir_header::g7] != petir_header::_pionhitam) && (data.papan[petir_header::g7] != petir_header::_gajahhitam))) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_no_fianchetto));
+            if (((position.board[petir_header::g2] != petir_header::whiteBishop) && (position.board[petir_header::g2] != petir_header::whitePawn))) {
+                (score = pas::decrement(score, petir_ueval::missingFianchettoPenalty));
             }
-            if ((data.wc != data.bc)) {
-                (temp = pas::increment(temp, 1));
+            if ((position.whiteCastleType != position.blackCastleType)) {
+                (termScore = pas::increment(termScore, 1));
             }
-            if ((data.queenwhite == 0)) {
-                temp = (temp / 2);
+            if ((position.blackQueens == 0)) {
+                termScore = (termScore / 2);
             }
-            (nilai = pas::increment(nilai, petir_ueval::nilai_pawn_shield[temp]));
+            (score = pas::decrement(score, petir_ueval::pawnShieldPenalty[termScore]));
         } else {
-            if ((filerajahitam <= 2)) {
-                if (((petir_bitboard_mask::file_mask[0] & data.pawnblack) == 0)) {
-                    (temp = pas::increment(temp, 3));
-                    if (((petir_bitboard_mask::file_mask[0] & data.pawnwhite) == 0)) {
-                        (temp = pas::increment(temp, 1));
+            if ((whiteKingFile <= 2)) {
+                if (((petir_bitboard_mask::fileMask[0] & position.whitePawns) == 0)) {
+                    (termScore = pas::increment(termScore, 3));
+                    if (((petir_bitboard_mask::fileMask[0] & position.blackPawns) == 0)) {
+                        (termScore = pas::increment(termScore, 1));
                     }
                 } else {
-                    if (((data.papan[48] != petir_header::_pionhitam) && (data.papan[40] != petir_header::_pionhitam))) {
-                        (temp = pas::increment(temp, 2));
+                    if (((position.board[8] != petir_header::whitePawn) && (position.board[16] != petir_header::whitePawn))) {
+                        (termScore = pas::increment(termScore, 2));
                     }
                 }
-                if (((petir_bitboard_mask::file_mask[1] & data.pawnblack) == 0)) {
-                    (temp = pas::increment(temp, 4));
-                    if (((petir_bitboard_mask::file_mask[1] & data.pawnwhite) == 0)) {
-                        (temp = pas::increment(temp, 1));
+                if (((petir_bitboard_mask::fileMask[1] & position.whitePawns) == 0)) {
+                    (termScore = pas::increment(termScore, 4));
+                    if (((petir_bitboard_mask::fileMask[1] & position.blackPawns) == 0)) {
+                        (termScore = pas::increment(termScore, 1));
                     }
                 } else {
-                    if (((data.papan[49] != petir_header::_pionhitam) && (data.papan[41] != petir_header::_pionhitam))) {
-                        (temp = pas::increment(temp, 2));
+                    if (((position.board[9] != petir_header::whitePawn) && (position.board[17] != petir_header::whitePawn))) {
+                        (termScore = pas::increment(termScore, 2));
                     }
                 }
-                if (((petir_bitboard_mask::file_mask[2] & data.pawnblack) == 0)) {
-                    (temp = pas::increment(temp, 1));
+                if (((petir_bitboard_mask::fileMask[2] & position.whitePawns) == 0)) {
+                    (termScore = pas::increment(termScore, 1));
                 }
-                if (((data.papan[petir_header::b7] != petir_header::_pionhitam) && (data.papan[petir_header::b7] != petir_header::_gajahhitam))) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_no_fianchetto));
+                if (((position.board[petir_header::b2] != petir_header::whiteBishop) && (position.board[petir_header::b2] != petir_header::whitePawn))) {
+                    (score = pas::decrement(score, petir_ueval::missingFianchettoPenalty));
                 }
-                if ((data.wc != data.bc)) {
-                    (temp = pas::increment(temp, 1));
+                if ((position.whiteCastleType != position.blackCastleType)) {
+                    (termScore = pas::increment(termScore, 1));
                 }
-                if ((data.queenwhite == 0)) {
-                    temp = (temp / 2);
+                if ((position.blackQueens == 0)) {
+                    termScore = (termScore / 2);
                 }
-                (nilai = pas::increment(nilai, petir_ueval::nilai_pawn_shield[temp]));
+                (score = pas::decrement(score, petir_ueval::pawnShieldPenalty[termScore]));
             } else {
-                if ((filerajahitam > 0)) {
-                    if (((petir_bitboard_mask::file_mask[pas::sub(filerajahitam, 1)] & data.pawnblack) == 0)) {
-                        (temp = pas::increment(temp, 2));
+                file = whiteKingFile;
+                if ((file > 0)) {
+                    if (((petir_bitboard_mask::fileMask[pas::sub(file, 1)] & position.whitePawns) == 0)) {
+                        (termScore = pas::increment(termScore, 2));
                     }
                 }
-                if (((petir_bitboard_mask::file_mask[filerajahitam] & data.pawnblack) == 0)) {
-                    (temp = pas::increment(temp, 2));
+                if (((petir_bitboard_mask::fileMask[file] & position.whitePawns) == 0)) {
+                    (termScore = pas::increment(termScore, 2));
                 }
-                if ((filerajahitam < 7)) {
-                    if (((petir_bitboard_mask::file_mask[pas::add(filerajahitam, 1)] & data.pawnblack) == 0)) {
-                        (temp = pas::increment(temp, 2));
+                if ((file < 7)) {
+                    if (((petir_bitboard_mask::fileMask[pas::add(file, 1)] & position.whitePawns) == 0)) {
+                        (termScore = pas::increment(termScore, 2));
                     }
                 }
-                if ((data.queenwhite == 0)) {
-                    temp = (temp / 2);
+                if ((position.blackQueens == 0)) {
+                    termScore = (termScore / 2);
                 }
-                (nilai = pas::increment(nilai, petir_ueval::nilai_pawn_shield[temp]));
+                (score = pas::decrement(score, petir_ueval::pawnShieldPenalty[termScore]));
             }
         }
     }
-    pas_temp_1 = data.ngajahhitam;
-    if (((pas_temp_1 == 1))) {
-        posgajah = petir_bitboard_mask::lastbitp(pas::address(data.bishopblack));
-        if ((endgame && (data.ngajahputih == 0))) {
-            temp64 = (data.pawnblack | data.pawnwhite);
-            if ((((temp64 & petir_evalmask::abc_mask) != 0) && ((temp64 & petir_evalmask::fgh_mask) != 0))) {
-                if (real_endgame) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_over_knight_endgame));
+    if ((((position.whiteQueens != 0) && (position.whiteNonPawnMaterial >= 16)) || (position.whiteNonPawnMaterial >= 19))) {
+        termScore = 0;
+        if ((blackKingFile >= 5)) {
+            if (((petir_bitboard_mask::fileMask[6] & position.blackPawns) == 0)) {
+                (termScore = pas::increment(termScore, 4));
+                if (((petir_bitboard_mask::fileMask[6] & position.whitePawns) == 0)) {
+                    (termScore = pas::increment(termScore, 1));
+                }
+            } else {
+                if (((position.board[54] != petir_header::blackPawn) && (position.board[46] != petir_header::blackPawn))) {
+                    (termScore = pas::increment(termScore, 2));
+                }
+            }
+            if (((petir_bitboard_mask::fileMask[7] & position.blackPawns) == 0)) {
+                (termScore = pas::increment(termScore, 2));
+                if (((petir_bitboard_mask::fileMask[7] & position.whitePawns) == 0)) {
+                    (termScore = pas::increment(termScore, 1));
+                }
+            } else {
+                if (((position.board[55] != petir_header::blackPawn) && (position.board[47] != petir_header::blackPawn))) {
+                    (termScore = pas::increment(termScore, 2));
+                }
+            }
+            if (((petir_bitboard_mask::fileMask[5] & position.blackPawns) == 0)) {
+                (termScore = pas::increment(termScore, 1));
+            }
+            if (((position.board[petir_header::g7] != petir_header::blackPawn) && (position.board[petir_header::g7] != petir_header::blackBishop))) {
+                (score = pas::increment(score, petir_ueval::missingFianchettoPenalty));
+            }
+            if ((position.whiteCastleType != position.blackCastleType)) {
+                (termScore = pas::increment(termScore, 1));
+            }
+            if ((position.whiteQueens == 0)) {
+                termScore = (termScore / 2);
+            }
+            (score = pas::increment(score, petir_ueval::pawnShieldPenalty[termScore]));
+        } else {
+            if ((blackKingFile <= 2)) {
+                if (((petir_bitboard_mask::fileMask[0] & position.blackPawns) == 0)) {
+                    (termScore = pas::increment(termScore, 3));
+                    if (((petir_bitboard_mask::fileMask[0] & position.whitePawns) == 0)) {
+                        (termScore = pas::increment(termScore, 1));
+                    }
                 } else {
-                    (nilai = pas::decrement(nilai, pas::shr(petir_ueval::nilai_bishop_over_knight_endgame, 1)));
+                    if (((position.board[48] != petir_header::blackPawn) && (position.board[40] != petir_header::blackPawn))) {
+                        (termScore = pas::increment(termScore, 2));
+                    }
+                }
+                if (((petir_bitboard_mask::fileMask[1] & position.blackPawns) == 0)) {
+                    (termScore = pas::increment(termScore, 4));
+                    if (((petir_bitboard_mask::fileMask[1] & position.whitePawns) == 0)) {
+                        (termScore = pas::increment(termScore, 1));
+                    }
+                } else {
+                    if (((position.board[49] != petir_header::blackPawn) && (position.board[41] != petir_header::blackPawn))) {
+                        (termScore = pas::increment(termScore, 2));
+                    }
+                }
+                if (((petir_bitboard_mask::fileMask[2] & position.blackPawns) == 0)) {
+                    (termScore = pas::increment(termScore, 1));
+                }
+                if (((position.board[petir_header::b7] != petir_header::blackPawn) && (position.board[petir_header::b7] != petir_header::blackBishop))) {
+                    (score = pas::increment(score, petir_ueval::missingFianchettoPenalty));
+                }
+                if ((position.whiteCastleType != position.blackCastleType)) {
+                    (termScore = pas::increment(termScore, 1));
+                }
+                if ((position.whiteQueens == 0)) {
+                    termScore = (termScore / 2);
+                }
+                (score = pas::increment(score, petir_ueval::pawnShieldPenalty[termScore]));
+            } else {
+                if ((blackKingFile > 0)) {
+                    if (((petir_bitboard_mask::fileMask[pas::sub(blackKingFile, 1)] & position.blackPawns) == 0)) {
+                        (termScore = pas::increment(termScore, 2));
+                    }
+                }
+                if (((petir_bitboard_mask::fileMask[blackKingFile] & position.blackPawns) == 0)) {
+                    (termScore = pas::increment(termScore, 2));
+                }
+                if ((blackKingFile < 7)) {
+                    if (((petir_bitboard_mask::fileMask[pas::add(blackKingFile, 1)] & position.blackPawns) == 0)) {
+                        (termScore = pas::increment(termScore, 2));
+                    }
+                }
+                if ((position.whiteQueens == 0)) {
+                    termScore = (termScore / 2);
+                }
+                (score = pas::increment(score, petir_ueval::pawnShieldPenalty[termScore]));
+            }
+        }
+    }
+    blackBishopCase = position.blackBishopCount;
+    if (((blackBishopCase == 1))) {
+        bishopSquare = petir_bitboard_mask::lastBit(pas::address(position.blackBishops));
+        if ((endgame && (position.whiteBishopCount == 0))) {
+            scratchBits = (position.blackPawns | position.whitePawns);
+            if ((((scratchBits & petir_evalmask::filesABMask) != 0) && ((scratchBits & petir_evalmask::filesGHMask) != 0))) {
+                if (realEndgame) {
+                    (score = pas::decrement(score, petir_ueval::bishopOverKnightEndgameBonus));
+                } else {
+                    (score = pas::decrement(score, pas::shiftRight(petir_ueval::bishopOverKnightEndgameBonus, 1)));
                 }
             }
         }
     }
-    else if (((pas_temp_1 == 2))) {
-        posgajah = 64;
-        if ((data.ngajahputih == 0)) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_pair0[pas::shr(count_bits<NativePopcount>((data.pawnblack | data.pawnwhite)), 1)]));
+    else if (((blackBishopCase == 2))) {
+        bishopSquare = 64;
+        if ((position.whiteBishopCount == 0)) {
+            (score = pas::decrement(score, petir_ueval::bishopPairBonus[pas::shiftRight(countBits<NativePopcount>((position.blackPawns | position.whitePawns)), 1)]));
         }
-        if ((endgame && (data.ngajahputih == 1))) {
-            temp64 = (data.pawnblack | data.pawnwhite);
-            if ((((temp64 & petir_evalmask::abc_mask) != 0) && ((temp64 & petir_evalmask::fgh_mask) != 0))) {
-                if (real_endgame) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_bishop_over_knight_endgame));
+        if ((endgame && (position.whiteBishopCount == 1))) {
+            scratchBits = (position.blackPawns | position.whitePawns);
+            if ((((scratchBits & petir_evalmask::filesABMask) != 0) && ((scratchBits & petir_evalmask::filesGHMask) != 0))) {
+                if (realEndgame) {
+                    (score = pas::decrement(score, petir_ueval::bishopOverKnightEndgameBonus));
                 } else {
-                    (nilai = pas::decrement(nilai, pas::shr(petir_ueval::nilai_bishop_over_knight_endgame, 1)));
+                    (score = pas::decrement(score, pas::shiftRight(petir_ueval::bishopOverKnightEndgameBonus, 1)));
                 }
             }
         }
     }
     else {
-        posgajah = 64;
+        bishopSquare = 64;
     }
     // Connection scoring is independent of handled-file masks and early exits.
-    nilai += connected_passed_pawns(data, true)
-        * nilai_endgame_scale[std::min<int>(data.nilai_perwira_hitam, 41)] / 100;
-    nilai -= connected_passed_pawns(data, false)
-        * nilai_endgame_scale[std::min<int>(data.nilai_perwira_putih, 41)] / 100;
-    const auto black_pawn_files = pawn_files(data.pawnblack);
-    const auto black_isolated_files = black_pawn_files & ~((black_pawn_files << 1) | (black_pawn_files >> 1));
-    npionhitam = count_bits<NativePopcount>(data.pawnblack);
-    temp2 = posgajah < 64 ? count_bits<NativePopcount>(data.pawnblack & UINT64_C(0x0000ffffffffffff)
-        & (petir_ueval::color[posgajah] == 0 ? UINT64_C(0xaa55aa55aa55aa55) : UINT64_C(0x55aa55aa55aa55aa))) : 0;
+    score += connectedPassedPawns(position, true)
+        * endgameScale[std::min<int>(position.blackNonPawnMaterial, 41)] / 100;
+    score -= connectedPassedPawns(position, false)
+        * endgameScale[std::min<int>(position.whiteNonPawnMaterial, 41)] / 100;
+    const auto blackPawnFiles = pawnFiles(position.blackPawns);
+    const auto blackIsolatedFiles = blackPawnFiles & ~((blackPawnFiles << 1) | (blackPawnFiles >> 1));
+    blackPawnCount = countBits<NativePopcount>(position.blackPawns);
+    pawnsOnBishopColor = bishopSquare < 64 ? countBits<NativePopcount>(position.blackPawns & UINT64_C(0x0000ffffffffffff)
+        & (petir_ueval::squareColor[bishopSquare] == 0 ? UINT64_C(0xaa55aa55aa55aa55) : UINT64_C(0x55aa55aa55aa55aa))) : 0;
     // Each occupied file has exactly one foremost pawn; all others are doubled.
-    temp3 = npionhitam - count_bits<NativePopcount>(std::uint64_t(black_pawn_files));
-    temp4 = 0;
-    piecepos = data.pawnblack;
-    while ((piecepos != 0)) {
-        pos = pop_lsb(piecepos);
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_pion_b[pos]));
-        if ((kingotherside && (petir_evalmask::onside[pos] == petir_evalmask::onside[posrajaputih]))) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_pion_b[pos]));
+    pawnTally = blackPawnCount - countBits<NativePopcount>(std::uint64_t(blackPawnFiles));
+    scratchValue = 0;
+    pieces = position.blackPawns;
+    while ((pieces != 0)) {
+        square = popLowestBit(pieces);
+        (score = pas::decrement(score, petir_ueval::blackPawnSquareBonus[square]));
+        if ((kingsOnOppositeWings && (petir_evalmask::squareWing[square] == petir_evalmask::squareWing[whiteKingSquare]))) {
+            (score = pas::decrement(score, petir_ueval::blackPawnSquareBonus[square]));
         }
-        if (((pos >= petir_header::a7) && (data.papan[pas::sub(pos, 8)] == petir_header::_pionputih))) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_blocked_pawn));
+        if (((square >= petir_header::a7) && (position.board[pas::sub(square, 8)] == petir_header::whitePawn))) {
+            (score = pas::increment(score, petir_ueval::blockedPawnPenalty));
         }
-        if ((black_isolated_files & (1 << (pos & 7))) != 0) {
-            if ((data.nilai_perwira_putih != 0)) {
-                (temp4 = pas::increment(temp4, 1));
-                (nilai = pas::increment(nilai, pas::shl(petir_ueval::nilai_pion_terisolasi[(pos & 7)], 1)));
-                tempb = false;
-                if (((petir_bitboard_mask::rook_attack_up_mask[pos] & data.pawnblack) != 0)) {
-                    (nilai = pas::increment(nilai, pas::shl(petir_ueval::nilai_pion_terisolasi[(pos & 7)], 1)));
-                    tempb = true;
+        if ((blackIsolatedFiles & (1 << (square & 7))) != 0) {
+            if ((position.whiteNonPawnMaterial != 0)) {
+                (scratchValue = pas::increment(scratchValue, 1));
+                (score = pas::increment(score, pas::shiftLeft(petir_ueval::isolatedPawnPenalty[(square & 7)], 1)));
+                stackedOnFile = false;
+                if (((petir_bitboard_mask::rookRayUpMask[square] & position.blackPawns) != 0)) {
+                    (score = pas::increment(score, pas::shiftLeft(petir_ueval::isolatedPawnPenalty[(square & 7)], 1)));
+                    stackedOnFile = true;
                 }
-                if (((petir_bitboard_mask::rook_attack_down_mask[pos] & (data.pawnwhite | data.pawnblack)) == 0)) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_pion_terisolasi[(pos & 7)]));
-                    if (tempb) {
-                        (nilai = pas::increment(nilai, petir_ueval::nilai_pion_terisolasi[(pos & 7)]));
+                if (((petir_bitboard_mask::rookRayDownMask[square] & (position.whitePawns | position.blackPawns)) == 0)) {
+                    (score = pas::increment(score, petir_ueval::isolatedPawnPenalty[(square & 7)]));
+                    if (stackedOnFile) {
+                        (score = pas::increment(score, petir_ueval::isolatedPawnPenalty[(square & 7)]));
                     }
                 }
-                if (((pos == petir_header::a7) || (pos == petir_header::b7))) {
-                    if (((((data.papan[petir_header::a6] == petir_header::_pionputih) && (data.papan[petir_header::b5] == petir_header::_pionputih)) || ((data.papan[petir_header::b6] == petir_header::_pionputih) && (data.papan[petir_header::a5] == petir_header::_pionputih))) || ((data.papan[petir_header::b6] == petir_header::_pionputih) && (data.papan[petir_header::a6] == petir_header::_pionputih)))) {
-                        (nilai = pas::increment(nilai, petir_ueval::nilai_potential_passer));
+                if (((square == petir_header::a7) || (square == petir_header::b7))) {
+                    if (((((position.board[petir_header::a6] == petir_header::whitePawn) && (position.board[petir_header::b5] == petir_header::whitePawn)) || ((position.board[petir_header::b6] == petir_header::whitePawn) && (position.board[petir_header::a5] == petir_header::whitePawn))) || ((position.board[petir_header::b6] == petir_header::whitePawn) && (position.board[petir_header::a6] == petir_header::whitePawn)))) {
+                        (score = pas::increment(score, petir_ueval::potentialPasserBonus));
                     } else {
-                        if (((data.papan[petir_header::a5] == petir_header::_pionputih) && (data.papan[petir_header::b5] == petir_header::_pionputih))) {
-                            (nilai = pas::increment(nilai, pas::shr(petir_ueval::nilai_potential_passer, 1)));
+                        if (((position.board[petir_header::a5] == petir_header::whitePawn) && (position.board[petir_header::b5] == petir_header::whitePawn))) {
+                            (score = pas::increment(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
                         }
                     }
                 } else {
-                    if (((pos == petir_header::g7) || (pos == petir_header::h7))) {
-                        if (((((data.papan[petir_header::g6] == petir_header::_pionputih) && (data.papan[petir_header::h5] == petir_header::_pionputih)) || ((data.papan[petir_header::h6] == petir_header::_pionputih) && (data.papan[petir_header::g5] == petir_header::_pionputih))) || ((data.papan[petir_header::h6] == petir_header::_pionputih) && (data.papan[petir_header::g6] == petir_header::_pionputih)))) {
-                            (nilai = pas::increment(nilai, petir_ueval::nilai_potential_passer));
+                    if (((square == petir_header::g7) || (square == petir_header::h7))) {
+                        if (((((position.board[petir_header::g6] == petir_header::whitePawn) && (position.board[petir_header::h5] == petir_header::whitePawn)) || ((position.board[petir_header::h6] == petir_header::whitePawn) && (position.board[petir_header::g5] == petir_header::whitePawn))) || ((position.board[petir_header::h6] == petir_header::whitePawn) && (position.board[petir_header::g6] == petir_header::whitePawn)))) {
+                            (score = pas::increment(score, petir_ueval::potentialPasserBonus));
                         } else {
-                            if (((data.papan[petir_header::g5] == petir_header::_pionputih) && (data.papan[petir_header::h5] == petir_header::_pionputih))) {
-                                (nilai = pas::increment(nilai, pas::shr(petir_ueval::nilai_potential_passer, 1)));
+                            if (((position.board[petir_header::g5] == petir_header::whitePawn) && (position.board[petir_header::h5] == petir_header::whitePawn))) {
+                                (score = pas::increment(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
                             }
                         }
                     }
                 }
             }
         }
-        if ((((petir_bitboard_mask::b_pion_bebas_mask[pos] & data.pawnwhite) == 0) && ((pionbebashitam & petir_header::bit8((pos & 7))) == 0))) {
-            (npphitam = pas::increment(npphitam, 1));
-            tempx = (pos & 7);
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_bebas));
-            nilai -= passed_pawn_activity(data, pos, false);
-            temp = 0;
-            pionbebashitam = (pionbebashitam | petir_header::bit8(tempx));
-            if ((data.nilai_perwira_putih == 0)) {
-                if (((pos <= petir_header::h3) && ((petir_bitboard_mask::b_pawn_attack[pos] & data.kingblack) != 0))) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_can_promote));
-                    (nilai = pas::decrement(nilai, pas::shl(petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)], 1)));
+        if ((((petir_bitboard_mask::blackPassedPawnMask[square] & position.whitePawns) == 0) && ((blackPassedFiles & petir_header::powerOfTwo((square & 7))) == 0))) {
+            (blackPassedCount = pas::increment(blackPassedCount, 1));
+            file = (square & 7);
+            (score = pas::decrement(score, petir_ueval::passedPawnBonus));
+            score -= passedPawnActivity(position, square, false);
+            termScore = 0;
+            blackPassedFiles = (blackPassedFiles | petir_header::powerOfTwo(file));
+            if ((position.whiteNonPawnMaterial == 0)) {
+                if (((square <= petir_header::h3) && ((petir_bitboard_mask::blackPawnAttacks[square] & position.blackKingBoard) != 0))) {
+                    (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                    (score = pas::decrement(score, pas::shiftLeft(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
                     continue;
                 }
-                if (((((pos <= petir_header::g2) && (pos >= petir_header::b2)) && (data.papan[pas::sub(pos, 8)] != petir_header::_rajaputih)) && ((petir_bitboard_mask::kingmask[pos] & data.kingblack) != 0))) {
-                    if ((((((posrajahitam >= petir_header::a3) && ((petir_bitboard_mask::kingmask[pos] & data.kingwhite) != 0)) && (realgiliran == petir_header::_sisiputih)) && (data.nilai_perwira_hitam == 0)) && ((posrajaputih == pas::sub(pos, 1)) || (posrajaputih == pas::add(pos, 1))))) {
+                if (((((square <= petir_header::g2) && (square >= petir_header::b2)) && (position.board[pas::sub(square, 8)] != petir_header::whiteKing)) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0))) {
+                    if ((((((blackKingSquare >= petir_header::a3) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0)) && (realSideToMove == petir_header::whiteSide)) && (position.blackNonPawnMaterial == 0)) && ((whiteKingSquare == pas::sub(square, 1)) || (whiteKingSquare == pas::add(square, 1))))) {
                     } else {
-                        (nilai = pas::decrement(nilai, petir_ueval::nilai_can_promote));
-                        (nilai = pas::decrement(nilai, pas::shl(petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)], 1)));
+                        (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                        (score = pas::decrement(score, pas::shiftLeft(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
                         continue;
                     }
                 }
-                if (((pas::add(pas::shr(pos, 3), 1) < pas::shr(posrajaputih, 3)) || ((pas::shr(pos, 3) < pas::shr(posrajaputih, 3)) && (realgiliran == petir_header::_sisihitam)))) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_can_promote));
-                    (nilai = pas::decrement(nilai, petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)]));
+                if (((pas::add(pas::shiftRight(square, 3), 1) < pas::shiftRight(whiteKingSquare, 3)) || ((pas::shiftRight(square, 3) < pas::shiftRight(whiteKingSquare, 3)) && (realSideToMove == petir_header::blackSide)))) {
+                    (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                    (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
                     continue;
                 }
-                if (((pas::shr(pos, 3) < pas::sub(pas::abs(pas::sub((pos & 7), filerajaputih)), 1)) || ((pas::shr(pos, 3) == pas::sub(pas::abs(pas::sub((pos & 7), filerajaputih)), 1)) && (realgiliran == petir_header::_sisihitam)))) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_can_promote));
-                    (nilai = pas::decrement(nilai, petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)]));
+                if (((pas::shiftRight(square, 3) < pas::sub(pas::abs(pas::sub((square & 7), whiteKingFile)), 1)) || ((pas::shiftRight(square, 3) == pas::sub(pas::abs(pas::sub((square & 7), whiteKingFile)), 1)) && (realSideToMove == petir_header::blackSide)))) {
+                    (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                    (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
                     continue;
                 }
-                if (((pas::shr(pos, 3) == 2) && ((petir_bitboard_mask::b_pion_bebas_mask[pos] & data.kingblack) != 0))) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_can_promote));
-                    (nilai = pas::decrement(nilai, petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)]));
+                if (((pas::shiftRight(square, 3) == 2) && ((petir_bitboard_mask::blackPassedPawnMask[square] & position.blackKingBoard) != 0))) {
+                    (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                    (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
                     continue;
                 }
             }
-            (temp = pas::increment(temp, petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)]));
-            verattack = petir_bitboard_mask::rook_attack_up_mask[pos];
-            if (((verattack & data.rookblack) != 0)) {
-                if ((((petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)] & data.rookblack) != 0) && (!(data.papan[pas::sub(pos, 8)] > 0)))) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_dibelakang_pion_bebas));
+            (termScore = pas::increment(termScore, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
+            fileAttacks = petir_bitboard_mask::rookRayUpMask[square];
+            if (((fileAttacks & position.blackRooks) != 0)) {
+                if ((((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.blackRooks) != 0) && (!(position.board[pas::sub(square, 8)] > 0)))) {
+                    (termScore = pas::increment(termScore, petir_ueval::rookBehindPassedPawnBonus));
                 }
             } else {
-                if (((verattack & data.rookwhite) != 0)) {
-                    if (((petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)] & data.rookwhite) != 0)) {
-                        (temp = pas::decrement(temp, pas::shr(petir_ueval::nilai_benteng_dibelakang_pion_bebas, 1)));
-                        if ((((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 5)) && (petir_evalmask::tabel_edistance2[pos][posrajahitam] <= 5))) {
-                            (temp = pas::decrement(temp, pas::shr(petir_ueval::nilai_benteng_dibelakang_pion_bebas, 2)));
+                if (((fileAttacks & position.whiteRooks) != 0)) {
+                    if (((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.whiteRooks) != 0)) {
+                        (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 1)));
+                        if ((((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 5)) && (petir_evalmask::closenessTable[square][blackKingSquare] <= 5))) {
+                            (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 2)));
                         }
                     }
                 }
             }
-            if ((data.papan[pas::sub(pos, 8)] > 0)) {
-                (temp = pas::decrement(temp, pas::shr(petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)], 1)));
-                (temp = pas::increment(temp, pas::shr(petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)], 3)));
+            if ((position.board[pas::sub(square, 8)] > 0)) {
+                (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
+                (termScore = pas::increment(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 3)));
             } else {
-                if ((((pos <= petir_header::h2) && (data.papan[pas::sub(pos, 8)] == 0)) && (petir_usee::see(petir_header::_sisihitam, data, pos, pas::sub(pos, 8)) == 0))) {
-                    if ((realgiliran == petir_header::_sisihitam)) {
-                        (nilai = pas::decrement(nilai, pas::add(petir_ueval::nilai_can_advance, 40)));
+                if ((((square <= petir_header::h2) && (position.board[pas::sub(square, 8)] == 0)) && (petir_usee::staticExchange(petir_header::blackSide, position, square, pas::sub(square, 8)) == 0))) {
+                    if ((realSideToMove == petir_header::blackSide)) {
+                        (score = pas::decrement(score, pas::add(petir_ueval::safeAdvanceBonus, 40)));
                     } else {
-                        (nilai = pas::decrement(nilai, petir_ueval::nilai_can_advance));
+                        (score = pas::decrement(score, petir_ueval::safeAdvanceBonus));
                     }
                 }
             }
-            if (((pas::sub(posrajahitam, pos) <= 9) && ((petir_bitboard_mask::kingmask[pos] & data.kingblack) != 0))) {
-                (temp = pas::increment(temp, petir_ueval::b_nilai_pion_bebas_didukung_raja[pas::shr(pos, 3)]));
+            if (((pas::sub(blackKingSquare, square) <= 9) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0))) {
+                (termScore = pas::increment(termScore, petir_ueval::blackKingSupportedPasserBonus[pas::shiftRight(square, 3)]));
             } else {
-                if ((((petir_evalmask::tabel_edistance2[pos][posrajaputih] >= 7) && (pas::shr(posrajaputih, 3) <= pas::shr(pos, 3))) && (pas::shr(pos, 3) >= pas::abs(pas::sub(filerajaputih, (pos & 7)))))) {
-                    if ((petir_evalmask::tabel_edistance2[pos][posrajaputih] >= 8)) {
-                        (temp = pas::decrement(temp, pas::shr(petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)], 1)));
+                if ((((petir_evalmask::closenessTable[square][whiteKingSquare] >= 7) && (pas::shiftRight(whiteKingSquare, 3) <= pas::shiftRight(square, 3))) && (pas::shiftRight(square, 3) >= pas::abs(pas::sub(whiteKingFile, (square & 7)))))) {
+                    if ((petir_evalmask::closenessTable[square][whiteKingSquare] >= 8)) {
+                        (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
                     } else {
-                        (temp = pas::decrement(temp, pas::shr(petir_ueval::b_nilai_pion_advance_bebas[pas::shr(pos, 3)], 2)));
+                        (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 2)));
                     }
                 }
             }
-            if ((temp > 0)) {
-                (nilai = pas::decrement(nilai, (pas::mul(temp, petir_ueval::nilai_endgame_scale[std::min<int>(data.nilai_perwira_putih, 41)]) / 100)));
+            if ((termScore > 0)) {
+                (score = pas::decrement(score, (pas::mul(termScore, petir_ueval::endgameScale[std::min<int>(position.whiteNonPawnMaterial, 41)]) / 100)));
             }
         }
     }
-    pawnbattack = pas::shr((data.pawnblack & petir_bitboard_mask::mask_left), 9);
-    pawnbattack = (pawnbattack | pas::shr((data.pawnblack & petir_bitboard_mask::mask_right), 7));
-    (nilai = pas::increment(nilai, petir_ueval::nilai_pion_tumpuk[temp3]));
-    (nilai = pas::increment(nilai, petir_ueval::nilai_pion_terisolasi_ak[temp4]));
-    if (petir_ueval::onlyone(data.bishopblack)) {
-        (nilai = pas::increment(nilai, petir_evalmask::nilai_badbishop[temp2]));
+    blackPawnAttackMap = pas::shiftRight((position.blackPawns & petir_bitboard_mask::notFileAMask), 9);
+    blackPawnAttackMap = (blackPawnAttackMap | pas::shiftRight((position.blackPawns & petir_bitboard_mask::notFileHMask), 7));
+    (score = pas::increment(score, petir_ueval::doubledPawnPenalty[pawnTally]));
+    (score = pas::increment(score, petir_ueval::isolatedPawnCountPenalty[scratchValue]));
+    if (petir_ueval::hasSingleBit(position.blackBishops)) {
+        (score = pas::increment(score, petir_evalmask::badBishopPenalty[pawnsOnBishopColor]));
     }
-    tempk64 = (pawnbattack & whitekingattack);
-    (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(tempk64)));
-    pas_temp_2 = data.ngajahputih;
-    if (((pas_temp_2 == 1))) {
-        posgajah = petir_bitboard_mask::firstbitp(pas::address(data.bishopwhite));
-        if ((endgame && (data.ngajahhitam == 0))) {
-            temp64 = (data.pawnblack | data.pawnwhite);
-            if ((((temp64 & petir_evalmask::abc_mask) != 0) && ((temp64 & petir_evalmask::fgh_mask) != 0))) {
-                if (real_endgame) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_over_knight_endgame));
+    kingZoneHits = (blackPawnAttackMap & whiteKingZone);
+    (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(kingZoneHits)));
+    whiteBishopCase = position.whiteBishopCount;
+    if (((whiteBishopCase == 1))) {
+        bishopSquare = petir_bitboard_mask::firstBit(pas::address(position.whiteBishops));
+        if ((endgame && (position.blackBishopCount == 0))) {
+            scratchBits = (position.blackPawns | position.whitePawns);
+            if ((((scratchBits & petir_evalmask::filesABMask) != 0) && ((scratchBits & petir_evalmask::filesGHMask) != 0))) {
+                if (realEndgame) {
+                    (score = pas::increment(score, petir_ueval::bishopOverKnightEndgameBonus));
                 } else {
-                    (nilai = pas::increment(nilai, pas::shr(petir_ueval::nilai_bishop_over_knight_endgame, 1)));
+                    (score = pas::increment(score, pas::shiftRight(petir_ueval::bishopOverKnightEndgameBonus, 1)));
                 }
             }
         }
     }
-    else if (((pas_temp_2 == 2))) {
-        posgajah = 64;
-        if ((data.ngajahhitam == 0)) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_pair0[pas::shr(count_bits<NativePopcount>((data.pawnblack | data.pawnwhite)), 1)]));
+    else if (((whiteBishopCase == 2))) {
+        bishopSquare = 64;
+        if ((position.blackBishopCount == 0)) {
+            (score = pas::increment(score, petir_ueval::bishopPairBonus[pas::shiftRight(countBits<NativePopcount>((position.blackPawns | position.whitePawns)), 1)]));
         }
-        if ((endgame && (data.ngajahhitam == 1))) {
-            temp64 = (data.pawnblack | data.pawnwhite);
-            if ((((temp64 & petir_evalmask::abc_mask) != 0) && ((temp64 & petir_evalmask::fgh_mask) != 0))) {
-                if (real_endgame) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_bishop_over_knight_endgame));
+        if ((endgame && (position.blackBishopCount == 1))) {
+            scratchBits = (position.blackPawns | position.whitePawns);
+            if ((((scratchBits & petir_evalmask::filesABMask) != 0) && ((scratchBits & petir_evalmask::filesGHMask) != 0))) {
+                if (realEndgame) {
+                    (score = pas::increment(score, petir_ueval::bishopOverKnightEndgameBonus));
                 } else {
-                    (nilai = pas::increment(nilai, pas::shr(petir_ueval::nilai_bishop_over_knight_endgame, 1)));
+                    (score = pas::increment(score, pas::shiftRight(petir_ueval::bishopOverKnightEndgameBonus, 1)));
                 }
             }
         }
     }
     else {
-        posgajah = 64;
+        bishopSquare = 64;
     }
-    piecepos = data.pawnwhite;
-    const auto white_pawn_files = pawn_files(data.pawnwhite);
-    const auto white_isolated_files = white_pawn_files & ~((white_pawn_files << 1) | (white_pawn_files >> 1));
-    npionputih = count_bits<NativePopcount>(data.pawnwhite);
-    temp2 = posgajah < 64 ? count_bits<NativePopcount>(data.pawnwhite & UINT64_C(0xffffffffffff0000)
-        & (petir_ueval::color[posgajah] == 0 ? UINT64_C(0xaa55aa55aa55aa55) : UINT64_C(0x55aa55aa55aa55aa))) : 0;
-    temp3 = npionputih - count_bits<NativePopcount>(std::uint64_t(white_pawn_files));
-    temp4 = 0;
-    while ((piecepos != 0)) {
+    pieces = position.whitePawns;
+    const auto whitePawnFiles = pawnFiles(position.whitePawns);
+    const auto whiteIsolatedFiles = whitePawnFiles & ~((whitePawnFiles << 1) | (whitePawnFiles >> 1));
+    whitePawnCount = countBits<NativePopcount>(position.whitePawns);
+    pawnsOnBishopColor = bishopSquare < 64 ? countBits<NativePopcount>(position.whitePawns & UINT64_C(0xffffffffffff0000)
+        & (petir_ueval::squareColor[bishopSquare] == 0 ? UINT64_C(0xaa55aa55aa55aa55) : UINT64_C(0x55aa55aa55aa55aa))) : 0;
+    pawnTally = whitePawnCount - countBits<NativePopcount>(std::uint64_t(whitePawnFiles));
+    scratchValue = 0;
+    while ((pieces != 0)) {
         // Evaluate the foremost white passer before marking its file handled.
-        pos = pop_msb(piecepos);
-        (nilai = pas::increment(nilai, petir_ueval::nilai_pos_pion_w[pos]));
-        if ((kingotherside && (petir_evalmask::onside[pos] == petir_evalmask::onside[posrajahitam]))) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_pos_pion_w[pos]));
+        square = popHighestBit(pieces);
+        (score = pas::increment(score, petir_ueval::whitePawnSquareBonus[square]));
+        if ((kingsOnOppositeWings && (petir_evalmask::squareWing[square] == petir_evalmask::squareWing[blackKingSquare]))) {
+            (score = pas::increment(score, petir_ueval::whitePawnSquareBonus[square]));
         }
-        if ((data.papan[pas::add(pos, 8)] == petir_header::_pionhitam)) {
-            if ((pos <= petir_header::h2)) {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_blocked_pawn));
+        if ((position.board[pas::add(square, 8)] == petir_header::blackPawn)) {
+            if ((square <= petir_header::h2)) {
+                (score = pas::decrement(score, petir_ueval::blockedPawnPenalty));
             }
         }
-        if ((white_isolated_files & (1 << (pos & 7))) != 0) {
-            if ((data.nilai_perwira_hitam != 0)) {
-                (temp4 = pas::increment(temp4, 1));
-                (nilai = pas::decrement(nilai, pas::shl(petir_ueval::nilai_pion_terisolasi[(pos & 7)], 1)));
-                tempb = false;
-                if (((petir_bitboard_mask::rook_attack_down_mask[pos] & data.pawnwhite) != 0)) {
-                    (nilai = pas::decrement(nilai, pas::shl(petir_ueval::nilai_pion_terisolasi[(pos & 7)], 1)));
-                    tempb = true;
+        if ((whiteIsolatedFiles & (1 << (square & 7))) != 0) {
+            if ((position.blackNonPawnMaterial != 0)) {
+                (scratchValue = pas::increment(scratchValue, 1));
+                (score = pas::decrement(score, pas::shiftLeft(petir_ueval::isolatedPawnPenalty[(square & 7)], 1)));
+                stackedOnFile = false;
+                if (((petir_bitboard_mask::rookRayDownMask[square] & position.whitePawns) != 0)) {
+                    (score = pas::decrement(score, pas::shiftLeft(petir_ueval::isolatedPawnPenalty[(square & 7)], 1)));
+                    stackedOnFile = true;
                 }
-                if (((petir_bitboard_mask::rook_attack_up_mask[pos] & (data.pawnblack | data.pawnwhite)) == 0)) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_terisolasi[(pos & 7)]));
-                    if (tempb) {
-                        (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_terisolasi[(pos & 7)]));
+                if (((petir_bitboard_mask::rookRayUpMask[square] & (position.blackPawns | position.whitePawns)) == 0)) {
+                    (score = pas::decrement(score, petir_ueval::isolatedPawnPenalty[(square & 7)]));
+                    if (stackedOnFile) {
+                        (score = pas::decrement(score, petir_ueval::isolatedPawnPenalty[(square & 7)]));
                     }
                 }
-                if (((pos == petir_header::a2) || (pos == petir_header::b2))) {
-                    if (((((data.papan[petir_header::a3] == petir_header::_pionhitam) && (data.papan[petir_header::b4] == petir_header::_pionhitam)) || ((data.papan[petir_header::b3] == petir_header::_pionhitam) && (data.papan[petir_header::a4] == petir_header::_pionhitam))) || ((data.papan[petir_header::b3] == petir_header::_pionhitam) && (data.papan[petir_header::a3] == petir_header::_pionhitam)))) {
-                        (nilai = pas::decrement(nilai, petir_ueval::nilai_potential_passer));
+                if (((square == petir_header::a2) || (square == petir_header::b2))) {
+                    if (((((position.board[petir_header::a3] == petir_header::blackPawn) && (position.board[petir_header::b4] == petir_header::blackPawn)) || ((position.board[petir_header::b3] == petir_header::blackPawn) && (position.board[petir_header::a4] == petir_header::blackPawn))) || ((position.board[petir_header::b3] == petir_header::blackPawn) && (position.board[petir_header::a3] == petir_header::blackPawn)))) {
+                        (score = pas::decrement(score, petir_ueval::potentialPasserBonus));
                     } else {
-                        if (((data.papan[petir_header::a4] == petir_header::_pionhitam) && (data.papan[petir_header::b4] == petir_header::_pionhitam))) {
-                            (nilai = pas::decrement(nilai, pas::shr(petir_ueval::nilai_potential_passer, 1)));
+                        if (((position.board[petir_header::a4] == petir_header::blackPawn) && (position.board[petir_header::b4] == petir_header::blackPawn))) {
+                            (score = pas::decrement(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
                         }
                     }
                 } else {
-                    if (((pos == petir_header::g2) || (pos == petir_header::h2))) {
-                        if (((((data.papan[petir_header::g3] == petir_header::_pionhitam) && (data.papan[petir_header::h4] == petir_header::_pionhitam)) || ((data.papan[petir_header::h3] == petir_header::_pionhitam) && (data.papan[petir_header::g4] == petir_header::_pionhitam))) || ((data.papan[petir_header::h3] == petir_header::_pionhitam) && (data.papan[petir_header::g3] == petir_header::_pionhitam)))) {
-                            (nilai = pas::decrement(nilai, petir_ueval::nilai_potential_passer));
+                    if (((square == petir_header::g2) || (square == petir_header::h2))) {
+                        if (((((position.board[petir_header::g3] == petir_header::blackPawn) && (position.board[petir_header::h4] == petir_header::blackPawn)) || ((position.board[petir_header::h3] == petir_header::blackPawn) && (position.board[petir_header::g4] == petir_header::blackPawn))) || ((position.board[petir_header::h3] == petir_header::blackPawn) && (position.board[petir_header::g3] == petir_header::blackPawn)))) {
+                            (score = pas::decrement(score, petir_ueval::potentialPasserBonus));
                         } else {
-                            if (((data.papan[petir_header::g4] == petir_header::_pionhitam) && (data.papan[petir_header::h4] == petir_header::_pionhitam))) {
-                                (nilai = pas::decrement(nilai, pas::shr(petir_ueval::nilai_potential_passer, 1)));
+                            if (((position.board[petir_header::g4] == petir_header::blackPawn) && (position.board[petir_header::h4] == petir_header::blackPawn))) {
+                                (score = pas::decrement(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
                             }
                         }
                     }
                 }
             }
         }
-        if ((((petir_bitboard_mask::w_pion_bebas_mask[pos] & data.pawnblack) == 0) && ((pionbebasputih & petir_header::bit8((pos & 7))) == 0))) {
-            (nppputih = pas::increment(nppputih, 1));
-            tempi = 0;
-            tempx = (pos & 7);
-            (nilai = pas::increment(nilai, petir_ueval::nilai_pion_bebas));
-            nilai += passed_pawn_activity(data, pos, true);
-            temp = pas::shr(pos, 3);
-            pionbebasputih = (pionbebasputih | petir_header::bit8(tempx));
-            if ((data.nilai_perwira_hitam == 0)) {
-                if (((pos >= petir_header::a6) && ((petir_bitboard_mask::w_pawn_attack[pos] & data.kingwhite) != 0))) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_can_promote));
-                    (nilai = pas::increment(nilai, pas::shl(petir_ueval::w_nilai_pion_advance_bebas[pas::shr(pos, 3)], 1)));
+        if ((((petir_bitboard_mask::whitePassedPawnMask[square] & position.blackPawns) == 0) && ((whitePassedFiles & petir_header::powerOfTwo((square & 7))) == 0))) {
+            (whitePassedCount = pas::increment(whitePassedCount, 1));
+            weightedTerm = 0;
+            file = (square & 7);
+            (score = pas::increment(score, petir_ueval::passedPawnBonus));
+            score += passedPawnActivity(position, square, true);
+            termScore = pas::shiftRight(square, 3);
+            whitePassedFiles = (whitePassedFiles | petir_header::powerOfTwo(file));
+            if ((position.blackNonPawnMaterial == 0)) {
+                if (((square >= petir_header::a6) && ((petir_bitboard_mask::whitePawnAttacks[square] & position.whiteKingBoard) != 0))) {
+                    (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                    (score = pas::increment(score, pas::shiftLeft(petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
                     continue;
                 }
-                if (((((pos >= petir_header::b7) && (pos <= petir_header::g7)) && (data.papan[pas::add(pos, 8)] != petir_header::_rajahitam)) && ((petir_bitboard_mask::kingmask[pos] & data.kingwhite) != 0))) {
-                    if ((((((posrajahitam <= petir_header::h6) && ((petir_bitboard_mask::kingmask[pos] & data.kingblack) != 0)) && (realgiliran == petir_header::_sisihitam)) && (data.nilai_perwira_putih == 0)) && ((posrajahitam == pas::sub(pos, 1)) || (posrajahitam == pas::add(pos, 1))))) {
+                if (((((square >= petir_header::b7) && (square <= petir_header::g7)) && (position.board[pas::add(square, 8)] != petir_header::blackKing)) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0))) {
+                    if ((((((blackKingSquare <= petir_header::h6) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0)) && (realSideToMove == petir_header::blackSide)) && (position.whiteNonPawnMaterial == 0)) && ((blackKingSquare == pas::sub(square, 1)) || (blackKingSquare == pas::add(square, 1))))) {
                     } else {
-                        (nilai = pas::increment(nilai, petir_ueval::nilai_can_promote));
-                        (nilai = pas::increment(nilai, pas::shl(petir_ueval::w_nilai_pion_advance_bebas[pas::shr(pos, 3)], 1)));
+                        (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                        (score = pas::increment(score, pas::shiftLeft(petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
                         continue;
                     }
                 }
-                if (((pas::shr(pos, 3) > pas::add(pas::shr(posrajahitam, 3), 1)) || ((pas::shr(pos, 3) > pas::shr(posrajahitam, 3)) && (realgiliran == petir_header::_sisiputih)))) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_can_promote));
-                    (nilai = pas::increment(nilai, petir_ueval::w_nilai_pion_advance_bebas[temp]));
+                if (((pas::shiftRight(square, 3) > pas::add(pas::shiftRight(blackKingSquare, 3), 1)) || ((pas::shiftRight(square, 3) > pas::shiftRight(blackKingSquare, 3)) && (realSideToMove == petir_header::whiteSide)))) {
+                    (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                    (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[termScore]));
                     continue;
                 }
-                if (((pas::sub(7, pas::shr(pos, 3)) < pas::sub(pas::abs(pas::sub((pos & 7), filerajahitam)), 1)) || ((pas::sub(7, pas::shr(pos, 3)) == pas::sub(pas::abs(pas::sub((pos & 7), filerajahitam)), 1)) && (realgiliran == petir_header::_sisiputih)))) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_can_promote));
-                    (nilai = pas::increment(nilai, petir_ueval::w_nilai_pion_advance_bebas[temp]));
+                if (((pas::sub(7, pas::shiftRight(square, 3)) < pas::sub(pas::abs(pas::sub((square & 7), blackKingFile)), 1)) || ((pas::sub(7, pas::shiftRight(square, 3)) == pas::sub(pas::abs(pas::sub((square & 7), blackKingFile)), 1)) && (realSideToMove == petir_header::whiteSide)))) {
+                    (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                    (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[termScore]));
                     continue;
                 }
-                if (((pas::shr(pos, 3) == 5) && ((petir_bitboard_mask::w_pion_bebas_mask[pos] & data.kingwhite) != 0))) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_can_promote));
-                    (nilai = pas::increment(nilai, petir_ueval::w_nilai_pion_advance_bebas[pas::shr(pos, 3)]));
+                if (((pas::shiftRight(square, 3) == 5) && ((petir_bitboard_mask::whitePassedPawnMask[square] & position.whiteKingBoard) != 0))) {
+                    (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                    (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)]));
                     continue;
                 }
             }
-            (tempi = pas::increment(tempi, petir_ueval::w_nilai_pion_advance_bebas[temp]));
-            verattack = petir_bitboard_mask::rook_attack_down_mask[pos];
-            if (((verattack & data.rookwhite) != 0)) {
-                if ((((petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)] & data.rookwhite) != 0) && (!(data.papan[pas::add(pos, 8)] < 0)))) {
-                    (tempi = pas::increment(tempi, petir_ueval::nilai_benteng_dibelakang_pion_bebas));
+            (weightedTerm = pas::increment(weightedTerm, petir_ueval::whitePassedPawnRankBonus[termScore]));
+            fileAttacks = petir_bitboard_mask::rookRayDownMask[square];
+            if (((fileAttacks & position.whiteRooks) != 0)) {
+                if ((((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.whiteRooks) != 0) && (!(position.board[pas::add(square, 8)] < 0)))) {
+                    (weightedTerm = pas::increment(weightedTerm, petir_ueval::rookBehindPassedPawnBonus));
                 }
             } else {
-                if (((verattack & data.rookblack) != 0)) {
-                    if (((petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)] & data.rookblack) != 0)) {
-                        (tempi = pas::decrement(tempi, pas::shr(petir_ueval::nilai_benteng_dibelakang_pion_bebas, 1)));
-                        if ((((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 5)) && (petir_evalmask::tabel_edistance2[pos][posrajaputih] <= 5))) {
-                            (tempi = pas::decrement(tempi, pas::shr(petir_ueval::nilai_benteng_dibelakang_pion_bebas, 2)));
+                if (((fileAttacks & position.blackRooks) != 0)) {
+                    if (((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.blackRooks) != 0)) {
+                        (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 1)));
+                        if ((((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 5)) && (petir_evalmask::closenessTable[square][whiteKingSquare] <= 5))) {
+                            (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 2)));
                         }
                     }
                 }
             }
-            if ((data.papan[pas::add(pos, 8)] < 0)) {
-                (tempi = pas::decrement(tempi, pas::shr(petir_ueval::w_nilai_pion_advance_bebas[temp], 1)));
-                (tempi = pas::increment(tempi, pas::shr(petir_ueval::w_nilai_pion_advance_bebas[temp], 3)));
+            if ((position.board[pas::add(square, 8)] < 0)) {
+                (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 1)));
+                (weightedTerm = pas::increment(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 3)));
             } else {
-                if ((((pos >= petir_header::a7) && (data.papan[pas::add(pos, 8)] == 0)) && (petir_usee::see(petir_header::_sisiputih, data, pos, pas::add(pos, 8)) == 0))) {
-                    if ((realgiliran == petir_header::_sisiputih)) {
-                        (nilai = pas::increment(nilai, pas::add(petir_ueval::nilai_can_advance, 40)));
+                if ((((square >= petir_header::a7) && (position.board[pas::add(square, 8)] == 0)) && (petir_usee::staticExchange(petir_header::whiteSide, position, square, pas::add(square, 8)) == 0))) {
+                    if ((realSideToMove == petir_header::whiteSide)) {
+                        (score = pas::increment(score, pas::add(petir_ueval::safeAdvanceBonus, 40)));
                     } else {
-                        (nilai = pas::increment(nilai, petir_ueval::nilai_can_advance));
+                        (score = pas::increment(score, petir_ueval::safeAdvanceBonus));
                     }
                 }
             }
-            if (((pas::sub(pos, posrajaputih) <= 9) && ((petir_bitboard_mask::kingmask[pos] & data.kingwhite) != 0))) {
-                (tempi = pas::increment(tempi, petir_ueval::w_nilai_pion_bebas_didukung_raja[temp]));
+            if (((pas::sub(square, whiteKingSquare) <= 9) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0))) {
+                (weightedTerm = pas::increment(weightedTerm, petir_ueval::whiteKingSupportedPasserBonus[termScore]));
             } else {
-                if (((petir_evalmask::tabel_edistance2[pos][posrajahitam] >= 7) && (pas::shr(posrajahitam, 3) >= pas::shr(pos, 3)) && (7 - pas::shr(pos, 3) >= pas::abs(filerajahitam - (pos & 7))))) {
-                    if ((petir_evalmask::tabel_edistance2[pos][posrajahitam] >= 8)) {
-                        (tempi = pas::decrement(tempi, pas::shr(petir_ueval::w_nilai_pion_advance_bebas[temp], 1)));
+                if (((petir_evalmask::closenessTable[square][blackKingSquare] >= 7) && (pas::shiftRight(blackKingSquare, 3) >= pas::shiftRight(square, 3)) && (7 - pas::shiftRight(square, 3) >= pas::abs(blackKingFile - (square & 7))))) {
+                    if ((petir_evalmask::closenessTable[square][blackKingSquare] >= 8)) {
+                        (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 1)));
                     } else {
-                        (tempi = pas::decrement(tempi, pas::shr(petir_ueval::w_nilai_pion_advance_bebas[temp], 2)));
+                        (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 2)));
                     }
                 }
             }
-            if ((tempi > 0)) {
-                (nilai = pas::increment(nilai, (pas::mul(tempi, petir_ueval::nilai_endgame_scale[std::min<int>(data.nilai_perwira_hitam, 41)]) / 100)));
+            if ((weightedTerm > 0)) {
+                (score = pas::increment(score, (pas::mul(weightedTerm, petir_ueval::endgameScale[std::min<int>(position.blackNonPawnMaterial, 41)]) / 100)));
             }
         }
     }
-    pawnwattack = pas::shl((data.pawnwhite & petir_bitboard_mask::mask_left), 7);
-    pawnwattack = (pawnwattack | pas::shl((data.pawnwhite & petir_bitboard_mask::mask_right), 9));
-    (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_tumpuk[temp3]));
-    (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_terisolasi_ak[temp4]));
-    if (petir_ueval::onlyone(data.bishopwhite)) {
-        (nilai = pas::decrement(nilai, petir_evalmask::nilai_badbishop[temp2]));
+    whitePawnAttackMap = pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileAMask), 7);
+    whitePawnAttackMap = (whitePawnAttackMap | pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileHMask), 9));
+    (score = pas::decrement(score, petir_ueval::doubledPawnPenalty[pawnTally]));
+    (score = pas::decrement(score, petir_ueval::isolatedPawnCountPenalty[scratchValue]));
+    if (petir_ueval::hasSingleBit(position.whiteBishops)) {
+        (score = pas::decrement(score, petir_evalmask::badBishopPenalty[pawnsOnBishopColor]));
     }
-    tempk64 = (pawnwattack & blackkingattack);
-    (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(tempk64)));
-    if ((((data.nilai_perwira_putih == pas::add(data.nilai_perwira_hitam, 3)) && (data.queenwhite != 0)) && ((pas::sub(npionhitam, npionputih) >= 2 && pas::sub(npionhitam, npionputih) <= 3)))) {
-        (nilai = pas::increment(nilai, 35));
+    kingZoneHits = (whitePawnAttackMap & blackKingZone);
+    (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(kingZoneHits)));
+    if ((((position.whiteNonPawnMaterial == pas::add(position.blackNonPawnMaterial, 3)) && (position.whiteQueens != 0)) && ((pas::sub(blackPawnCount, whitePawnCount) >= 2 && pas::sub(blackPawnCount, whitePawnCount) <= 3)))) {
+        (score = pas::increment(score, 35));
     } else {
-        if ((((data.nilai_perwira_hitam == pas::add(data.nilai_perwira_putih, 3)) && (data.queenblack != 0)) && ((pas::sub(npionputih, npionhitam) >= 2 && pas::sub(npionputih, npionhitam) <= 3)))) {
-            (nilai = pas::decrement(nilai, 35));
+        if ((((position.blackNonPawnMaterial == pas::add(position.whiteNonPawnMaterial, 3)) && (position.blackQueens != 0)) && ((pas::sub(whitePawnCount, blackPawnCount) >= 2 && pas::sub(whitePawnCount, blackPawnCount) <= 3)))) {
+            (score = pas::decrement(score, 35));
         }
     }
-    temp = 0;
-    piecepos = data.rookwhite;
-    while ((piecepos != 0)) {
-        pos = pop_lsb(piecepos);
-        if (endgame) nilai += endgame_piece_activity(data, pos, true);
-        horattack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        verattack = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
-        attack = (horattack | verattack);
-        temp64 = (attack & (~data.whitepieces));
-        (nilai = pas::increment(nilai, petir_ueval::mobil_rook[count_bits<NativePopcount>(temp64)]));
-        rookwattack = (rookwattack | attack);
-        if (bevalks) {
-            tempk64 = (attack & blackkingattack);
-            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(tempk64)));
-            if (tempk64 != 0) {
-                (black_attacker = pas::increment(black_attacker, 1));
+    termScore = 0;
+    pieces = position.whiteRooks;
+    while ((pieces != 0)) {
+        square = popLowestBit(pieces);
+        if (endgame) score += endgamePieceActivity(position, square, true);
+        rankAttacks = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+        fileAttacks = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
+        attacks = (rankAttacks | fileAttacks);
+        scratchBits = (attacks & (~position.whitePieces));
+        (score = pas::increment(score, petir_ueval::rookMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        whiteRookAttackMap = (whiteRookAttackMap | attacks);
+        if (evaluateBlackKingSafety) {
+            kingZoneHits = (attacks & blackKingZone);
+            (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(kingZoneHits)));
+            if (kingZoneHits != 0) {
+                (blackAttackerCount = pas::increment(blackAttackerCount, 1));
             }
         }
-        (nilai = pas::increment(nilai, petir_ueval::nilai_pos_benteng[pos]));
-        if (((petir_bitboard_mask::rook_attack_up_mask[pos] & data.pawnwhite) == 0)) {
-            (temp = pas::increment(temp, petir_ueval::nilai_semi_open_file[(pos & 7)]));
-            tempb2 = ((petir_evalmask::onside[pos] == petir_evalmask::onside[posrajahitam]) && (!endgame));
-            if (tempb2) {
-                (temp = pas::increment(temp, petir_ueval::nilai_benteng_semi_open_file_dekat_raja));
+        (score = pas::increment(score, petir_ueval::rookSquareBonus[square]));
+        if (((petir_bitboard_mask::rookRayUpMask[square] & position.whitePawns) == 0)) {
+            (termScore = pas::increment(termScore, petir_ueval::semiOpenFileBonus[(square & 7)]));
+            nearEnemyKingWing = ((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[blackKingSquare]) && (!endgame));
+            if (nearEnemyKingWing) {
+                (termScore = pas::increment(termScore, petir_ueval::rookSemiOpenFileNearKingBonus));
             }
-            tempb = false;
-            if (((petir_bitboard_mask::rook_attack_up_mask[pos] & data.rookwhite) != 0)) {
-                (temp = pas::increment(temp, petir_ueval::nilai_benteng_tumpuk_kolom));
-                if (tempb2) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_tumpuk_kolom_semi_open_file_dekat_raja));
+            stackedOnFile = false;
+            if (((petir_bitboard_mask::rookRayUpMask[square] & position.whiteRooks) != 0)) {
+                (termScore = pas::increment(termScore, petir_ueval::doubledRooksBonus));
+                if (nearEnemyKingWing) {
+                    (termScore = pas::increment(termScore, petir_ueval::doubledRooksSemiOpenNearKingBonus));
                 }
-                tempb = true;
+                stackedOnFile = true;
             }
-            if (((verattack & data.queenwhite) != 0)) {
-                (temp = pas::increment(temp, petir_ueval::nilai_benteng_mentri_semi_open));
-                tempb = true;
-                if (tempb2) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_mentri_semi_open_dekat_raja));
+            if (((fileAttacks & position.whiteQueens) != 0)) {
+                (termScore = pas::increment(termScore, petir_ueval::rookQueenSemiOpenFileBonus));
+                stackedOnFile = true;
+                if (nearEnemyKingWing) {
+                    (termScore = pas::increment(termScore, petir_ueval::rookQueenSemiOpenNearKingBonus));
                 }
             }
-            if (((petir_bitboard_mask::rook_attack_up_mask[pos] & data.pawnblack) == 0)) {
-                (temp = pas::increment(temp, petir_ueval::nilai_open_file[(pos & 7)]));
-                if (((petir_bitboard_mask::rook_attack_down_mask[pos] & data.queenwhite) != 0)) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_mentri_open));
+            if (((petir_bitboard_mask::rookRayUpMask[square] & position.blackPawns) == 0)) {
+                (termScore = pas::increment(termScore, petir_ueval::openFileBonus[(square & 7)]));
+                if (((petir_bitboard_mask::rookRayDownMask[square] & position.whiteQueens) != 0)) {
+                    (termScore = pas::increment(termScore, petir_ueval::rookQueenOpenFileBonus));
                 }
-                if (tempb2) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_open_file_dekat_raja));
+                if (nearEnemyKingWing) {
+                    (termScore = pas::increment(termScore, petir_ueval::rookOpenFileNearKingBonus));
                 } else {
-                    if (((petir_evalmask::onside[pos] == petir_evalmask::onside[posrajahitam]) && (!endgame))) {
-                        (temp = pas::increment(temp, pas::shr(petir_ueval::nilai_benteng_open_file_dekat_raja, 1)));
+                    if (((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[blackKingSquare]) && (!endgame))) {
+                        (termScore = pas::increment(termScore, pas::shiftRight(petir_ueval::rookOpenFileNearKingBonus, 1)));
                     }
                 }
-                if (tempb) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_tumpuk_kolom_open));
-                    if (tempb2) {
-                        (temp = pas::increment(temp, petir_ueval::nilai_benteng_tumpuk_kolom_dekat_raja));
+                if (stackedOnFile) {
+                    (termScore = pas::increment(termScore, petir_ueval::doubledRooksOpenFileBonus));
+                    if (nearEnemyKingWing) {
+                        (termScore = pas::increment(termScore, petir_ueval::doubledRooksNearKingBonus));
                     }
                 }
             }
         }
-        if (((pas::shr(pos, 3) == 6) && (((petir_bitboard_mask::rank_mask[6] & data.pawnblack) != 0) || ((petir_bitboard_mask::rank_mask[7] & data.kingblack) != 0)))) {
-            if (((horattack & data.rookwhite) != 0)) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_benteng_tumpuk_baris7));
+        if (((pas::shiftRight(square, 3) == 6) && (((petir_bitboard_mask::rankMask[6] & position.blackPawns) != 0) || ((petir_bitboard_mask::rankMask[7] & position.blackKingBoard) != 0)))) {
+            if (((rankAttacks & position.whiteRooks) != 0)) {
+                (score = pas::increment(score, petir_ueval::doubledRooksSeventhBonus));
             }
-            if (((horattack & data.queenwhite) != 0)) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_benteng_mentri_tumpuk_baris7));
+            if (((rankAttacks & position.whiteQueens) != 0)) {
+                (score = pas::increment(score, petir_ueval::rookQueenSeventhBonus));
             }
-            (nilai = pas::increment(nilai, petir_ueval::nilai_benteng_baris7));
+            (score = pas::increment(score, petir_ueval::rookOnSeventhBonus));
         } else {
-            if (((pas::shr(pos, 3) == 7) && ((petir_bitboard_mask::rank_mask[7] & data.kingblack) != 0))) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_benteng_baris8));
+            if (((pas::shiftRight(square, 3) == 7) && ((petir_bitboard_mask::rankMask[7] & position.blackKingBoard) != 0))) {
+                (score = pas::increment(score, petir_ueval::rookOnEighthBonus));
             }
         }
-        h = (pos & 7);
-        if ((h == 0)) {
-            if ((data.papan[pas::add(pos, 1)] > 0)) {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_benteng_blocked));
+        rookFile = (square & 7);
+        if ((rookFile == 0)) {
+            if ((position.board[pas::add(square, 1)] > 0)) {
+                (score = pas::decrement(score, petir_ueval::blockedRookPenalty));
             }
         } else {
-            if ((h == 7)) {
-                if ((data.papan[pas::sub(pos, 1)] > 0)) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_benteng_blocked));
+            if ((rookFile == 7)) {
+                if ((position.board[pas::sub(square, 1)] > 0)) {
+                    (score = pas::decrement(score, petir_ueval::blockedRookPenalty));
                 }
             } else {
-                if (((data.papan[pas::sub(pos, 1)] > 0) && (data.papan[pas::add(pos, 1)] > 0))) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_benteng_blocked));
+                if (((position.board[pas::sub(square, 1)] > 0) && (position.board[pas::add(square, 1)] > 0))) {
+                    (score = pas::decrement(score, petir_ueval::blockedRookPenalty));
                 }
             }
         }
     }
-    (nilai = pas::increment(nilai, (pas::mul(temp, petir_ueval::nilai_rook_scale[std::min<int>(data.nilai_perwira_putih, 41)]) / 100)));
-    temp = 0;
-    piecepos = data.rookblack;
-    while ((piecepos != 0)) {
+    (score = pas::increment(score, (pas::mul(termScore, petir_ueval::rookScale[std::min<int>(position.whiteNonPawnMaterial, 41)]) / 100)));
+    termScore = 0;
+    pieces = position.blackRooks;
+    while ((pieces != 0)) {
         // Rook scores and attack unions are independent of iteration order.
-        pos = pop_lsb(piecepos);
-        if (endgame) nilai -= endgame_piece_activity(data, pos, false);
-        horattack = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-        verattack = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
-        attack = (horattack | verattack);
-        temp64 = (attack & (~data.blackpieces));
-        (nilai = pas::decrement(nilai, petir_ueval::mobil_rook[count_bits<NativePopcount>(temp64)]));
-        rookbattack = (rookbattack | attack);
-        if (wevalks) {
-            tempk64 = (attack & whitekingattack);
-            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(tempk64)));
-            if (tempk64 != 0) {
-                (white_attacker = pas::increment(white_attacker, 1));
+        square = popLowestBit(pieces);
+        if (endgame) score -= endgamePieceActivity(position, square, false);
+        rankAttacks = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+        fileAttacks = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
+        attacks = (rankAttacks | fileAttacks);
+        scratchBits = (attacks & (~position.blackPieces));
+        (score = pas::decrement(score, petir_ueval::rookMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        blackRookAttackMap = (blackRookAttackMap | attacks);
+        if (evaluateWhiteKingSafety) {
+            kingZoneHits = (attacks & whiteKingZone);
+            (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(kingZoneHits)));
+            if (kingZoneHits != 0) {
+                (whiteAttackerCount = pas::increment(whiteAttackerCount, 1));
             }
         }
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_benteng[pos]));
-        if (((petir_bitboard_mask::rook_attack_down_mask[pos] & data.pawnblack) == 0)) {
-            (temp = pas::increment(temp, petir_ueval::nilai_semi_open_file[(pos & 7)]));
-            tempb2 = ((petir_evalmask::onside[pos] == petir_evalmask::onside[posrajaputih]) && (!endgame));
-            if (tempb2) {
-                (temp = pas::increment(temp, petir_ueval::nilai_benteng_semi_open_file_dekat_raja));
+        (score = pas::decrement(score, petir_ueval::rookSquareBonus[square]));
+        if (((petir_bitboard_mask::rookRayDownMask[square] & position.blackPawns) == 0)) {
+            (termScore = pas::increment(termScore, petir_ueval::semiOpenFileBonus[(square & 7)]));
+            nearEnemyKingWing = ((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[whiteKingSquare]) && (!endgame));
+            if (nearEnemyKingWing) {
+                (termScore = pas::increment(termScore, petir_ueval::rookSemiOpenFileNearKingBonus));
             }
-            tempb = false;
-            if (((verattack & data.queenblack) != 0)) {
-                (temp = pas::increment(temp, petir_ueval::nilai_benteng_mentri_semi_open));
-                if (tempb2) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_mentri_semi_open_dekat_raja));
+            stackedOnFile = false;
+            if (((fileAttacks & position.blackQueens) != 0)) {
+                (termScore = pas::increment(termScore, petir_ueval::rookQueenSemiOpenFileBonus));
+                if (nearEnemyKingWing) {
+                    (termScore = pas::increment(termScore, petir_ueval::rookQueenSemiOpenNearKingBonus));
                 }
-                tempb = true;
+                stackedOnFile = true;
             }
-            if (((petir_bitboard_mask::rook_attack_down_mask[pos] & data.rookblack) != 0)) {
-                (temp = pas::increment(temp, petir_ueval::nilai_benteng_tumpuk_kolom));
-                if (tempb2) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_tumpuk_kolom_semi_open_file_dekat_raja));
+            if (((petir_bitboard_mask::rookRayDownMask[square] & position.blackRooks) != 0)) {
+                (termScore = pas::increment(termScore, petir_ueval::doubledRooksBonus));
+                if (nearEnemyKingWing) {
+                    (termScore = pas::increment(termScore, petir_ueval::doubledRooksSemiOpenNearKingBonus));
                 }
-                tempb = true;
+                stackedOnFile = true;
             }
-            if (((petir_bitboard_mask::rook_attack_down_mask[pos] & data.pawnwhite) == 0)) {
-                (temp = pas::increment(temp, petir_ueval::nilai_open_file[(pos & 7)]));
-                if (((petir_bitboard_mask::rook_attack_up_mask[pos] & data.queenblack) != 0)) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_mentri_open));
+            if (((petir_bitboard_mask::rookRayDownMask[square] & position.whitePawns) == 0)) {
+                (termScore = pas::increment(termScore, petir_ueval::openFileBonus[(square & 7)]));
+                if (((petir_bitboard_mask::rookRayUpMask[square] & position.blackQueens) != 0)) {
+                    (termScore = pas::increment(termScore, petir_ueval::rookQueenOpenFileBonus));
                 }
-                if (tempb2) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_open_file_dekat_raja));
+                if (nearEnemyKingWing) {
+                    (termScore = pas::increment(termScore, petir_ueval::rookOpenFileNearKingBonus));
                 } else {
-                    if (((petir_evalmask::onside[pos] == petir_evalmask::onside[posrajaputih]) && (!endgame))) {
-                        (temp = pas::increment(temp, pas::shr(petir_ueval::nilai_benteng_open_file_dekat_raja, 1)));
+                    if (((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[whiteKingSquare]) && (!endgame))) {
+                        (termScore = pas::increment(termScore, pas::shiftRight(petir_ueval::rookOpenFileNearKingBonus, 1)));
                     }
                 }
-                if (tempb) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_tumpuk_kolom_open));
+                if (stackedOnFile) {
+                    (termScore = pas::increment(termScore, petir_ueval::doubledRooksOpenFileBonus));
                 }
-                if ((tempb && tempb2)) {
-                    (temp = pas::increment(temp, petir_ueval::nilai_benteng_tumpuk_kolom_dekat_raja));
+                if ((stackedOnFile && nearEnemyKingWing)) {
+                    (termScore = pas::increment(termScore, petir_ueval::doubledRooksNearKingBonus));
                 }
             }
         }
-        if (((pas::shr(pos, 3) == 1) && (((petir_bitboard_mask::rank_mask[1] & data.pawnwhite) != 0) || ((petir_bitboard_mask::rank_mask[0] & data.kingwhite) != 0)))) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_benteng_baris7));
-            if (((horattack & data.rookblack) != 0)) {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_benteng_tumpuk_baris7));
+        if (((pas::shiftRight(square, 3) == 1) && (((petir_bitboard_mask::rankMask[1] & position.whitePawns) != 0) || ((petir_bitboard_mask::rankMask[0] & position.whiteKingBoard) != 0)))) {
+            (score = pas::decrement(score, petir_ueval::rookOnSeventhBonus));
+            if (((rankAttacks & position.blackRooks) != 0)) {
+                (score = pas::decrement(score, petir_ueval::doubledRooksSeventhBonus));
             }
-            if (((horattack & data.queenblack) != 0)) {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_benteng_mentri_tumpuk_baris7));
+            if (((rankAttacks & position.blackQueens) != 0)) {
+                (score = pas::decrement(score, petir_ueval::rookQueenSeventhBonus));
             }
         } else {
-            if (((pas::shr(pos, 3) == 0) && ((petir_bitboard_mask::rank_mask[0] & data.kingwhite) != 0))) {
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_benteng_baris8));
+            if (((pas::shiftRight(square, 3) == 0) && ((petir_bitboard_mask::rankMask[0] & position.whiteKingBoard) != 0))) {
+                (score = pas::decrement(score, petir_ueval::rookOnEighthBonus));
             }
         }
-        h = (pos & 7);
-        if ((h == 0)) {
-            if ((data.papan[pas::add(pos, 1)] < 0)) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_benteng_blocked));
+        rookFile = (square & 7);
+        if ((rookFile == 0)) {
+            if ((position.board[pas::add(square, 1)] < 0)) {
+                (score = pas::increment(score, petir_ueval::blockedRookPenalty));
             }
         } else {
-            if ((h == 7)) {
-                if ((data.papan[pas::sub(pos, 1)] < 0)) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_benteng_blocked));
+            if ((rookFile == 7)) {
+                if ((position.board[pas::sub(square, 1)] < 0)) {
+                    (score = pas::increment(score, petir_ueval::blockedRookPenalty));
                 }
             } else {
-                if (((data.papan[pas::sub(pos, 1)] < 0) && (data.papan[pas::add(pos, 1)] < 0))) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_benteng_blocked));
+                if (((position.board[pas::sub(square, 1)] < 0) && (position.board[pas::add(square, 1)] < 0))) {
+                    (score = pas::increment(score, petir_ueval::blockedRookPenalty));
                 }
             }
         }
     }
-    (nilai = pas::decrement(nilai, (pas::mul(temp, petir_ueval::nilai_rook_scale[std::min<int>(data.nilai_perwira_hitam, 41)]) / 100)));
-    piecepos = data.knightwhite;
-    while ((piecepos != 0)) {
-        pos = pop_lsb(piecepos);
-        if (endgame) nilai += endgame_piece_activity(data, pos, true);
-        (nilai = pas::increment(nilai, petir_ueval::nilai_pos_kuda_w[pos]));
-        if ((!early_endgame)) {
-            (nilai = pas::increment(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajahitam], petir_ueval::nilai_tropism_kuda)));
+    (score = pas::decrement(score, (pas::mul(termScore, petir_ueval::rookScale[std::min<int>(position.blackNonPawnMaterial, 41)]) / 100)));
+    pieces = position.whiteKnights;
+    while ((pieces != 0)) {
+        square = popLowestBit(pieces);
+        if (endgame) score += endgamePieceActivity(position, square, true);
+        (score = pas::increment(score, petir_ueval::whiteKnightSquareBonus[square]));
+        if ((!earlyEndgame)) {
+            (score = pas::increment(score, pas::mul(petir_evalmask::closenessHalfTable[square][blackKingSquare], petir_ueval::knightTropismBonus)));
         }
-        attack = petir_bitboard_mask::knightmask[pos];
-        knightwattack = (knightwattack | attack);
-        temp64 = (attack & (~data.whitepieces));
-        (nilai = pas::increment(nilai, petir_ueval::mobil_knight[count_bits<NativePopcount>(temp64)]));
-        if (bevalks) {
-            tempk64 = (attack & blackkingattack);
-            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(tempk64)));
-            if (tempk64 != 0) {
-                (black_attacker = pas::increment(black_attacker, 1));
+        attacks = petir_bitboard_mask::knightAttacks[square];
+        whiteKnightAttackMap = (whiteKnightAttackMap | attacks);
+        scratchBits = (attacks & (~position.whitePieces));
+        (score = pas::increment(score, petir_ueval::knightMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        if (evaluateBlackKingSafety) {
+            kingZoneHits = (attacks & blackKingZone);
+            (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(kingZoneHits)));
+            if (kingZoneHits != 0) {
+                (blackAttackerCount = pas::increment(blackAttackerCount, 1));
             }
         }
-        if (((petir_ueval::nilai_kuda_outpost_w[pos] > 0) && (!endgame))) {
-            if (((petir_evalmask::w_outpost_mask[pos] & data.pawnblack) == 0)) {
-                temp64 = (petir_bitboard_mask::b_pawn_attack[pos] & data.pawnwhite);
-                temp3 = count_bits<NativePopcount>(temp64);
-                pas_temp_3 = temp3;
-                if (((pas_temp_3 == 1))) {
-                    (nilai = pas::increment(nilai, pas::shr(petir_ueval::nilai_kuda_outpost_w[pos], 1)));
+        if (((petir_ueval::whiteKnightOutpostBonus[square] > 0) && (!endgame))) {
+            if (((petir_evalmask::whiteOutpostMask[square] & position.blackPawns) == 0)) {
+                scratchBits = (petir_bitboard_mask::blackPawnAttacks[square] & position.whitePawns);
+                pawnTally = countBits<NativePopcount>(scratchBits);
+                whiteSupporterCase = pawnTally;
+                if (((whiteSupporterCase == 1))) {
+                    (score = pas::increment(score, pas::shiftRight(petir_ueval::whiteKnightOutpostBonus[square], 1)));
                 }
-                else if (((pas_temp_3 == 2))) {
-                    (nilai = pas::increment(nilai, petir_ueval::nilai_kuda_outpost_w[pos]));
+                else if (((whiteSupporterCase == 2))) {
+                    (score = pas::increment(score, petir_ueval::whiteKnightOutpostBonus[square]));
                 }
-                if ((((temp3 > 0) && (data.knightblack == 0)) && ((data.ngajahhitam == 0) || ((data.ngajahhitam == 1) && (petir_ueval::color[petir_bitboard_mask::lastbitp(pas::address(data.bishopblack))] != petir_ueval::color[pos]))))) {
-                    (nilai = pas::increment(nilai, pas::shr(petir_ueval::nilai_kuda_outpost_w[pos], 1)));
-                }
-            }
-        }
-    }
-    piecepos = data.knightblack;
-    while ((piecepos != 0)) {
-        pos = pop_lsb(piecepos);
-        if (endgame) nilai -= endgame_piece_activity(data, pos, false);
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_kuda_b[pos]));
-        if ((!early_endgame)) {
-            (nilai = pas::decrement(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajaputih], petir_ueval::nilai_tropism_kuda)));
-        }
-        attack = petir_bitboard_mask::knightmask[pos];
-        knightbattack = (knightbattack | attack);
-        temp64 = (attack & (~data.blackpieces));
-        (nilai = pas::decrement(nilai, petir_ueval::mobil_knight[count_bits<NativePopcount>(temp64)]));
-        if (wevalks) {
-            tempk64 = (attack & whitekingattack);
-            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(tempk64)));
-            if (tempk64 != 0) {
-                (white_attacker = pas::increment(white_attacker, 1));
-            }
-        }
-        if (((petir_ueval::nilai_kuda_outpost_b[pos] > 0) && (!endgame))) {
-            if (((petir_evalmask::b_outpost_mask[pos] & data.pawnwhite) == 0)) {
-                temp64 = (petir_bitboard_mask::w_pawn_attack[pos] & data.pawnblack);
-                temp3 = count_bits<NativePopcount>(temp64);
-                pas_temp_4 = temp3;
-                if (((pas_temp_4 == 1))) {
-                    (nilai = pas::decrement(nilai, pas::shr(petir_ueval::nilai_kuda_outpost_b[pos], 1)));
-                }
-                else if (((pas_temp_4 == 2))) {
-                    (nilai = pas::decrement(nilai, petir_ueval::nilai_kuda_outpost_b[pos]));
-                }
-                if ((((temp3 > 0) && (data.knightwhite == 0)) && ((data.ngajahputih == 0) || ((data.ngajahputih == 1) && (petir_ueval::color[petir_bitboard_mask::firstbitp(pas::address(data.bishopwhite))] != petir_ueval::color[pos]))))) {
-                    (nilai = pas::decrement(nilai, pas::shr(petir_ueval::nilai_kuda_outpost_b[pos], 1)));
+                if ((((pawnTally > 0) && (position.blackKnights == 0)) && ((position.blackBishopCount == 0) || ((position.blackBishopCount == 1) && (petir_ueval::squareColor[petir_bitboard_mask::lastBit(pas::address(position.blackBishops))] != petir_ueval::squareColor[square]))))) {
+                    (score = pas::increment(score, pas::shiftRight(petir_ueval::whiteKnightOutpostBonus[square], 1)));
                 }
             }
         }
     }
-    piecepos = data.bishopwhite;
-    tempi = 0;
-    while ((piecepos != 0)) {
-        pos = pop_lsb(piecepos);
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        temp64 = (attack & (~data.whitepieces));
-        (nilai = pas::increment(nilai, petir_ueval::mobil_bishop[count_bits<NativePopcount>(temp64)]));
-        if (((((!endgame) && (petir_ueval::nilai_gajah_outpost_w[pos] > 0)) && ((petir_bitboard_mask::b_pawn_attack[pos] & data.pawnwhite) != 0)) && ((petir_evalmask::w_outpost_mask[pos] & data.pawnblack) == 0))) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_gajah_outpost_w[pos]));
+    pieces = position.blackKnights;
+    while ((pieces != 0)) {
+        square = popLowestBit(pieces);
+        if (endgame) score -= endgamePieceActivity(position, square, false);
+        (score = pas::decrement(score, petir_ueval::blackKnightSquareBonus[square]));
+        if ((!earlyEndgame)) {
+            (score = pas::decrement(score, pas::mul(petir_evalmask::closenessHalfTable[square][whiteKingSquare], petir_ueval::knightTropismBonus)));
         }
-        if (bevalks) {
-            tempk64 = (attack & blackkingattack);
-            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(tempk64)));
-            if (tempk64 != 0) {
-                (black_attacker = pas::increment(black_attacker, 1));
+        attacks = petir_bitboard_mask::knightAttacks[square];
+        blackKnightAttackMap = (blackKnightAttackMap | attacks);
+        scratchBits = (attacks & (~position.blackPieces));
+        (score = pas::decrement(score, petir_ueval::knightMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        if (evaluateWhiteKingSafety) {
+            kingZoneHits = (attacks & whiteKingZone);
+            (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(kingZoneHits)));
+            if (kingZoneHits != 0) {
+                (whiteAttackerCount = pas::increment(whiteAttackerCount, 1));
             }
         }
-        bishopwattack = (bishopwattack | attack);
-        (nilai = pas::increment(nilai, petir_ueval::nilai_pos_gajah_w[pos]));
-        if ((!early_endgame)) {
-            if ((petir_evalmask::tabel_distance_gajah[pos][posrajahitam] > 0)) {
-                (tempi = pas::increment(tempi, 1));
-            }
-            (nilai = pas::increment(nilai, pas::mul(petir_evalmask::tabel_distance_gajah[pos][posrajahitam], petir_ueval::nilai_tropism_gajah)));
-        }
-    }
-    if ((tempi == 2)) {
-        (nilai = pas::increment(nilai, petir_ueval::nilai_2bishop_attack_king));
-    }
-    piecepos = data.bishopblack;
-    tempi = 0;
-    while ((piecepos != 0)) {
-        pos = pop_lsb(piecepos);
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_gajah_b[pos]));
-        if ((!early_endgame)) {
-            (nilai = pas::decrement(nilai, pas::mul(petir_evalmask::tabel_distance_gajah[pos][posrajaputih], petir_ueval::nilai_tropism_gajah)));
-            if ((petir_evalmask::tabel_distance_gajah[pos][posrajaputih] > 0)) {
-                (tempi = pas::increment(tempi, 1));
+        if (((petir_ueval::blackKnightOutpostBonus[square] > 0) && (!endgame))) {
+            if (((petir_evalmask::blackOutpostMask[square] & position.whitePawns) == 0)) {
+                scratchBits = (petir_bitboard_mask::whitePawnAttacks[square] & position.blackPawns);
+                pawnTally = countBits<NativePopcount>(scratchBits);
+                blackSupporterCase = pawnTally;
+                if (((blackSupporterCase == 1))) {
+                    (score = pas::decrement(score, pas::shiftRight(petir_ueval::blackKnightOutpostBonus[square], 1)));
+                }
+                else if (((blackSupporterCase == 2))) {
+                    (score = pas::decrement(score, petir_ueval::blackKnightOutpostBonus[square]));
+                }
+                if ((((pawnTally > 0) && (position.whiteKnights == 0)) && ((position.whiteBishopCount == 0) || ((position.whiteBishopCount == 1) && (petir_ueval::squareColor[petir_bitboard_mask::firstBit(pas::address(position.whiteBishops))] != petir_ueval::squareColor[square]))))) {
+                    (score = pas::decrement(score, pas::shiftRight(petir_ueval::blackKnightOutpostBonus[square], 1)));
+                }
             }
         }
-        attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-        attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-        temp64 = (attack & (~data.blackpieces));
-        (nilai = pas::decrement(nilai, petir_ueval::mobil_bishop[count_bits<NativePopcount>(temp64)]));
-        if (((((!endgame) && (petir_ueval::nilai_gajah_outpost_b[pos] > 0)) && ((petir_bitboard_mask::w_pawn_attack[pos] & data.pawnblack) != 0)) && ((petir_evalmask::b_outpost_mask[pos] & data.pawnwhite) == 0))) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_gajah_outpost_b[pos]));
+    }
+    pieces = position.whiteBishops;
+    weightedTerm = 0;
+    while ((pieces != 0)) {
+        square = popLowestBit(pieces);
+        attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+        attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+        scratchBits = (attacks & (~position.whitePieces));
+        (score = pas::increment(score, petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        if (((((!endgame) && (petir_ueval::whiteBishopOutpostBonus[square] > 0)) && ((petir_bitboard_mask::blackPawnAttacks[square] & position.whitePawns) != 0)) && ((petir_evalmask::whiteOutpostMask[square] & position.blackPawns) == 0))) {
+            (score = pas::increment(score, petir_ueval::whiteBishopOutpostBonus[square]));
         }
-        if (wevalks) {
-            tempk64 = (attack & whitekingattack);
-            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(tempk64)));
-            if (tempk64 != 0) {
-                (white_attacker = pas::increment(white_attacker, 1));
+        if (evaluateBlackKingSafety) {
+            kingZoneHits = (attacks & blackKingZone);
+            (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(kingZoneHits)));
+            if (kingZoneHits != 0) {
+                (blackAttackerCount = pas::increment(blackAttackerCount, 1));
             }
         }
-        bishopbattack = (bishopbattack | attack);
+        whiteBishopAttackMap = (whiteBishopAttackMap | attacks);
+        (score = pas::increment(score, petir_ueval::whiteBishopSquareBonus[square]));
+        if ((!earlyEndgame)) {
+            if ((petir_evalmask::bishopProximityTable[square][blackKingSquare] > 0)) {
+                (weightedTerm = pas::increment(weightedTerm, 1));
+            }
+            (score = pas::increment(score, pas::mul(petir_evalmask::bishopProximityTable[square][blackKingSquare], petir_ueval::bishopTropismBonus)));
+        }
     }
-    if ((tempi == 2)) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_2bishop_attack_king));
+    if ((weightedTerm == 2)) {
+        (score = pas::increment(score, petir_ueval::twoBishopsKingAttackBonus));
     }
-    piecepos = data.queenwhite;
-    while ((piecepos != 0)) {
-        pos = pop_lsb(piecepos);
-        (nilai = pas::increment(nilai, petir_ueval::nilai_pos_mentri_w[pos]));
+    pieces = position.blackBishops;
+    weightedTerm = 0;
+    while ((pieces != 0)) {
+        square = popLowestBit(pieces);
+        (score = pas::decrement(score, petir_ueval::blackBishopSquareBonus[square]));
+        if ((!earlyEndgame)) {
+            (score = pas::decrement(score, pas::mul(petir_evalmask::bishopProximityTable[square][whiteKingSquare], petir_ueval::bishopTropismBonus)));
+            if ((petir_evalmask::bishopProximityTable[square][whiteKingSquare] > 0)) {
+                (weightedTerm = pas::increment(weightedTerm, 1));
+            }
+        }
+        attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+        attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+        scratchBits = (attacks & (~position.blackPieces));
+        (score = pas::decrement(score, petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        if (((((!endgame) && (petir_ueval::blackBishopOutpostBonus[square] > 0)) && ((petir_bitboard_mask::whitePawnAttacks[square] & position.blackPawns) != 0)) && ((petir_evalmask::blackOutpostMask[square] & position.whitePawns) == 0))) {
+            (score = pas::decrement(score, petir_ueval::blackBishopOutpostBonus[square]));
+        }
+        if (evaluateWhiteKingSafety) {
+            kingZoneHits = (attacks & whiteKingZone);
+            (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(kingZoneHits)));
+            if (kingZoneHits != 0) {
+                (whiteAttackerCount = pas::increment(whiteAttackerCount, 1));
+            }
+        }
+        blackBishopAttackMap = (blackBishopAttackMap | attacks);
+    }
+    if ((weightedTerm == 2)) {
+        (score = pas::decrement(score, petir_ueval::twoBishopsKingAttackBonus));
+    }
+    pieces = position.whiteQueens;
+    while ((pieces != 0)) {
+        square = popLowestBit(pieces);
+        (score = pas::increment(score, petir_ueval::whiteQueenSquareBonus[square]));
         if ((!endgame)) {
-            attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-            attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-            attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-            attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-            temp64 = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-            tempk64 = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
-            attack = ((attack | tempk64) | temp64);
-            temp264 = (attack & (~data.whitepieces));
-            (nilai = pas::increment(nilai, petir_ueval::mobil_queen[count_bits<NativePopcount>(temp264)]));
-            if (((temp64 & data.rookwhite) != 0)) {
-                if (((temp64 & blackkingattack) != 0)) {
-                    rookwattack = (rookwattack | temp64);
+            attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+            attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+            attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+            attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+            scratchBits = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+            kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
+            attacks = ((attacks | kingZoneHits) | scratchBits);
+            queenMobilitySquares = (attacks & (~position.whitePieces));
+            (score = pas::increment(score, petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)]));
+            if (((scratchBits & position.whiteRooks) != 0)) {
+                if (((scratchBits & blackKingZone) != 0)) {
+                    whiteRookAttackMap = (whiteRookAttackMap | scratchBits);
                 }
             }
-            if (((tempk64 & data.rookwhite) != 0)) {
-                if (((tempk64 & blackkingattack) != 0)) {
-                    rookwattack = (rookwattack | tempk64);
+            if (((kingZoneHits & position.whiteRooks) != 0)) {
+                if (((kingZoneHits & blackKingZone) != 0)) {
+                    whiteRookAttackMap = (whiteRookAttackMap | kingZoneHits);
                 }
             }
-            queenwattack = (queenwattack | attack);
-            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>((attack & blackkingattack))));
-            if ((attack & blackkingattack) != 0) {
-                (black_attacker = pas::increment(black_attacker, 1));
+            whiteQueenAttackMap = (whiteQueenAttackMap | attacks);
+            (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>((attacks & blackKingZone))));
+            if ((attacks & blackKingZone) != 0) {
+                (blackAttackerCount = pas::increment(blackAttackerCount, 1));
             }
         }
-        if ((!early_endgame)) {
-            (nilai = pas::increment(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajahitam], petir_ueval::nilai_tropism_mentri)));
+        if ((!earlyEndgame)) {
+            (score = pas::increment(score, pas::mul(petir_evalmask::closenessHalfTable[square][blackKingSquare], petir_ueval::queenTropismBonus)));
         }
     }
-    piecepos = data.queenblack;
-    while ((piecepos != 0)) {
-        pos = pop_lsb(piecepos);
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_mentri_b[pos]));
+    pieces = position.blackQueens;
+    while ((pieces != 0)) {
+        square = popLowestBit(pieces);
+        (score = pas::decrement(score, petir_ueval::blackQueenSquareBonus[square]));
         if ((!endgame)) {
-            attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-            attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-            attack = petir_bitboard_mask::diaga8h1mask[pos][(pas::shr(data.allpiecesa8h1, petir_bitboard_mask::a8h1shiftmask[pos]) & 255)];
-            attack = (attack | petir_bitboard_mask::diagh8a1mask[pos][(pas::shr(data.allpiecesh8a1, petir_bitboard_mask::h8a1shiftmask[pos]) & 255)]);
-            temp64 = petir_bitboard_mask::horzmask2[pos][(pas::shr(data.allpieces, pas::add((pos & 56), 1)) & 63)];
-            tempk64 = petir_bitboard_mask::vertmask2[pos][(pas::shr(data.allpiecesr90, petir_bitboard_mask::vershiftmask[pos]) & 63)];
-            attack = ((attack | tempk64) | temp64);
-            temp264 = (attack & (~data.blackpieces));
-            (nilai = pas::decrement(nilai, petir_ueval::mobil_queen[count_bits<NativePopcount>(temp264)]));
-            queenbattack = (queenbattack | attack);
-            if (((temp64 & data.rookblack) != 0)) {
-                if (((temp64 & whitekingattack) != 0)) {
-                    rookbattack = (rookbattack | temp64);
+            attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+            attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+            attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+            attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+            scratchBits = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+            kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
+            attacks = ((attacks | kingZoneHits) | scratchBits);
+            queenMobilitySquares = (attacks & (~position.blackPieces));
+            (score = pas::decrement(score, petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)]));
+            blackQueenAttackMap = (blackQueenAttackMap | attacks);
+            if (((scratchBits & position.blackRooks) != 0)) {
+                if (((scratchBits & whiteKingZone) != 0)) {
+                    blackRookAttackMap = (blackRookAttackMap | scratchBits);
                 }
             }
-            if (((tempk64 & data.rookblack) != 0)) {
-                if (((tempk64 & whitekingattack) != 0)) {
-                    rookbattack = (rookbattack | tempk64);
+            if (((kingZoneHits & position.blackRooks) != 0)) {
+                if (((kingZoneHits & whiteKingZone) != 0)) {
+                    blackRookAttackMap = (blackRookAttackMap | kingZoneHits);
                 }
             }
-            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>((attack & whitekingattack))));
-            if ((attack & whitekingattack) != 0) {
-                (white_attacker = pas::increment(white_attacker, 1));
+            (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>((attacks & whiteKingZone))));
+            if ((attacks & whiteKingZone) != 0) {
+                (whiteAttackerCount = pas::increment(whiteAttackerCount, 1));
             }
         }
-        if ((!early_endgame)) {
-            (nilai = pas::decrement(nilai, pas::mul(petir_evalmask::tabel_edistance[pos][posrajaputih], petir_ueval::nilai_tropism_mentri)));
+        if ((!earlyEndgame)) {
+            (score = pas::decrement(score, pas::mul(petir_evalmask::closenessHalfTable[square][whiteKingSquare], petir_ueval::queenTropismBonus)));
         }
     }
     if ((!endgame)) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_raja_w[posrajaputih]));
-        (nilai = pas::increment(nilai, petir_ueval::nilai_pos_raja_b[posrajahitam]));
-        if (infhr) {
-            temp4 = pas::sub(3, giliran);
+        (score = pas::decrement(score, petir_ueval::whiteKingSquarePenalty[whiteKingSquare]));
+        (score = pas::increment(score, petir_ueval::blackKingSquarePenalty[blackKingSquare]));
+        if (opponentPerspective) {
+            scratchValue = pas::sub(3, sideToMove);
         } else {
-            temp4 = giliran;
+            scratchValue = sideToMove;
         }
-        if ((data.queenblack != 0)) {
-            tempk64 = (((((queenwattack | rookwattack) | bishopwattack) | knightwattack) | pawnwattack) & whitekingattack);
-            temp64 = ((whitekingattack & queenbattack) & (~tempk64));
-            attack = (temp64 & bishopbattack);
-            if (((attack != 0) && (temp4 == petir_header::_sisihitam))) {
-                (whitekingpressure = pas::increment(whitekingpressure, 2));
+        if ((position.blackQueens != 0)) {
+            kingZoneHits = (((((whiteQueenAttackMap | whiteRookAttackMap) | whiteBishopAttackMap) | whiteKnightAttackMap) | whitePawnAttackMap) & whiteKingZone);
+            scratchBits = ((whiteKingZone & blackQueenAttackMap) & (~kingZoneHits));
+            attacks = (scratchBits & blackBishopAttackMap);
+            if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
+                (whiteKingPressure = pas::increment(whiteKingPressure, 2));
             }
-            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
-            attack = ((temp64 & knightbattack) & (~tempk64));
-            if (((attack != 0) && (temp4 == petir_header::_sisihitam))) {
-                (whitekingpressure = pas::increment(whitekingpressure, 2));
+            (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+            attacks = ((scratchBits & blackKnightAttackMap) & (~kingZoneHits));
+            if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
+                (whiteKingPressure = pas::increment(whiteKingPressure, 2));
             }
-            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
-            attack = ((temp64 & rookbattack) & (~tempk64));
-            if (((attack != 0) && (temp4 == petir_header::_sisihitam))) {
-                (whitekingpressure = pas::increment(whitekingpressure, 2));
+            (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+            attacks = ((scratchBits & blackRookAttackMap) & (~kingZoneHits));
+            if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
+                (whiteKingPressure = pas::increment(whiteKingPressure, 2));
             }
-            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
-            attack = ((temp64 & pawnbattack) & (~tempk64));
-            (whitekingpressure = pas::increment(whitekingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
-            attack = ((whitekingattack & rookbattack) & bishopbattack);
-            (whitekingpressure = pas::increment(whitekingpressure, count_bits<NativePopcount>(attack)));
-            tempi = petir_ueval::nilai_king_pressure[std::clamp(whitekingpressure, 0, 63)];
-            pas_temp_5 = white_attacker;
-            if (((pas_temp_5 == 1))) {
-                tempi = (tempi / 5);
+            (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+            attacks = ((scratchBits & blackPawnAttackMap) & (~kingZoneHits));
+            (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+            attacks = ((whiteKingZone & blackRookAttackMap) & blackBishopAttackMap);
+            (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(attacks)));
+            weightedTerm = petir_ueval::kingPressurePenalty[std::clamp(whiteKingPressure, 0, 63)];
+            whiteAttackerCase = whiteAttackerCount;
+            if (((whiteAttackerCase == 1))) {
+                weightedTerm = (weightedTerm / 5);
             }
-            else if (((pas_temp_5 == 3))) {
-                tempi = (pas::mul(tempi, 125) / 100);
+            else if (((whiteAttackerCase == 3))) {
+                weightedTerm = (pas::mul(weightedTerm, 125) / 100);
             }
-            else if (((pas_temp_5 == 4))) {
-                tempi = (pas::mul(tempi, 150) / 100);
+            else if (((whiteAttackerCase == 4))) {
+                weightedTerm = (pas::mul(weightedTerm, 150) / 100);
             }
-            else if (((pas_temp_5 == 5))) {
-                tempi = (pas::mul(tempi, 200) / 100);
+            else if (((whiteAttackerCase == 5))) {
+                weightedTerm = (pas::mul(weightedTerm, 200) / 100);
             }
-            (nilai = pas::decrement(nilai, tempi));
+            (score = pas::decrement(score, weightedTerm));
         }
-        if ((data.queenwhite != 0)) {
-            tempk64 = (((((queenbattack | rookbattack) | bishopbattack) | knightbattack) | pawnbattack) & blackkingattack);
-            temp64 = ((blackkingattack & queenwattack) & (~tempk64));
-            attack = (temp64 & bishopwattack);
-            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
-            if (((attack != 0) && (temp4 == petir_header::_sisiputih))) {
-                (blackkingpressure = pas::increment(blackkingpressure, 2));
+        if ((position.whiteQueens != 0)) {
+            kingZoneHits = (((((blackQueenAttackMap | blackRookAttackMap) | blackBishopAttackMap) | blackKnightAttackMap) | blackPawnAttackMap) & blackKingZone);
+            scratchBits = ((blackKingZone & whiteQueenAttackMap) & (~kingZoneHits));
+            attacks = (scratchBits & whiteBishopAttackMap);
+            (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+            if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
+                (blackKingPressure = pas::increment(blackKingPressure, 2));
             }
-            attack = ((temp64 & knightwattack) & (~tempk64));
-            if (((attack != 0) && (temp4 == petir_header::_sisiputih))) {
-                (blackkingpressure = pas::increment(blackkingpressure, 2));
+            attacks = ((scratchBits & whiteKnightAttackMap) & (~kingZoneHits));
+            if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
+                (blackKingPressure = pas::increment(blackKingPressure, 2));
             }
-            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
-            attack = ((temp64 & rookwattack) & (~tempk64));
-            if (((attack != 0) && (temp4 == petir_header::_sisiputih))) {
-                (blackkingpressure = pas::increment(blackkingpressure, 2));
+            (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+            attacks = ((scratchBits & whiteRookAttackMap) & (~kingZoneHits));
+            if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
+                (blackKingPressure = pas::increment(blackKingPressure, 2));
             }
-            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
-            attack = ((temp64 & pawnwattack) & (~tempk64));
-            (blackkingpressure = pas::increment(blackkingpressure, pas::mul(count_bits<NativePopcount>(attack), 2)));
-            attack = ((blackkingattack & rookwattack) & bishopwattack);
-            (blackkingpressure = pas::increment(blackkingpressure, count_bits<NativePopcount>(attack)));
-            tempi = petir_ueval::nilai_king_pressure[std::clamp(blackkingpressure, 0, 63)];
-            pas_temp_6 = black_attacker;
-            if (((pas_temp_6 == 1))) {
-                tempi = (tempi / 5);
+            (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+            attacks = ((scratchBits & whitePawnAttackMap) & (~kingZoneHits));
+            (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+            attacks = ((blackKingZone & whiteRookAttackMap) & whiteBishopAttackMap);
+            (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(attacks)));
+            weightedTerm = petir_ueval::kingPressurePenalty[std::clamp(blackKingPressure, 0, 63)];
+            blackAttackerCase = blackAttackerCount;
+            if (((blackAttackerCase == 1))) {
+                weightedTerm = (weightedTerm / 5);
             }
-            else if (((pas_temp_6 == 3))) {
-                tempi = (pas::mul(tempi, 125) / 100);
+            else if (((blackAttackerCase == 3))) {
+                weightedTerm = (pas::mul(weightedTerm, 125) / 100);
             }
-            else if (((pas_temp_6 == 4))) {
-                tempi = (pas::mul(tempi, 150) / 100);
+            else if (((blackAttackerCase == 4))) {
+                weightedTerm = (pas::mul(weightedTerm, 150) / 100);
             }
-            else if (((pas_temp_6 == 5))) {
-                tempi = (pas::mul(tempi, 200) / 100);
+            else if (((blackAttackerCase == 5))) {
+                weightedTerm = (pas::mul(weightedTerm, 200) / 100);
             }
-            (nilai = pas::increment(nilai, tempi));
+            (score = pas::increment(score, weightedTerm));
         }
     } else {
-        temp64 = (data.pawnblack | data.pawnwhite);
-        if (((petir_evalmask::abcd_mask & temp64) != 0)) {
-            if (((petir_evalmask::efgh_mask & temp64) != 0)) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_pos_raja_endn_w[posrajaputih]));
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_raja_endn_b[posrajahitam]));
+        scratchBits = (position.blackPawns | position.whitePawns);
+        if (((petir_evalmask::filesABCDMask & scratchBits) != 0)) {
+            if (((petir_evalmask::filesEFGHMask & scratchBits) != 0)) {
+                (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
+                (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
             } else {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_pos_raja_endq_w[posrajaputih]));
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_raja_endq_b[posrajahitam]));
+                (score = pas::increment(score, petir_ueval::whiteKingEndgameQueensideBonus[whiteKingSquare]));
+                (score = pas::decrement(score, petir_ueval::blackKingEndgameQueensideBonus[blackKingSquare]));
             }
         } else {
-            if (((petir_evalmask::efgh_mask & temp64) != 0)) {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_pos_raja_endk_w[posrajaputih]));
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_raja_endk_b[posrajahitam]));
+            if (((petir_evalmask::filesEFGHMask & scratchBits) != 0)) {
+                (score = pas::increment(score, petir_ueval::whiteKingEndgameKingsideBonus[whiteKingSquare]));
+                (score = pas::decrement(score, petir_ueval::blackKingEndgameKingsideBonus[blackKingSquare]));
             } else {
-                (nilai = pas::increment(nilai, petir_ueval::nilai_pos_raja_endn_w[posrajaputih]));
-                (nilai = pas::decrement(nilai, petir_ueval::nilai_pos_raja_endn_b[posrajahitam]));
+                (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
+                (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
             }
         }
     }
-    if ((data.pawnwhite == 0)) {
-        (nilai = pas::decrement(nilai, petir_ueval::nilai_no_pawn));
+    if ((position.whitePawns == 0)) {
+        (score = pas::decrement(score, petir_ueval::noPawnPenalty));
     }
-    if ((data.pawnblack == 0)) {
-        (nilai = pas::increment(nilai, petir_ueval::nilai_no_pawn));
+    if ((position.blackPawns == 0)) {
+        (score = pas::increment(score, petir_ueval::noPawnPenalty));
     }
-    if ((data.papan[petir_header::d2] == petir_header::_pionputih)) {
-        if (((data.papan[petir_header::d3] != 0) && (data.papan[petir_header::c1] == petir_header::_gajahputih))) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_pusat_blocked));
+    if ((position.board[petir_header::d2] == petir_header::whitePawn)) {
+        if (((position.board[petir_header::d3] != 0) && (position.board[petir_header::c1] == petir_header::whiteBishop))) {
+            (score = pas::decrement(score, petir_ueval::blockedCenterPawnPenalty));
         }
     }
-    if ((data.papan[petir_header::e2] == petir_header::_pionputih)) {
-        if (((data.papan[petir_header::e3] != 0) && (data.papan[petir_header::f1] == petir_header::_gajahputih))) {
-            (nilai = pas::decrement(nilai, petir_ueval::nilai_pion_pusat_blocked));
+    if ((position.board[petir_header::e2] == petir_header::whitePawn)) {
+        if (((position.board[petir_header::e3] != 0) && (position.board[petir_header::f1] == petir_header::whiteBishop))) {
+            (score = pas::decrement(score, petir_ueval::blockedCenterPawnPenalty));
         }
     }
-    if ((data.papan[petir_header::d7] == petir_header::_pionhitam)) {
-        if (((data.papan[petir_header::d6] != 0) && (data.papan[petir_header::c8] == petir_header::_gajahhitam))) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_pion_pusat_blocked));
+    if ((position.board[petir_header::d7] == petir_header::blackPawn)) {
+        if (((position.board[petir_header::d6] != 0) && (position.board[petir_header::c8] == petir_header::blackBishop))) {
+            (score = pas::increment(score, petir_ueval::blockedCenterPawnPenalty));
         }
     }
-    if ((data.papan[petir_header::e7] == petir_header::_pionhitam)) {
-        if (((data.papan[petir_header::e6] != 0) && (data.papan[petir_header::f8] == petir_header::_gajahhitam))) {
-            (nilai = pas::increment(nilai, petir_ueval::nilai_pion_pusat_blocked));
+    if ((position.board[petir_header::e7] == petir_header::blackPawn)) {
+        if (((position.board[petir_header::e6] != 0) && (position.board[petir_header::f8] == petir_header::blackBishop))) {
+            (score = pas::increment(score, petir_ueval::blockedCenterPawnPenalty));
         }
     }
-    if ((((((data.nilai_perwira_putih == 3) && (data.nilai_perwira_hitam == 3)) && (data.ngajahhitam == 1)) && (data.ngajahputih == 1)) && (petir_ueval::color[petir_bitboard_mask::firstbitp(pas::address(data.bishopblack))] != petir_ueval::color[petir_bitboard_mask::firstbitp(pas::address(data.bishopwhite))]))) {
-        nilai = (nilai / 2);
-        if ((petir_ueval::onlyone(data.pawnblack) && (data.pawnwhite == 0))) {
-            pos = petir_bitboard_mask::firstbitp(pas::address(data.pawnblack));
-            attack = petir_bitboard_mask::rook_attack_down_mask[pos];
-            if (((bishopwattack & attack) != 0)) {
-                nilai = 0;
+    if ((((((position.whiteNonPawnMaterial == 3) && (position.blackNonPawnMaterial == 3)) && (position.blackBishopCount == 1)) && (position.whiteBishopCount == 1)) && (petir_ueval::squareColor[petir_bitboard_mask::firstBit(pas::address(position.blackBishops))] != petir_ueval::squareColor[petir_bitboard_mask::firstBit(pas::address(position.whiteBishops))]))) {
+        score = (score / 2);
+        if ((petir_ueval::hasSingleBit(position.blackPawns) && (position.whitePawns == 0))) {
+            square = petir_bitboard_mask::firstBit(pas::address(position.blackPawns));
+            attacks = petir_bitboard_mask::rookRayDownMask[square];
+            if (((whiteBishopAttackMap & attacks) != 0)) {
+                score = 0;
             }
         } else {
-            if ((petir_ueval::onlyone(data.pawnwhite) && (data.pawnblack == 0))) {
-                pos = petir_bitboard_mask::lastbitp(pas::address(data.pawnwhite));
-                attack = petir_bitboard_mask::rook_attack_up_mask[pos];
-                if (((bishopbattack & attack) != 0)) {
-                    nilai = 0;
+            if ((petir_ueval::hasSingleBit(position.whitePawns) && (position.blackPawns == 0))) {
+                square = petir_bitboard_mask::lastBit(pas::address(position.whitePawns));
+                attacks = petir_bitboard_mask::rookRayUpMask[square];
+                if (((blackBishopAttackMap & attacks) != 0)) {
+                    score = 0;
                 }
             }
         }
     }
-    if ((data.move50count >= 80)) {
-        temp = pas::sub(101, data.move50count);
-        nilai = pas::round((nilai * (static_cast<double>(temp) / (20))));
+    if ((position.fiftyMoveCounter >= 80)) {
+        termScore = pas::sub(101, position.fiftyMoveCounter);
+        score = pas::round((score * (static_cast<double>(termScore) / (20))));
     }
-    if (((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 6))) {
+    if (((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 6))) {
     }
-    if (((npionhitam == 0) && (npionputih == 0))) {
-        if ((((data.nilai_perwira_putih == 3) && (data.nilai_perwira_hitam == 5)) || ((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 3)))) {
-            nilai = (nilai / 4);
+    if (((blackPawnCount == 0) && (whitePawnCount == 0))) {
+        if ((((position.whiteNonPawnMaterial == 3) && (position.blackNonPawnMaterial == 5)) || ((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 3)))) {
+            score = (score / 4);
         } else {
-            if ((((data.nilai_perwira_putih == 12) && (data.nilai_perwira_hitam == 9)) || ((data.nilai_perwira_putih == 9) && (data.nilai_perwira_hitam == 12)))) {
-                nilai = (nilai / 8);
+            if ((((position.whiteNonPawnMaterial == 12) && (position.blackNonPawnMaterial == 9)) || ((position.whiteNonPawnMaterial == 9) && (position.blackNonPawnMaterial == 12)))) {
+                score = (score / 8);
             }
         }
     } else {
-        if (((npionputih == 1) && (npionhitam == 0))) {
-            if (((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 6))) {
-                nilai = (nilai / 2);
+        if (((whitePawnCount == 1) && (blackPawnCount == 0))) {
+            if (((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 6))) {
+                score = (score / 2);
             } else {
-                if (((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 5))) {
-                    nilai = nilai * (nilai > 0 ? rook_pawn_scale(data, realgiliran) : 50) / 100;
+                if (((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 5))) {
+                    score = score * (score > 0 ? rookPawnScale(position, realSideToMove) : 50) / 100;
                 } else {
-                    if (((data.nilai_perwira_putih == 9) && (data.nilai_perwira_hitam == 9))) {
-                        nilai = (nilai / 4);
+                    if (((position.whiteNonPawnMaterial == 9) && (position.blackNonPawnMaterial == 9))) {
+                        score = (score / 4);
                     } else {
-                        if (((data.nilai_perwira_putih == 3) && (data.nilai_perwira_hitam == 3))) {
-                            nilai = (nilai / 2);
+                        if (((position.whiteNonPawnMaterial == 3) && (position.blackNonPawnMaterial == 3))) {
+                            score = (score / 2);
                         } else {
-                            if (((data.nilai_perwira_putih == 3) && ((data.nilai_perwira_hitam == 6) || (data.nilai_perwira_hitam == 5)))) {
-                                nilai = (nilai / 4);
+                            if (((position.whiteNonPawnMaterial == 3) && ((position.blackNonPawnMaterial == 6) || (position.blackNonPawnMaterial == 5)))) {
+                                score = (score / 4);
                             }
                         }
                     }
                 }
             }
         } else {
-            if (((npionputih == 0) && (npionhitam == 1))) {
-                if (((data.nilai_perwira_putih == 6) && (data.nilai_perwira_hitam == 5))) {
-                    nilai = (nilai / 2);
+            if (((whitePawnCount == 0) && (blackPawnCount == 1))) {
+                if (((position.whiteNonPawnMaterial == 6) && (position.blackNonPawnMaterial == 5))) {
+                    score = (score / 2);
                 } else {
-                    if (((data.nilai_perwira_putih == 3) && (data.nilai_perwira_hitam == 3))) {
-                        nilai = (nilai / 2);
+                    if (((position.whiteNonPawnMaterial == 3) && (position.blackNonPawnMaterial == 3))) {
+                        score = (score / 2);
                     } else {
-                        if (((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 5))) {
-                            nilai = nilai * (nilai < 0 ? rook_pawn_scale(data, realgiliran) : 50) / 100;
+                        if (((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 5))) {
+                            score = score * (score < 0 ? rookPawnScale(position, realSideToMove) : 50) / 100;
                         } else {
-                            if (((data.nilai_perwira_putih == 9) && (data.nilai_perwira_hitam == 9))) {
-                                nilai = (nilai / 4);
+                            if (((position.whiteNonPawnMaterial == 9) && (position.blackNonPawnMaterial == 9))) {
+                                score = (score / 4);
                             } else {
-                                if ((((data.nilai_perwira_putih == 6) || (data.nilai_perwira_putih == 5)) && (data.nilai_perwira_hitam == 3))) {
-                                    nilai = (nilai / 4);
+                                if ((((position.whiteNonPawnMaterial == 6) || (position.whiteNonPawnMaterial == 5)) && (position.blackNonPawnMaterial == 3))) {
+                                    score = (score / 4);
                                 }
                             }
                         }
                     }
                 }
             } else {
-                if (((npionputih == 2) && (npionhitam == 0))) {
-                    if ((((data.nilai_perwira_putih == 0) && (data.nilai_perwira_hitam == 6)) && (data.bishopblack != 0))) {
-                        nilai = (nilai / 2);
+                if (((whitePawnCount == 2) && (blackPawnCount == 0))) {
+                    if ((((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 6)) && (position.blackBishops != 0))) {
+                        score = (score / 2);
                     }
                 } else {
-                    if (((npionputih == 0) && (npionhitam == 2))) {
-                        if ((((data.nilai_perwira_putih == 6) && (data.nilai_perwira_hitam == 0)) && (data.bishopwhite != 0))) {
-                            nilai = (nilai / 2);
+                    if (((whitePawnCount == 0) && (blackPawnCount == 2))) {
+                        if ((((position.whiteNonPawnMaterial == 6) && (position.blackNonPawnMaterial == 0)) && (position.whiteBishops != 0))) {
+                            score = (score / 2);
                         }
                     } else {
-                        if ((npionputih == npionhitam)) {
-                            if (((((nppputih == 0) && (npphitam == 0)) && (data.nilai_perwira_putih == 5)) && (data.nilai_perwira_hitam == 5))) {
-                                nilai = (pas::mul(nilai, 75) / 100);
+                        if ((whitePawnCount == blackPawnCount)) {
+                            if (((((whitePassedCount == 0) && (blackPassedCount == 0)) && (position.whiteNonPawnMaterial == 5)) && (position.blackNonPawnMaterial == 5))) {
+                                score = (pas::mul(score, 75) / 100);
                             }
                         }
                     }
@@ -1692,293 +1682,293 @@ std::int32_t eval_impl(const petir_header::tdata& data, std::int32_t giliran, st
             }
         }
     }
-    if (draw2) {
-        nilai = (nilai / 8);
+    if (likelyDraw) {
+        score = (score / 8);
     } else {
     }
-    if ((giliran == petir_header::_sisiputih)) {
-        return_value = nilai;
+    if ((sideToMove == petir_header::whiteSide)) {
+        result = score;
     } else {
-        return_value = pas::negate(nilai);
+        result = pas::negate(score);
     }
-    return return_value;
+    return result;
 }
 
 }
 
-std::int32_t eval(const petir_header::tdata& data, std::int32_t giliran, std::int32_t alpha, std::int32_t beta, bool infhr) {
-    int kpk_score;
-    if (petir_kpk::probe(data, infhr ? 3 - giliran : giliran, kpk_score)) {
-        // infhr supplies the opponent's score perspective after a move.
-        if (!kpk_score) return petir_header::contemp_draw;
-        return infhr ? -kpk_score : kpk_score;
+std::int32_t evaluate(const petir_header::tdata& position, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, bool opponentPerspective) {
+    int kpkScore;
+    if (petir_kpk::probe(position, opponentPerspective ? 3 - sideToMove : sideToMove, kpkScore)) {
+        // opponentPerspective supplies the opponent's score perspective after a move.
+        if (!kpkScore) return petir_header::drawScore;
+        return opponentPerspective ? -kpkScore : kpkScore;
     }
 #if defined(_MSC_VER) && defined(_M_X64)
     // Select once per evaluation instead of dispatching at every bit count.
-    if (has_native_popcount) {
-        return eval_impl<true>(data, giliran, alpha, beta, infhr);
+    if (hasNativePopcount) {
+        return evaluateImpl<true>(position, sideToMove, alpha, beta, opponentPerspective);
     }
 #endif
-    return eval_impl<false>(data, giliran, alpha, beta, infhr);
+    return evaluateImpl<false>(position, sideToMove, alpha, beta, opponentPerspective);
 }
 
 // ueval.pas:2920
-std::int32_t materialvalue(std::int32_t giliran, std::int32_t ms) {
-    std::int32_t return_value{};
-    if ((giliran == petir_header::_sisihitam)) {
-        return_value = pas::negate(ms);
+std::int32_t materialForSide(std::int32_t sideToMove, std::int32_t materialScore) {
+    std::int32_t result{};
+    if ((sideToMove == petir_header::blackSide)) {
+        result = pas::negate(materialScore);
     } else {
-        return_value = ms;
+        result = materialScore;
     }
-    return return_value;
+    return result;
 }
 
 // ueval.pas:494
-bool isdraw(const petir_header::tdata& data, bool& draw2) {
-    bool return_value{};
-    return_value = false;
-    draw2 = false;
-    if (((data.pawnblack | data.pawnwhite) == 0)) {
-        if ((((data.nilai_perwira_putih == 8) && (data.nilai_perwira_hitam == 5)) || ((data.nilai_perwira_putih == 5) && (data.nilai_perwira_hitam == 8)))) {
-            draw2 = true;
-            return return_value;
+bool isMaterialDraw(const petir_header::tdata& position, bool& likelyDraw) {
+    bool result{};
+    result = false;
+    likelyDraw = false;
+    if (((position.blackPawns | position.whitePawns) == 0)) {
+        if ((((position.whiteNonPawnMaterial == 8) && (position.blackNonPawnMaterial == 5)) || ((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 8)))) {
+            likelyDraw = true;
+            return result;
         }
-        if ((data.nilai_perwira_putih == 0)) {
-            if ((data.nilai_perwira_hitam <= 3)) {
-                return_value = true;
-                return return_value;
+        if ((position.whiteNonPawnMaterial == 0)) {
+            if ((position.blackNonPawnMaterial <= 3)) {
+                result = true;
+                return result;
             }
-            if (((data.nilai_perwira_hitam == 6) && (data.bishopblack == 0))) {
-                return_value = true;
-                return return_value;
-            }
-        }
-        if ((data.nilai_perwira_hitam == 0)) {
-            if ((data.nilai_perwira_putih <= 3)) {
-                return_value = true;
-                return return_value;
-            }
-            if (((data.nilai_perwira_putih == 6) && (data.bishopwhite == 0))) {
-                return_value = true;
-                return return_value;
+            if (((position.blackNonPawnMaterial == 6) && (position.blackBishops == 0))) {
+                result = true;
+                return result;
             }
         }
-        if ((data.nilai_perwira_putih == data.nilai_perwira_hitam)) {
-            if ((data.nilai_perwira_putih == 3)) {
-                return_value = true;
-                return return_value;
+        if ((position.blackNonPawnMaterial == 0)) {
+            if ((position.whiteNonPawnMaterial <= 3)) {
+                result = true;
+                return result;
             }
-            if ((((data.nilai_perwira_putih == 6) && (data.bishopblack == 0)) && (data.bishopwhite == 0))) {
-                return_value = true;
-                return return_value;
+            if (((position.whiteNonPawnMaterial == 6) && (position.whiteBishops == 0))) {
+                result = true;
+                return result;
             }
         }
-        if ((((pas::sub(data.nilai_perwira_putih, data.nilai_perwira_hitam) == 3) && (data.nilai_perwira_putih == 6)) && (data.bishopwhite == 0))) {
-            return_value = true;
-            return return_value;
+        if ((position.whiteNonPawnMaterial == position.blackNonPawnMaterial)) {
+            if ((position.whiteNonPawnMaterial == 3)) {
+                result = true;
+                return result;
+            }
+            if ((((position.whiteNonPawnMaterial == 6) && (position.blackBishops == 0)) && (position.whiteBishops == 0))) {
+                result = true;
+                return result;
+            }
         }
-        if ((((pas::sub(data.nilai_perwira_hitam, data.nilai_perwira_putih) == 3) && (data.nilai_perwira_hitam == 6)) && (data.bishopblack == 0))) {
-            return_value = true;
-            return return_value;
+        if ((((pas::sub(position.whiteNonPawnMaterial, position.blackNonPawnMaterial) == 3) && (position.whiteNonPawnMaterial == 6)) && (position.whiteBishops == 0))) {
+            result = true;
+            return result;
+        }
+        if ((((pas::sub(position.blackNonPawnMaterial, position.whiteNonPawnMaterial) == 3) && (position.blackNonPawnMaterial == 6)) && (position.blackBishops == 0))) {
+            result = true;
+            return result;
         }
     }
-    return return_value;
+    return result;
 }
 
 // ueval.pas:595
-bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
-    bool return_value{};
-    std::int32_t a{};
-    std::int32_t pos{};
-    std::int32_t pos2{};
-    std::int32_t pos3{};
-    return_value = false;
-    if (((data.nilai_perwira_putih == 0) && (data.nilai_perwira_hitam == 0))) {
-        if (((data.pawnblack == 0) && petir_ueval::onlyone(data.pawnwhite))) {
-            pos = petir_bitboard_mask::lastbitp(pas::address(data.pawnwhite));
-            if (((pos & 7) == 7)) {
-                pos2 = petir_bitboard_mask::king_square(data.kingblack);
-                if ((((pos2 & 7) >= 6) && (pas::shr(pos2, 3) >= pas::shr(pos, 3)))) {
-                    return_value = true;
-                    return return_value;
+bool isTheoreticalDraw(const petir_header::tdata& position, std::uint8_t sideToMove) {
+    bool result{};
+    std::int32_t otherSquare{};
+    std::int32_t pawnSquare{};
+    std::int32_t defendingKing{};
+    std::int32_t attackingKing{};
+    result = false;
+    if (((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0))) {
+        if (((position.blackPawns == 0) && petir_ueval::hasSingleBit(position.whitePawns))) {
+            pawnSquare = petir_bitboard_mask::lastBit(pas::address(position.whitePawns));
+            if (((pawnSquare & 7) == 7)) {
+                defendingKing = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+                if ((((defendingKing & 7) >= 6) && (pas::shiftRight(defendingKing, 3) >= pas::shiftRight(pawnSquare, 3)))) {
+                    result = true;
+                    return result;
                 }
-                pos3 = petir_bitboard_mask::king_square(data.kingwhite);
-                if ((((((pos3 & 7) == 7) && (pas::shr(pos3, 3) > pas::shr(pos, 3))) && ((pos2 & 7) == 5)) && (pas::shr(pos2, 3) > pas::shr(pos, 3)))) {
-                    return_value = true;
-                    return return_value;
+                attackingKing = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+                if ((((((attackingKing & 7) == 7) && (pas::shiftRight(attackingKing, 3) > pas::shiftRight(pawnSquare, 3))) && ((defendingKing & 7) == 5)) && (pas::shiftRight(defendingKing, 3) > pas::shiftRight(pawnSquare, 3)))) {
+                    result = true;
+                    return result;
                 }
             } else {
-                if (((pos & 7) == 0)) {
-                    pos2 = petir_bitboard_mask::king_square(data.kingblack);
-                    if ((((pos2 & 7) <= 1) && (pas::shr(pos2, 3) >= pas::shr(pos, 3)))) {
-                        return_value = true;
-                        return return_value;
+                if (((pawnSquare & 7) == 0)) {
+                    defendingKing = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+                    if ((((defendingKing & 7) <= 1) && (pas::shiftRight(defendingKing, 3) >= pas::shiftRight(pawnSquare, 3)))) {
+                        result = true;
+                        return result;
                     }
-                    pos3 = petir_bitboard_mask::king_square(data.kingwhite);
-                    if ((((((pos3 & 7) == 0) && (pas::shr(pos3, 3) > pas::shr(pos, 3))) && ((pos2 & 7) == 2)) && (pas::shr(pos2, 3) > pas::shr(pos, 3)))) {
-                        return_value = true;
-                        return return_value;
+                    attackingKing = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+                    if ((((((attackingKing & 7) == 0) && (pas::shiftRight(attackingKing, 3) > pas::shiftRight(pawnSquare, 3))) && ((defendingKing & 7) == 2)) && (pas::shiftRight(defendingKing, 3) > pas::shiftRight(pawnSquare, 3)))) {
+                        result = true;
+                        return result;
                     }
                 }
             }
-            return return_value;
-            pos2 = petir_bitboard_mask::king_square(data.kingblack);
-            pos3 = petir_bitboard_mask::king_square(data.kingwhite);
-            if ((pos2 >= petir_header::a8)) {
-                return return_value;
+            return result;
+            defendingKing = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+            attackingKing = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+            if ((defendingKing >= petir_header::a8)) {
+                return result;
             }
-            if (((pas::sub(pos2, pos) == 8) && (pas::sub(pos, pos3) == 8))) {
-                return_value = true;
-                return return_value;
+            if (((pas::sub(defendingKing, pawnSquare) == 8) && (pas::sub(pawnSquare, attackingKing) == 8))) {
+                result = true;
+                return result;
             }
-            if (((((pos2 < petir_header::a8) && (pas::sub(pos2, pos3) == 16)) && (pas::sub(pos3, pos) == 8)) && (giliran == petir_header::_sisiputih))) {
-                return_value = true;
-                return return_value;
+            if (((((defendingKing < petir_header::a8) && (pas::sub(defendingKing, attackingKing) == 16)) && (pas::sub(attackingKing, pawnSquare) == 8)) && (sideToMove == petir_header::whiteSide))) {
+                result = true;
+                return result;
             }
-            if (((pas::sub(pos2, pos3) == 16) && (giliran == petir_header::_sisiputih))) {
-                return_value = true;
-                return return_value;
+            if (((pas::sub(defendingKing, attackingKing) == 16) && (sideToMove == petir_header::whiteSide))) {
+                result = true;
+                return result;
             }
-            if ((((pas::sub(pos2, pos3) == 16) && (pas::abs(pas::sub(pos, pos3)) == 1)) && (giliran == petir_header::_sisiputih))) {
-                return_value = true;
-                return return_value;
+            if ((((pas::sub(defendingKing, attackingKing) == 16) && (pas::abs(pas::sub(pawnSquare, attackingKing)) == 1)) && (sideToMove == petir_header::whiteSide))) {
+                result = true;
+                return result;
             }
-            if (((pas::sub(pos2, pos) == 15) || (pas::sub(pos2, pos) == 16) || (pas::sub(pos2, pos) == 17))) {
-                if (((pas::sub(pos, pos3) == 8) && (giliran == petir_header::_sisihitam))) {
-                    return_value = true;
-                    return return_value;
+            if (((pas::sub(defendingKing, pawnSquare) == 15) || (pas::sub(defendingKing, pawnSquare) == 16) || (pas::sub(defendingKing, pawnSquare) == 17))) {
+                if (((pas::sub(pawnSquare, attackingKing) == 8) && (sideToMove == petir_header::blackSide))) {
+                    result = true;
+                    return result;
                 }
-                if ((((pas::sub(pos, pos3) == 7) || (pas::sub(pos, pos3) == 8) || (pas::sub(pos, pos3) == 9)) && (giliran == petir_header::_sisiputih))) {
-                    return_value = true;
-                    return return_value;
+                if ((((pas::sub(pawnSquare, attackingKing) == 7) || (pas::sub(pawnSquare, attackingKing) == 8) || (pas::sub(pawnSquare, attackingKing) == 9)) && (sideToMove == petir_header::whiteSide))) {
+                    result = true;
+                    return result;
                 }
             }
         } else {
-            if (((data.pawnwhite == 0) && petir_ueval::onlyone(data.pawnblack))) {
-                pos = petir_bitboard_mask::lastbitp(pas::address(data.pawnblack));
-                if (((pos & 7) == 7)) {
-                    pos2 = petir_bitboard_mask::king_square(data.kingwhite);
-                    if ((((pos2 & 7) >= 6) && (pas::shr(pos2, 3) <= pas::shr(pos, 3)))) {
-                        return_value = true;
-                        return return_value;
+            if (((position.whitePawns == 0) && petir_ueval::hasSingleBit(position.blackPawns))) {
+                pawnSquare = petir_bitboard_mask::lastBit(pas::address(position.blackPawns));
+                if (((pawnSquare & 7) == 7)) {
+                    defendingKing = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+                    if ((((defendingKing & 7) >= 6) && (pas::shiftRight(defendingKing, 3) <= pas::shiftRight(pawnSquare, 3)))) {
+                        result = true;
+                        return result;
                     }
-                    pos3 = petir_bitboard_mask::king_square(data.kingblack);
-                    if ((((((pos3 & 7) == 7) && (pas::shr(pos3, 3) < pas::shr(pos, 3))) && ((pos2 & 7) == 5)) && (pas::shr(pos2, 3) < pas::shr(pos, 3)))) {
-                        return_value = true;
-                        return return_value;
+                    attackingKing = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+                    if ((((((attackingKing & 7) == 7) && (pas::shiftRight(attackingKing, 3) < pas::shiftRight(pawnSquare, 3))) && ((defendingKing & 7) == 5)) && (pas::shiftRight(defendingKing, 3) < pas::shiftRight(pawnSquare, 3)))) {
+                        result = true;
+                        return result;
                     }
                 } else {
-                    if (((pos & 7) == 0)) {
-                        pos2 = petir_bitboard_mask::king_square(data.kingwhite);
-                        if ((((pos2 & 7) <= 1) && (pas::shr(pos2, 3) <= pas::shr(pos, 3)))) {
-                            return_value = true;
-                            return return_value;
+                    if (((pawnSquare & 7) == 0)) {
+                        defendingKing = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+                        if ((((defendingKing & 7) <= 1) && (pas::shiftRight(defendingKing, 3) <= pas::shiftRight(pawnSquare, 3)))) {
+                            result = true;
+                            return result;
                         }
-                        pos3 = petir_bitboard_mask::king_square(data.kingblack);
-                        if ((((((pos3 & 7) == 0) && (pas::shr(pos3, 3) < pas::shr(pos, 3))) && ((pos2 & 7) == 2)) && (pas::shr(pos2, 3) < pas::shr(pos, 3)))) {
-                            return_value = true;
-                            return return_value;
+                        attackingKing = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+                        if ((((((attackingKing & 7) == 0) && (pas::shiftRight(attackingKing, 3) < pas::shiftRight(pawnSquare, 3))) && ((defendingKing & 7) == 2)) && (pas::shiftRight(defendingKing, 3) < pas::shiftRight(pawnSquare, 3)))) {
+                            result = true;
+                            return result;
                         }
                     }
                 }
-                return return_value;
-                pos2 = petir_bitboard_mask::king_square(data.kingblack);
-                pos3 = petir_bitboard_mask::king_square(data.kingwhite);
-                if (((pas::sub(pos, pos3) == 8) && (pas::sub(pos2, pos) == 8))) {
-                    return_value = true;
-                    return return_value;
+                return result;
+                defendingKing = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+                attackingKing = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+                if (((pas::sub(pawnSquare, attackingKing) == 8) && (pas::sub(defendingKing, pawnSquare) == 8))) {
+                    result = true;
+                    return result;
                 }
-                if (((pas::sub(pos2, pos3) == 16) && (giliran == petir_header::_sisihitam))) {
-                    return_value = true;
-                    return return_value;
+                if (((pas::sub(defendingKing, attackingKing) == 16) && (sideToMove == petir_header::blackSide))) {
+                    result = true;
+                    return result;
                 }
             }
         }
     } else {
-        if ((((data.pawnwhite == 0) && (data.nilai_perwira_putih == 3)) && (data.nilai_perwira_hitam == 0))) {
-            if (petir_ueval::onlyone(data.pawnblack)) {
-                if ((data.ngajahputih != 0)) {
-                    a = petir_bitboard_mask::firstbitp(pas::address(data.pawnblack));
-                    pos2 = petir_bitboard_mask::king_square(data.kingwhite);
-                    pos3 = petir_bitboard_mask::king_square(data.kingblack);
-                    if ((a >= petir_header::a3)) {
-                        if ((!(((giliran == petir_header::_sisihitam) && (petir_evalmask::distancemax(a, pos3) == 1)) && (petir_evalmask::distancemax(a, pos2) > 1)))) {
-                            return_value = true;
-                            return return_value;
+        if ((((position.whitePawns == 0) && (position.whiteNonPawnMaterial == 3)) && (position.blackNonPawnMaterial == 0))) {
+            if (petir_ueval::hasSingleBit(position.blackPawns)) {
+                if ((position.whiteBishopCount != 0)) {
+                    otherSquare = petir_bitboard_mask::firstBit(pas::address(position.blackPawns));
+                    defendingKing = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+                    attackingKing = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+                    if ((otherSquare >= petir_header::a3)) {
+                        if ((!(((sideToMove == petir_header::blackSide) && (petir_evalmask::chebyshevDistance(otherSquare, attackingKing) == 1)) && (petir_evalmask::chebyshevDistance(otherSquare, defendingKing) > 1)))) {
+                            result = true;
+                            return result;
                         }
                     }
-                    pos = petir_bitboard_mask::firstbitp(pas::address(data.bishopwhite));
-                    if ((((petir_bitboard_mask::attackbishop(data, pos) & petir_bitboard_mask::rook_attack_down_mask[a]) != 0) || ((petir_bitboard_mask::rook_attack_down_mask[a] & data.kingwhite) != 0))) {
-                        return_value = true;
-                        return return_value;
+                    pawnSquare = petir_bitboard_mask::firstBit(pas::address(position.whiteBishops));
+                    if ((((petir_bitboard_mask::bishopAttacks(position, pawnSquare) & petir_bitboard_mask::rookRayDownMask[otherSquare]) != 0) || ((petir_bitboard_mask::rookRayDownMask[otherSquare] & position.whiteKingBoard) != 0))) {
+                        result = true;
+                        return result;
                     }
                 } else {
-                    a = petir_bitboard_mask::firstbitp(pas::address(data.knightwhite));
-                    pos = petir_bitboard_mask::firstbitp(pas::address(data.pawnblack));
-                    if (((petir_bitboard_mask::knightmask[a] & petir_bitboard_mask::rook_attack_down_mask[pos]) != 0)) {
-                        return_value = true;
-                        return return_value;
+                    otherSquare = petir_bitboard_mask::firstBit(pas::address(position.whiteKnights));
+                    pawnSquare = petir_bitboard_mask::firstBit(pas::address(position.blackPawns));
+                    if (((petir_bitboard_mask::knightAttacks[otherSquare] & petir_bitboard_mask::rookRayDownMask[pawnSquare]) != 0)) {
+                        result = true;
+                        return result;
                     }
                 }
             }
         } else {
-            if ((((data.pawnblack == 0) && (data.nilai_perwira_hitam == 3)) && (data.nilai_perwira_putih == 0))) {
-                if (petir_ueval::onlyone(data.pawnwhite)) {
-                    if ((data.ngajahhitam != 0)) {
-                        a = petir_bitboard_mask::firstbitp(pas::address(data.pawnwhite));
-                        if ((a < petir_header::a7)) {
-                            pos2 = petir_bitboard_mask::king_square(data.kingwhite);
-                            pos3 = petir_bitboard_mask::king_square(data.kingblack);
-                            if ((!(((giliran == petir_header::_sisiputih) && (petir_evalmask::distancemax(a, pos2) == 1)) && (petir_evalmask::distancemax(a, pos3) > 1)))) {
-                                return_value = true;
-                                return return_value;
+            if ((((position.blackPawns == 0) && (position.blackNonPawnMaterial == 3)) && (position.whiteNonPawnMaterial == 0))) {
+                if (petir_ueval::hasSingleBit(position.whitePawns)) {
+                    if ((position.blackBishopCount != 0)) {
+                        otherSquare = petir_bitboard_mask::firstBit(pas::address(position.whitePawns));
+                        if ((otherSquare < petir_header::a7)) {
+                            defendingKing = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
+                            attackingKing = petir_bitboard_mask::kingSquare(position.blackKingBoard);
+                            if ((!(((sideToMove == petir_header::whiteSide) && (petir_evalmask::chebyshevDistance(otherSquare, defendingKing) == 1)) && (petir_evalmask::chebyshevDistance(otherSquare, attackingKing) > 1)))) {
+                                result = true;
+                                return result;
                             }
                         }
                     } else {
-                        a = petir_bitboard_mask::firstbitp(pas::address(data.knightblack));
-                        pos = petir_bitboard_mask::firstbitp(pas::address(data.pawnwhite));
-                        if (((petir_bitboard_mask::knightmask[a] & petir_bitboard_mask::rook_attack_up_mask[pos]) != 0)) {
-                            return_value = true;
-                            return return_value;
+                        otherSquare = petir_bitboard_mask::firstBit(pas::address(position.blackKnights));
+                        pawnSquare = petir_bitboard_mask::firstBit(pas::address(position.whitePawns));
+                        if (((petir_bitboard_mask::knightAttacks[otherSquare] & petir_bitboard_mask::rookRayUpMask[pawnSquare]) != 0)) {
+                            result = true;
+                            return result;
                         }
                     }
                 }
             } else {
-                if ((((data.pawnwhite == 0) && (data.nilai_perwira_hitam == 3)) && (data.nilai_perwira_putih == 0))) {
-                    if ((petir_ueval::onlyone(data.pawnblack) && (data.bishopblack != 0))) {
-                        a = petir_bitboard_mask::firstbitp(pas::address(data.pawnblack));
-                        if (((a & 7) == 7)) {
-                            pos = petir_bitboard_mask::firstbitp(pas::address(data.bishopblack));
-                            if (((petir_ueval::color[pos] != petir_ueval::color[petir_header::h1]) && (((data.papan[petir_header::h1] == petir_header::_rajaputih) || (data.papan[petir_header::g1] == petir_header::_rajaputih)) || (data.papan[petir_header::h2] == petir_header::_rajaputih)))) {
-                                return_value = true;
-                                return return_value;
+                if ((((position.whitePawns == 0) && (position.blackNonPawnMaterial == 3)) && (position.whiteNonPawnMaterial == 0))) {
+                    if ((petir_ueval::hasSingleBit(position.blackPawns) && (position.blackBishops != 0))) {
+                        otherSquare = petir_bitboard_mask::firstBit(pas::address(position.blackPawns));
+                        if (((otherSquare & 7) == 7)) {
+                            pawnSquare = petir_bitboard_mask::firstBit(pas::address(position.blackBishops));
+                            if (((petir_ueval::squareColor[pawnSquare] != petir_ueval::squareColor[petir_header::h1]) && (((position.board[petir_header::h1] == petir_header::whiteKing) || (position.board[petir_header::g1] == petir_header::whiteKing)) || (position.board[petir_header::h2] == petir_header::whiteKing)))) {
+                                result = true;
+                                return result;
                             }
                         } else {
-                            if (((a & 7) == 0)) {
-                                pos = petir_bitboard_mask::firstbitp(pas::address(data.bishopblack));
-                                if (((petir_ueval::color[pos] != petir_ueval::color[petir_header::a1]) && (((data.papan[petir_header::a1] == petir_header::_rajaputih) || (data.papan[petir_header::b1] == petir_header::_rajaputih)) || (data.papan[petir_header::a2] == petir_header::_rajaputih)))) {
-                                    return_value = true;
-                                    return return_value;
+                            if (((otherSquare & 7) == 0)) {
+                                pawnSquare = petir_bitboard_mask::firstBit(pas::address(position.blackBishops));
+                                if (((petir_ueval::squareColor[pawnSquare] != petir_ueval::squareColor[petir_header::a1]) && (((position.board[petir_header::a1] == petir_header::whiteKing) || (position.board[petir_header::b1] == petir_header::whiteKing)) || (position.board[petir_header::a2] == petir_header::whiteKing)))) {
+                                    result = true;
+                                    return result;
                                 }
                             }
                         }
                     }
                 } else {
-                    if ((((data.pawnblack == 0) && (data.nilai_perwira_putih == 3)) && (data.nilai_perwira_hitam == 0))) {
-                        if ((petir_ueval::onlyone(data.pawnwhite) && (data.bishopwhite != 0))) {
-                            a = petir_bitboard_mask::firstbitp(pas::address(data.pawnwhite));
-                            if (((a & 7) == 7)) {
-                                pos = petir_bitboard_mask::firstbitp(pas::address(data.bishopwhite));
-                                if (((petir_ueval::color[pos] != petir_ueval::color[petir_header::h8]) && (((data.papan[petir_header::h8] == petir_header::_rajahitam) || (data.papan[petir_header::g8] == petir_header::_rajahitam)) || (data.papan[petir_header::h7] == petir_header::_rajahitam)))) {
-                                    return_value = true;
-                                    return return_value;
+                    if ((((position.blackPawns == 0) && (position.whiteNonPawnMaterial == 3)) && (position.blackNonPawnMaterial == 0))) {
+                        if ((petir_ueval::hasSingleBit(position.whitePawns) && (position.whiteBishops != 0))) {
+                            otherSquare = petir_bitboard_mask::firstBit(pas::address(position.whitePawns));
+                            if (((otherSquare & 7) == 7)) {
+                                pawnSquare = petir_bitboard_mask::firstBit(pas::address(position.whiteBishops));
+                                if (((petir_ueval::squareColor[pawnSquare] != petir_ueval::squareColor[petir_header::h8]) && (((position.board[petir_header::h8] == petir_header::blackKing) || (position.board[petir_header::g8] == petir_header::blackKing)) || (position.board[petir_header::h7] == petir_header::blackKing)))) {
+                                    result = true;
+                                    return result;
                                 }
                             } else {
-                                if (((a & 7) == 0)) {
-                                    pos = petir_bitboard_mask::firstbitp(pas::address(data.bishopwhite));
-                                    if (((petir_ueval::color[pos] != petir_ueval::color[petir_header::a8]) && (((data.papan[petir_header::a8] == petir_header::_rajahitam) || (data.papan[petir_header::b8] == petir_header::_rajahitam)) || (data.papan[petir_header::a7] == petir_header::_rajahitam)))) {
-                                        return_value = true;
-                                        return return_value;
+                                if (((otherSquare & 7) == 0)) {
+                                    pawnSquare = petir_bitboard_mask::firstBit(pas::address(position.whiteBishops));
+                                    if (((petir_ueval::squareColor[pawnSquare] != petir_ueval::squareColor[petir_header::a8]) && (((position.board[petir_header::a8] == petir_header::blackKing) || (position.board[petir_header::b8] == petir_header::blackKing)) || (position.board[petir_header::a7] == petir_header::blackKing)))) {
+                                        result = true;
+                                        return result;
                                     }
                                 }
                             }
@@ -1988,70 +1978,70 @@ bool anotherdraw(const petir_header::tdata& data, std::uint8_t giliran) {
             }
         }
     }
-    return return_value;
+    return result;
 }
 
 // ueval.pas:483
-std::uint8_t ipopcount(std::uint64_t p) {
-    return static_cast<std::uint8_t>(std::popcount(p));
+std::uint8_t popCount(std::uint64_t bits) {
+    return static_cast<std::uint8_t>(std::popcount(bits));
 }
 
 // ueval.pas:421
-std::int32_t popcount_w(petir_bitboard_mask::pword p) {
-    std::int32_t return_value{};
-    std::int32_t n{};
-    (p = pas::increment(p, 1));
-    n = petir_evalmask::mobmask[(*p)];
-    (p = pas::increment(p, 1));
-    n = pas::add(n, petir_evalmask::mobmask[(*p)]);
-    (p = pas::increment(p, 1));
-    n = pas::add(n, petir_evalmask::mobmask[(*p)]);
-    return_value = n;
-    return return_value;
+std::int32_t popCountUpperWords(petir_bitboard_mask::pword wordPointer) {
+    std::int32_t result{};
+    std::int32_t count{};
+    (wordPointer = pas::increment(wordPointer, 1));
+    count = petir_evalmask::bitCountTable[(*wordPointer)];
+    (wordPointer = pas::increment(wordPointer, 1));
+    count = pas::add(count, petir_evalmask::bitCountTable[(*wordPointer)]);
+    (wordPointer = pas::increment(wordPointer, 1));
+    count = pas::add(count, petir_evalmask::bitCountTable[(*wordPointer)]);
+    result = count;
+    return result;
 }
 
 // ueval.pas:433
-std::int32_t popcount_b(petir_bitboard_mask::pword p) {
-    std::int32_t return_value{};
-    std::int32_t n{};
-    n = petir_evalmask::mobmask[(*p)];
-    (p = pas::increment(p, 1));
-    n = pas::add(n, petir_evalmask::mobmask[(*p)]);
-    (p = pas::increment(p, 1));
-    n = pas::add(n, petir_evalmask::mobmask[(*p)]);
-    return_value = n;
-    return return_value;
+std::int32_t popCountLowerWords(petir_bitboard_mask::pword wordPointer) {
+    std::int32_t result{};
+    std::int32_t count{};
+    count = petir_evalmask::bitCountTable[(*wordPointer)];
+    (wordPointer = pas::increment(wordPointer, 1));
+    count = pas::add(count, petir_evalmask::bitCountTable[(*wordPointer)]);
+    (wordPointer = pas::increment(wordPointer, 1));
+    count = pas::add(count, petir_evalmask::bitCountTable[(*wordPointer)]);
+    result = count;
+    return result;
 }
 
 // ueval.pas:444
-std::uint8_t popcount(petir_bitboard_mask::pword p) {
+std::uint8_t popCountWords(petir_bitboard_mask::pword wordPointer) {
     std::uint64_t bits;
-    std::memcpy(&bits, p, sizeof(bits));
-    return petir_ueval::ipopcount(bits);
+    std::memcpy(&bits, wordPointer, sizeof(bits));
+    return petir_ueval::popCount(bits);
 }
 
 // ueval.pas:456
-bool onlyone(std::uint64_t p) {
-    return p != 0 && (p & (p - 1)) == 0;
+bool hasSingleBit(std::uint64_t bits) {
+    return bits != 0 && (bits & (bits - 1)) == 0;
 }
 
 // ueval.pas:832
-std::int32_t dynamiclazy(const petir_header::tdata& data) {
-    std::int32_t return_value{};
-    return_value = 0;
-    if (((data.queenblack == 0) && (data.queenwhite == 0))) {
-        (return_value = pas::decrement(return_value, 50));
+std::int32_t lazyMarginAdjustment(const petir_header::tdata& position) {
+    std::int32_t result{};
+    result = 0;
+    if (((position.blackQueens == 0) && (position.whiteQueens == 0))) {
+        (result = pas::decrement(result, 50));
     }
-    if (((data.rookblack == 0) && (data.rookwhite == 0))) {
-        (return_value = pas::decrement(return_value, 30));
+    if (((position.blackRooks == 0) && (position.whiteRooks == 0))) {
+        (result = pas::decrement(result, 30));
     }
-    if (((data.knightblack == 0) && (data.knightwhite == 0))) {
-        (return_value = pas::decrement(return_value, 20));
+    if (((position.blackKnights == 0) && (position.whiteKnights == 0))) {
+        (result = pas::decrement(result, 20));
     }
-    if (((data.bishopblack == 0) && (data.bishopwhite == 0))) {
-        (return_value = pas::decrement(return_value, 20));
+    if (((position.blackBishops == 0) && (position.whiteBishops == 0))) {
+        (result = pas::decrement(result, 20));
     }
-    return return_value;
+    return result;
 }
 
 }
