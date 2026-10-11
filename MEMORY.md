@@ -171,3 +171,20 @@ Arena: it has much less overhead per game and plays several games at once.
   X +/- Y, LOS", and the SPRT llr against its bounds. `Warning: Illegal PV
   move` means the engine printed a PV move that is not legal in the position;
   investigate it, because it can mean the search played a wrong move.
+
+## Todo queue
+
+Items the user parked to revisit later. Don't start one without a new request,
+and remove it from this list once it is done.
+
+1. **Stale `mateThreatExtended` in check** (queued 2026-10-11, found during the
+   readability refactor of `src/search.cpp`). In `mainSearch`,
+   `searchStack[ply].mateThreatExtended` is reset to false only when the side
+   to move is not in check. In check it keeps whatever an earlier node at the
+   same ply stored. Child nodes then read the stale value as
+   `searchStack[ply - 1].mateThreatExtended` (the razoring guard, the "line
+   looks quiet" test in reduction step 1, and reduction step 2) and as
+   `searchStack[ply - 2].mateThreatExtended` (reduction step 2). The Delphi
+   original (`original/search.pas`) behaves the same. A fix changes the search,
+   so judge it with the 360-position bench and a cutechess match, not a parity
+   check.
