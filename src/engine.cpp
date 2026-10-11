@@ -16,6 +16,7 @@ void initialize(const std::filesystem::path& books) {
     petir_hashing_header::inithashkey();
     petir_hashing_header::inittable();
     petir_evalmask::initevalmask();
+    petir_usee::init_xray();
     petir_kpk::initialize();
     pas::form1.defaultdir=books.string();
     petir_opening_book::initbook();

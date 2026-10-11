@@ -803,6 +803,7 @@ bool black_menskak3(petir_header::tdata& data, std::uint16_t moves, std::int32_t
 namespace petir_usee {
 std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int32_t sfrom, std::int32_t sto);
 void xray(std::uint64_t& attack, std::int32_t square, std::int32_t target, const petir_header::tdata& data);
+void init_xray();
 }
 namespace petir_valid {
 bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran);
