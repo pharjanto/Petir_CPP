@@ -172,6 +172,21 @@ Arena: it has much less overhead per game and plays several games at once.
   move` means the engine printed a PV move that is not legal in the position;
   investigate it, because it can mean the search played a wrong move.
 
+## Running benchmarks and tests: wait for idle cores
+
+Rule from the user, 2026-10-11: start a benchmark or test only when at least
+two cores are idle. If fewer are idle, wait and tell the user rather than
+starting anyway.
+
+- Several sessions share this machine and the main checkout. Their regression
+  runs, eval diffs and cutechess matches load the CPU, and a timing run made
+  under that load is not valid.
+- Before starting, check the load, for example with PowerShell
+  `Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'petir|python|cutechess' }`
+  for running engines and drivers, and
+  `(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue`
+  for overall CPU use.
+
 ## Todo queue
 
 Items the user parked to revisit later. Don't start one without a new request,
