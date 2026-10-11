@@ -2,6 +2,7 @@
 // see() is restructured for speed, preserving the original board sources,
 // attacker order, signed 8-bit swaps and x-ray behavior.
 #include "petir.hpp"
+#include <algorithm>
 #if defined(_MSC_VER)
 #define PETIR_SEE_INLINE __forceinline
 #else
@@ -79,8 +80,9 @@ inline bool capture(std::uint64_t& attack, ExchangeList& list, std::int32_t& n, 
     }
     list[n] = static_cast<std::int8_t>(piece - list[n - 1]);
     piece = petir_usee::nilai_piece[data.papan[square]];
-    xray_inline(attack, square, sto, data);
+    // Rays exclude their source square, so removal can overlap the x-ray loads.
     attack &= ~petir_bitboard_mask::bit(square);
+    xray_inline(attack, square, sto, data);
     ++n;
     return true;
 }
@@ -97,8 +99,8 @@ std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int
     attack |= (horzmask2[sto][(data.allpieces >> ((sto & 56) + 1)) & 63] | vertmask2[sto][(data.allpiecesr90 >> vershiftmask[sto]) & 63]) & data.rookqueen;
     attack |= (diaga8h1mask[sto][(data.allpiecesa8h1 >> a8h1shiftmask[sto]) & 255] | diagh8a1mask[sto][(data.allpiecesh8a1 >> h8a1shiftmask[sto]) & 255]) & data.bishopqueen;
     list[0] = static_cast<std::int8_t>(petir_usee::nilai_piece[data.papan[sto]]);
-    xray_inline(attack, sfrom, sto, data);
     attack &= ~bit(sfrom);
+    xray_inline(attack, sfrom, sto, data);
     std::int32_t piece = petir_usee::nilai_piece[data.papan[sfrom]];
     std::int32_t n = 1;
     // The opponent recaptures first; the two sides then alternate.
@@ -108,11 +110,12 @@ std::int32_t see(std::int32_t giliran, const petir_header::tdata& data, std::int
         black:
         if (!capture<false>(attack, list, n, piece, sto, data)) break;
     }
-    // Backward pass: each side may stop capturing when that is better for it.
-    for (n = n - 1; n > 0; --n) {
-        if (list[n] > -list[n - 1]) list[n - 1] = static_cast<std::int8_t>(-list[n]);
-    }
-    return list[0];
+    // Each side may stop capturing. Fold the swaps in a register: earlier
+    // entries are read once, and no backward-pass array writes are needed.
+    // min(signed byte, -result) stays in [-128, 127], even for result == -128.
+    std::int32_t result = list[n - 1];
+    while (--n > 0) result = std::min<std::int32_t>(list[n - 1], -result);
+    return result;
 }
 
 // usee.pas:21
