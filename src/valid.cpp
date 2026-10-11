@@ -51,7 +51,9 @@ bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran
                 return return_value;
             }
         }
-        if ((((d == 7) || (d == 9)) && (data.papan[sto] < 0))) {
+        // Not in valid.pas: a capture must change file by one, or an edge pawn
+        // would "capture" around the board (a3 to h3 is d == 7).
+        if ((((d == 7) || (d == 9)) && (pas::abs(pas::sub((sto & 7), (sfrom & 7))) == 1) && (data.papan[sto] < 0))) {
             return_value = true;
             return return_value;
         }
@@ -72,7 +74,7 @@ bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran
                 return return_value;
             }
         }
-        if ((((d == 7) || (d == 9)) && (data.papan[sto] > 0))) {
+        if ((((d == 7) || (d == 9)) && (pas::abs(pas::sub((sto & 7), (sfrom & 7))) == 1) && (data.papan[sto] > 0))) {
             return_value = true;
             return return_value;
         }
