@@ -203,3 +203,73 @@ and remove it from this list once it is done.
    original (`original/search.pas`) behaves the same. A fix changes the search,
    so judge it with the 360-position bench and a cutechess match, not a parity
    check.
+
+### Colour asymmetries (queued 2026-10-12)
+
+Found by a full colour-mirror sweep on 2026-10-11: each position P was compared
+with its mirror (ranks flipped, colours and side to move swapped) over 52,114
+positions. Unless noted, each item is inherited from the Delphi original. Fix
+them one at a time. A fix changes the search, so judge it with the bench and a
+match, not a parity check. Item 5 of that sweep (the bishop-versus-lone-pawn
+draw rule in `isTheoreticalDraw`) was fixed on 2026-10-12.
+
+2. **Black king move scored as a knight move** in `blackMoveThreatensKing`
+   (`src/tools.cpp` ~1194-1196). It uses `knightAttacks[toSquare]`; White
+   (~977-979) uses `kingAttacks`. About 33% of king moves give a different result
+   from their mirror. This feeds `isCalmLateQuietMove` and the `threatenedValue`
+   futility reductions in `src/search.cpp` (~332, ~378-409). Delphi
+   tools.pas:481.
+3. **Black bishop loses its x-ray attacks** in the same function
+   (`src/tools.cpp` ~1133-1134). The x-ray-through-own-pawn/queen map is
+   overwritten by plain diagonal attacks; White keeps it. About 2.7% of bishop
+   moves differ.
+4. **Evasion king-capture score**: White `pieceOrderValue << 14`
+   (`src/movgen.cpp` ~1398), Black `<< 15` (~1667). Evasion scores differ in
+   2,220 of 6,467 in-check positions. Delphi movgen.pas:135 vs 466.
+5. **Bare-king passer "rule 2" exception** in `src/ueval.cpp`: Black tests its
+   own king (`blackKingSquare >= a3`, ~982), White tests the enemy king
+   (`blackKingSquare <= h6`, ~1178), which never holds, so White never takes the
+   exception. Example `8/8/8/7p/7P/4k3/2Kp4/8 w - - 0 1` scores -290, its mirror
+   -920. The comment at ~966-971 describes it. Delphi ueval.pas:1816 vs 2071.
+   Four pawn endgames still show a colour gap in eval after a move, for example
+   `8/1K1Pk3/8/8/5p1P/8/8/8 w`; they are probably this item, not yet confirmed.
+6. **Generator scan order**: Black piece loops mostly use `move_bits<true>`
+   (legacy 16-bit-word order), White `move_bits<false>` (ascending). Move sets
+   and scores match, but `selectBestMove` takes the first maximum, so ties come
+   out in a different order (783 quiet, 1,382 capture, 1,814 capture+push and
+   8,500 capture+check lists out of 45,647). This is the main structural reason
+   mirrored searches differ. It touches move ordering, so do it in the
+   `build/searches` worktree.
+7. **WinBoard clock, C++ only** (`src/main.cpp` ~250, side set at ~276): after
+   `new`, computerSide is Black, so `time`/`otim` sent before the first `go` as
+   White are stored in swapped slots and the first move budgets from the
+   opponent's clock. `tighten` still caps with the engine's own time. UCI is not
+   affected.
+8. **Book-learning weights differ by colour** (`src/opening_book.cpp`
+   ~443-490): upset wins add +3/+1 (White) vs +4/+2/+1 (Black); loss penalties
+   trigger at 200/100 vs 250/150 Elo. Only `--learn-pgn` uses it. It may be
+   deliberate, so ask the user before changing it.
+9. **Pinned en passant rejected (not a colour bug, both sides)**:
+   `exposesWhiteKing` / `exposesBlackKing` (`src/tools.cpp` ~217-222, ~387-392)
+   compute the en passant to-square in the opponent's direction, so search and
+   quiescence reject a legal en passant by a pawn pinned along the capture
+   diagonal. The root is unaffected. Examples:
+   `6k1/6b1/8/4Pp2/8/8/8/K7 w - f6 0 1`, `k7/8/8/8/4pP2/8/6B1/6K1 b - f3 0 1`.
+
+Harmless, no action needed: `lastCaptureType` is 10 after a White promotion
+and 11 after a Black one (`src/makemove.cpp` ~110, ~279); every reader treats
+them the same.
+
+Mirror harness, to re-check after each fix: compile `src/*.cpp` minus
+`main.cpp`/`selftest.cpp` (unity build) with a driver that plays random games
+and random endgames. On each position and its mirror, the driver compares eval
+(full, null and lazy windows), `isTheoreticalDraw`, SEE, each generator's move
+and score set and picked order, `moveThreatensKing`, legality and `makeMove`.
+The mirror must copy `whiteCastleType`/`blackCastleType` swapped, because FEN
+does not carry them. A copy lives in `build/colour-mirror` (git-ignored):
+`harness.cpp`, `CMakeLists.txt`, `targeted.fen` and the post-fix
+`result5.txt`. Copy `src/` into `build/colour-mirror/src`, configure with
+CMake, and build Release. Run `symmetry_harness.exe 40 < targeted.fen` for the
+full run, or `symmetry_harness.exe show "<fen>" ...` to print a FEN's eval next
+to its mirror's. Write `targeted.fen` to stdin without a byte-order mark,
+because PowerShell piping adds one and the first FEN is then dropped.
