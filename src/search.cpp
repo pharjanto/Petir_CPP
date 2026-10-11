@@ -15,6 +15,11 @@ static std::int32_t history_bonus(std::int32_t rlevel) {return std::min(pas::mul
 // The change for a bonus or penalty: it moves the entry toward +history_max or
 // -history_max and shrinks as the entry nears that limit.
 static std::int32_t history_step(std::int32_t entry, std::int32_t bonus) {return bonus - entry * std::abs(bonus) / petir_header::history_max;}
+// SEE pruning of quiet moves: up to this many plies left, a quiet move whose SEE
+// (in pawns) is below the margin is skipped. The margin grows with the square of
+// the plies left: 0 up to 2 plies (any loss), -1 at 3, -2 at 4, -3 at 5, -4 at 6.
+static constexpr std::int32_t see_quiet_max_rlevel = 6;
+static std::int32_t see_quiet_margin(std::int32_t rlevel) {return -(rlevel * rlevel / 8);}
 // The continuation-history table of the move made at ply d; none above the
 // root or after a null move.
 static petir_header::piece_to_history* continuation(std::int32_t d) {
@@ -283,6 +288,19 @@ std::int32_t mainsearch(std::int32_t level, std::int32_t giliran, std::int32_t a
                         continue;
                     }
                 }
+            }
+            // SEE pruning of quiet moves (as in Stockfish): at non-PV nodes with
+            // few plies left, skip a late quiet move that loses material by SEE,
+            // unless it gives check. Hash and killer moves are never pruned, and
+            // at least one move must already have a non-mated score.
+            if ((fase == petir_header::_othermoves) && (rlevel <= see_quiet_max_rlevel)
+                && (nodetype != petir_search::node_pv) && (pas::sub(beta, alpha) == 1)
+                && (legalmove > 0) && !mte && (g > pas::add(pas::negate(petir_header::_nilai_raja), 100))
+                && (sto <= 63)
+                && (petir_usee::see(giliran, data, (moves & 127), sto) < see_quiet_margin(rlevel))
+                && !petir_tools::menskak2(data, giliran, moves)) {
+                (legalmove = pas::increment(legalmove, 1));
+                continue;
             }
         } else {
             if (petir_next::nextevasion(giliran, data, moves, fase, hmoves, curmovecap, jml, jmlcap, ml)) {
