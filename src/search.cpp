@@ -674,10 +674,7 @@ void penalise_quiets(std::int32_t rlevel, std::int32_t giliran, const petir_head
 // search.pas:51
 void addhistory(std::int32_t rlevel, std::int32_t depth, std::int32_t moves, std::int32_t giliran, std::int32_t piece) {
     petir_search::update_history(giliran, piece, (pas::shr(moves, 7) & 127), history_bonus(rlevel));
-    if ((petir_header::killer0[depth] != moves)) {
-        petir_header::killer1[depth] = petir_header::killer0[depth];
-        petir_header::killer0[depth] = moves;
-    }
+    petir_header::killer0[depth] = moves;
 }
 
 }

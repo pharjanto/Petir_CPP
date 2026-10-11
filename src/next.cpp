@@ -158,48 +158,11 @@ bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& dat
         }
     }
     killer11: ;
-    if ((fase == petir_header::_killermoves2)) {
-        (fase = pas::increment(fase, 1));
-        if (((petir_header::killer1[depth] != hmoves) && petir_valid::isvalid(data, petir_header::killer1[depth], giliran))) {
-            pas_temp_2 = pas::sub(curmovecap, 1);
-            for (a = 1; a <= pas_temp_2; ++a) {
-                if ((petir_header::killer1[depth] == mlcap[a].moves)) {
-                    goto killer21;
-                }
-            }
-            moves = petir_header::killer1[depth];
-            return return_value;
-        }
+    // One killer per ply: after killer0 the quiet moves follow, ordered by
+    // history.
+    if (((fase >= petir_header::_killermoves2) && (fase <= petir_header::_killermoves4))) {
+        fase = petir_header::_othermoves;
     }
-    killer21: ;
-    if ((fase == petir_header::_killermoves3)) {
-        (fase = pas::increment(fase, 1));
-        if (((((petir_header::killer0[pas::sub(depth, 2)] != hmoves) && petir_valid::isvalid(data, petir_header::killer0[pas::sub(depth, 2)], giliran)) && (petir_header::killer0[pas::sub(depth, 2)] != petir_header::killer0[depth])) && (petir_header::killer0[pas::sub(depth, 2)] != petir_header::killer1[depth]))) {
-            pas_temp_3 = pas::sub(curmovecap, 1);
-            for (a = 1; a <= pas_temp_3; ++a) {
-                if ((petir_header::killer0[pas::sub(depth, 2)] == mlcap[a].moves)) {
-                    goto killer31;
-                }
-            }
-            moves = petir_header::killer0[pas::sub(depth, 2)];
-            return return_value;
-        }
-    }
-    killer31: ;
-    if ((fase == petir_header::_killermoves4)) {
-        (fase = pas::increment(fase, 1));
-        if (((((petir_header::killer1[pas::sub(depth, 2)] != hmoves) && petir_valid::isvalid(data, petir_header::killer1[pas::sub(depth, 2)], giliran)) && (petir_header::killer1[pas::sub(depth, 2)] != petir_header::killer0[depth])) && (petir_header::killer1[pas::sub(depth, 2)] != petir_header::killer1[depth]))) {
-            pas_temp_4 = pas::sub(curmovecap, 1);
-            for (a = 1; a <= pas_temp_4; ++a) {
-                if ((petir_header::killer1[pas::sub(depth, 2)] == mlcap[a].moves)) {
-                    goto killer41;
-                }
-            }
-            moves = petir_header::killer1[pas::sub(depth, 2)];
-            return return_value;
-        }
-    }
-    killer41: ;
     if ((fase == petir_header::_othermoves)) {
         if ((curmovenoncap == 0)) {
             if ((giliran == petir_header::_sisiputih)) {
@@ -228,7 +191,7 @@ bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& dat
             if ((curmovenoncap <= 20)) {
                 petir_next::nextbest_max(ml, curmovenoncap, jmlnoncap);
             }
-            while ((((((ml[curmovenoncap].moves == hmoves) || (ml[curmovenoncap].moves == petir_header::killer0[depth])) || (ml[curmovenoncap].moves == petir_header::killer1[depth])) || (ml[curmovenoncap].moves == petir_header::killer0[pas::sub(depth, 2)])) || (ml[curmovenoncap].moves == petir_header::killer1[pas::sub(depth, 2)]))) {
+            while (((ml[curmovenoncap].moves == hmoves) || (ml[curmovenoncap].moves == petir_header::killer0[depth]))) {
                 (curmovenoncap = pas::increment(curmovenoncap, 1));
                 if ((curmovenoncap > jmlnoncap)) {
                     (fase = pas::increment(fase, 1));
@@ -247,7 +210,7 @@ bool nextmove(std::int32_t giliran, std::int32_t depth, petir_header::tdata& dat
     if ((fase == petir_header::_badcaps)) {
         if ((curmovecap <= jmlcap)) {
             petir_next::nextbest_max(mlcap, curmovecap, jmlcap);
-            while ((((((mlcap[curmovecap].moves == hmoves) || (mlcap[curmovecap].moves == petir_header::killer0[depth])) || (mlcap[curmovecap].moves == petir_header::killer1[depth])) || (mlcap[curmovecap].moves == petir_header::killer0[pas::sub(depth, 2)])) || (mlcap[curmovecap].moves == petir_header::killer1[pas::sub(depth, 2)]))) {
+            while (((mlcap[curmovecap].moves == hmoves) || (mlcap[curmovecap].moves == petir_header::killer0[depth]))) {
                 (curmovecap = pas::increment(curmovecap, 1));
                 if ((curmovecap > jmlcap)) {
                     (fase = pas::increment(fase, 1));
