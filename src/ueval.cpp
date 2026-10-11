@@ -2034,8 +2034,8 @@ bool isMaterialDraw(const petir_header::tdata& position, bool& likelyDraw) {
 //  - king and rook pawn against king: the defending king reaches the corner
 //    in front of the pawn, or the attacking king is stuck on the rook file in
 //    front of its pawn and held there by the defender;
-//  - a minor piece against a lone pawn (the White-minor case also checks the
-//    bishop or king covering the pawn's path; the Black-minor case does not);
+//  - a minor piece against a lone pawn, including the bishop or the minor
+//    side's king covering the pawn's path;
 //  - bishop + rook pawn against a bare king in the promotion corner, with the
 //    bishop not covering the promotion square.
 bool isTheoreticalDraw(const petir_header::tdata& position, std::uint8_t sideToMove) {
@@ -2192,6 +2192,12 @@ bool isTheoreticalDraw(const petir_header::tdata& position, std::uint8_t sideToM
                                 result = true;
                                 return result;
                             }
+                        }
+                        pawnSquare = petir_bitboard_mask::firstBit(pas::address(position.blackBishops));
+                        // The bishop (pawnSquare holds its square here) or Black's king covers the pawn's path.
+                        if ((((petir_bitboard_mask::bishopAttacks(position, pawnSquare) & petir_bitboard_mask::rookRayUpMask[otherSquare]) != 0) || ((petir_bitboard_mask::rookRayUpMask[otherSquare] & position.blackKingBoard) != 0))) {
+                            result = true;
+                            return result;
                         }
                     } else {
                         otherSquare = petir_bitboard_mask::firstBit(pas::address(position.blackKnights));
