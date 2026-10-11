@@ -224,6 +224,61 @@ int self_test() {
                   && std::memcmp(&exchange,&unchanged,sizeof(exchange))==0,
                   "SEE workspace optimization preserves frozen exchange scores and input");
     }
+    {
+        // Search can capture a king without clearing its piece board. The
+        // phantom king must still participate, valued by papan as a pawn.
+        auto exchange=from_fen("8/8/8/8/8/7k/6P1/K6R w - - 0 1",stm);
+        petir_makemove::makewhitemove(g2 | (h3 << 7),exchange);
+        check(exchange.kingblack==petir_bitboard_mask::bit(h3)
+              && !(exchange.blackpieces & exchange.kingblack) && exchange.papan[h3]==_pionputih
+              && petir_usee::see(_sisiputih,exchange,h1,h2)==-5,
+              "SEE preserves the phantom king recapture after a pseudo-legal king capture");
+    }
+    {
+        // Independent ray walker: exercise all square pairs with deliberately
+        // unrelated rotated occupancies and slider boards. It includes sliders
+        // absent from occupancy and blockers absent from the slider boards.
+        using namespace petir_bitboard_mask;
+        auto walked_xray=[](std::uint64_t attack,int square,int target,const Position& p) {
+            const int dx=(square & 7)-(target & 7),dy=(square >> 3)-(target >> 3);
+            if((dx==0 && dy==0) || (dx!=0 && dy!=0 && std::abs(dx)!=std::abs(dy)))return attack;
+            const int sx=(dx>0)-(dx<0),sy=(dy>0)-(dy<0),step=sx+8*sy;
+            const auto sliders=(dx==0 || dy==0)?p.rookqueen:p.bishopqueen;
+            int x=(square & 7)+sx,y=(square >> 3)+sy;
+            while(x>=0 && x<8 && y>=0 && y<8) {
+                const int behind=8*y+x;
+                attack|=bit(behind) & sliders;
+                const bool occupied=dy==0 ? (p.allpieces & bit(behind))!=0
+                    : dx==0 ? (p.allpiecesr90 & bit2nmask90[behind])!=0
+                    : std::abs(step)==7 ? (p.allpiecesa8h1 & bit2nmaska8h1[behind])!=0
+                    : (p.allpiecesh8a1 & bit2nmaskh8a1[behind])!=0;
+                if(occupied)break;
+                x+=sx;y+=sy;
+            }
+            return attack;
+        };
+        std::uint64_t see_seed=UINT64_C(0x951aadfa20261011);
+        auto next_board=[&]() {
+            see_seed^=see_seed<<13;see_seed^=see_seed>>7;see_seed^=see_seed<<17;
+            return see_seed;
+        };
+        bool xrays_match=true;
+        for(int pattern=0;pattern<64;++pattern) {
+            Position exchange{};
+            exchange.allpieces=next_board();exchange.allpiecesr90=next_board();
+            exchange.allpiecesa8h1=next_board();exchange.allpiecesh8a1=next_board();
+            exchange.rookqueen=next_board();exchange.bishopqueen=next_board();
+            if(pattern<2)exchange.allpieces=exchange.allpiecesr90=exchange.allpiecesa8h1=exchange.allpiecesh8a1
+                =pattern==0?0:UINT64_MAX;
+            if(pattern<4)exchange.rookqueen=exchange.bishopqueen=(pattern & 1)?UINT64_MAX:0;
+            for(int target=0;target<64;++target)for(int square=0;square<64;++square) {
+                const auto initial=next_board();auto actual=initial;
+                petir_usee::xray(actual,square,target,exchange);
+                if(actual!=walked_xray(initial,square,target,exchange))xrays_match=false;
+            }
+        }
+        check(xrays_match,"SEE x-rays match a ray walker for all directions and independent occupancy fields");
+    }
     // Frozen pre-optimization order includes targets in different 16-bit words
     // and two en passant sources interleaved with ordinary pawn captures.
     for(const auto& fixture:std::array<std::array<const char*,3>,2>{{
