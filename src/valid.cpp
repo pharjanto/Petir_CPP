@@ -1,6 +1,18 @@
 // Faithful translation of valid.pas; Delphi source is in original/.
 #include "petir.hpp"
 namespace petir_valid {
+// Not in valid.pas: a pawn move to the last rank must name a promotion the
+// generators make (queen or knight), and any other pawn move must name none.
+// Otherwise a killer such as a rook's c7c8 passes for a pawn on c7; makemove
+// promotes it to a queen, but the bare move is not a legal move, so it went
+// out as an illegal UCI PV and the engine dropped its search result.
+static bool pawn_promotion_matches(std::int32_t sto, std::int32_t moves) {
+    const std::int32_t promosi = (pas::shr(moves, 14) & 7);
+    if (((pas::shr(sto, 3) == 7) || (pas::shr(sto, 3) == 0))) {
+        return ((promosi == petir_header::promosi_mentri) || (promosi == petir_header::promosi_kuda));
+    }
+    return (promosi == 0);
+}
 // valid.pas:10
 bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran) {
     bool return_value{};
@@ -40,6 +52,11 @@ bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran
         return return_value;
     }
     piece2 = pas::abs(piece);
+    // Not in valid.pas: only a pawn move may name a promotion (the slider
+    // checks below already demanded this; the knight and king ones did not).
+    if (((piece2 != petir_header::_pionputih) && ((pas::shr(moves, 14) & 7) != 0))) {
+        return return_value;
+    }
     if ((sto <= 63)) {
         bitto = petir_bitboard_mask::bit(sto);
     }
@@ -50,6 +67,9 @@ bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran
                 return_value = true;
                 return return_value;
             }
+        }
+        if (((sto <= 63) && !pawn_promotion_matches(sto, moves))) {
+            return return_value;
         }
         // Not in valid.pas: a capture must change file by one, or an edge pawn
         // would "capture" around the board (a3 to h3 is d == 7).
@@ -73,6 +93,9 @@ bool isvalid(petir_header::tdata& data, std::int32_t moves, std::int32_t giliran
                 return_value = true;
                 return return_value;
             }
+        }
+        if (((sto <= 63) && !pawn_promotion_matches(sto, moves))) {
+            return return_value;
         }
         if ((((d == 7) || (d == 9)) && (pas::abs(pas::sub((sto & 7), (sfrom & 7))) == 1) && (data.papan[sto] > 0))) {
             return_value = true;
