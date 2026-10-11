@@ -106,6 +106,7 @@ The legacy PGN learner is retained as `--learn-pgn FILE`. It keeps the original 
 | Location | Purpose |
 |---|---|
 | `src/search.cpp`, `root.cpp`, `uiterative.cpp`, `next.cpp` | Original search and move ordering |
+| `src/search_tools.cpp`, `search_history.cpp` | Main-search helpers: move encoding and legality tests; history heuristics |
 | `src/quiescence.cpp` | Quiescence search and its stalemate legality probe |
 | `src/ueval.cpp`, `evalmask.cpp`, `usee.cpp` | Original full evaluation and SEE |
 | `src/movgen.cpp`, `makemove.cpp`, `bitboard*.cpp`, `tools.cpp` | Original board and move routines |

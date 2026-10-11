@@ -16,7 +16,7 @@ add_executable(petir
     src/header.cpp src/bitboard_mask.cpp src/bitboard.cpp src/udata.cpp
     src/evalmask.cpp src/makemove.cpp src/movgen.cpp src/tools.cpp src/usee.cpp
     src/valid.cpp src/hashing_header.cpp src/hashing.cpp src/repetition.cpp
-    src/next.cpp src/ueval.cpp src/kpk.cpp src/search.cpp src/quiescence.cpp src/root.cpp src/uiterative.cpp
+    src/next.cpp src/ueval.cpp src/kpk.cpp src/search_tools.cpp src/search_history.cpp src/search.cpp src/quiescence.cpp src/root.cpp src/uiterative.cpp
     src/customboard.cpp src/notation.cpp src/pv.cpp src/opening_book.cpp
     src/etc.cpp src/undoredo.cpp src/engine.cpp src/time_manager.cpp src/main.cpp src/selftest.cpp)
 target_link_libraries(petir PRIVATE Threads::Threads)
