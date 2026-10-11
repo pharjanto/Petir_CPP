@@ -102,6 +102,9 @@ std::int32_t quiescenceSearch(std::int32_t sideToMove, std::int32_t alpha, std::
     result = false;
     return result;
 };
+    auto isQueenPromotion = [](std::int32_t move) -> bool {
+        return (pas::shiftRight(move, 14) & 7) == petir_header::queenPromotion;
+    };
 
     // Portability guards: stop safely and keep the original 64-ply arrays in bounds.
     if (petir::searchShouldStop()) return 0;
@@ -187,7 +190,21 @@ std::int32_t quiescenceSearch(std::int32_t sideToMove, std::int32_t alpha, std::
         toSquare = (pas::shiftRight(moveList[moveIndex].move, 7) & 127);
         if ((!inCheck)) {
             if ((moveList[moveIndex].score < 0)) {
-                break;
+                // As in Stockfish, queen promotions are searched even when SEE
+                // says they lose; every other move with a negative score is skipped.
+                if (!isQueenPromotion(moveList[moveIndex].move)) {
+                    bool queenPromotionRemains = false;
+                    for (int laterIndex = moveIndex + 1; laterIndex <= moveCount; ++laterIndex) {
+                        if (isQueenPromotion(moveList[laterIndex].move)) {
+                            queenPromotionRemains = true;
+                            break;
+                        }
+                    }
+                    if (!queenPromotionRemains) {
+                        break;
+                    }
+                    continue;
+                }
             }
             if ((((alpha == pas::sub(beta, 1)) && (toSquare <= 63)) && (position.board[toSquare] != 0))) {
                 futilityScore = pas::add(pas::add(standPat, petir_header::pieceValue[position.board[toSquare]]), 70);
