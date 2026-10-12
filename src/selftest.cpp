@@ -459,6 +459,20 @@ int selfTest() {
             check(std::memcmp(&position,&saved,sizeof(position))==0,"connected passers leave input unchanged");
         }
     }
+    // The evaluation finds passed pawns for the whole board at once with file
+    // fills. That equals the per-pawn mask test only if each passed-pawn mask holds
+    // exactly the squares in front of the pawn on its own and the neighbouring files.
+    bool passedMasksMatch=true,fileMasksMatch=true;
+    for(int square=0;square<64;++square)for(int other=0;other<64;++other) {
+        const bool nearFile=std::abs((square&7)-(other&7))<=1;
+        const auto otherBit=petir_bitboard_mask::squareBit(other);
+        if(((petir_bitboard_mask::whitePassedPawnMask[square]&otherBit)!=0)!=(nearFile && other/8>square/8))passedMasksMatch=false;
+        if(((petir_bitboard_mask::blackPassedPawnMask[square]&otherBit)!=0)!=(nearFile && other/8<square/8))passedMasksMatch=false;
+    }
+    for(int file=0;file<8;++file)if(petir_bitboard_mask::fileMask[file]!=(0x0101010101010101ULL<<file))fileMasksMatch=false;
+    check(passedMasksMatch,"passed-pawn masks hold the squares in front on the pawn's and the neighbouring files");
+    check(fileMasksMatch && petir_bitboard_mask::notFileAMask==~petir_bitboard_mask::fileMask[0]
+        && petir_bitboard_mask::notFileHMask==~petir_bitboard_mask::fileMask[7],"file masks match the board geometry");
     // Exercise the new component independently of material/PST/draw scaling.
     struct PasserActivityFixture {const char* name;const char* fen;int pawn;int expected;};
     for(const auto& fixture:{

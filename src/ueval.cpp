@@ -24,7 +24,324 @@
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
 #endif
+#if defined(_M_X64) || defined(__x86_64__) || defined(__SSE2__)
+#include <emmintrin.h>
+#define PETIR_EVAL_SSE2 1
+#endif
+#if defined(_MSC_VER)
+#define PETIR_EVAL_INLINE __forceinline
+#define PETIR_EVAL_NOINLINE __declspec(noinline)
+#else
+#define PETIR_EVAL_INLINE inline __attribute__((always_inline))
+#define PETIR_EVAL_NOINLINE __attribute__((noinline))
+#endif
 namespace petir_ueval {
+namespace {
+// Every square of `bits` and all squares in front of them on the same file,
+// towards rank 8 (north) or towards rank 1 (south).
+std::uint64_t fillNorth(std::uint64_t bits) {
+    bits |= bits << 8;
+    bits |= bits << 16;
+    return bits | (bits << 32);
+}
+
+std::uint64_t fillSouth(std::uint64_t bits) {
+    bits |= bits >> 8;
+    bits |= bits >> 16;
+    return bits | (bits >> 32);
+}
+
+// The squares of `bits` together with their neighbours on the files to the left
+// and to the right.
+std::uint64_t withNeighbourFiles(std::uint64_t bits) {
+    using namespace petir_bitboard_mask;
+    return bits | ((bits & notFileHMask) << 1) | ((bits & notFileAMask) >> 1);
+}
+
+// Bit f of the result is set when at least one pawn stands on file f.
+std::uint8_t pawnFiles(std::uint64_t pawns) {
+    pawns |= pawns >> 32;
+    pawns |= pawns >> 16;
+    pawns |= pawns >> 8;
+    return static_cast<std::uint8_t>(pawns);
+}
+
+// Every square of the files set in `files` (bit f for file f).
+std::uint64_t filesToSquares(unsigned files) {
+    return std::uint64_t(files & 0xff) * UINT64_C(0x0101010101010101);
+}
+
+// Passed pawns: no enemy pawn in front of them on their own or a neighbouring
+// file. This is the whitePassedPawnMask / blackPassedPawnMask test done for all
+// pawns at once: a white pawn is held back exactly by the squares below some
+// black pawn on its file or a neighbouring one. The self-test compares the
+// masks with this geometry square by square.
+std::uint64_t whitePassedPawns(std::uint64_t whitePawns, std::uint64_t blackPawns) {
+    return whitePawns & ~withNeighbourFiles(fillSouth(blackPawns >> 8));
+}
+
+std::uint64_t blackPassedPawns(std::uint64_t whitePawns, std::uint64_t blackPawns) {
+    return blackPawns & ~withNeighbourFiles(fillNorth(whitePawns << 8));
+}
+
+// The foremost passed pawn of each file: White's highest, Black's lowest. Since
+// a pawn behind a passer on its file has more squares in front of it, a file's
+// foremost passer is also its foremost pawn whenever that pawn is passed.
+std::uint64_t foremostWhitePassers(std::uint64_t passers) {
+    return passers & ~fillSouth(passers >> 8);
+}
+
+std::uint64_t foremostBlackPassers(std::uint64_t passers) {
+    return passers & ~fillNorth(passers << 8);
+}
+
+// Bonus for each neighbouring pair of foremost passers (at most one per file in
+// `passers`), from the owner's point of view and before scaling. The trailing
+// pawn's rank determines the pair bonus.
+int connectedPasserBonus(std::uint64_t passers, bool isWhite) {
+    using namespace petir_bitboard_mask;
+    const unsigned files = pawnFiles(passers);
+    // Bit f: passers on files f and f + 1.
+    unsigned pairs = files & (files >> 1);
+    int bonus = 0;
+    while (pairs) {
+        const int file = std::countr_zero(pairs);
+        pairs &= pairs - 1;
+        // Ranks counted from the owner's side.
+        const int leftSquare = std::countr_zero(passers & fileMask[file]);
+        const int rightSquare = std::countr_zero(passers & fileMask[file + 1]);
+        const int leftRank = isWhite ? leftSquare / 8 : 7 - leftSquare / 8;
+        const int rightRank = isWhite ? rightSquare / 8 : 7 - rightSquare / 8;
+        const int rank = std::min(leftRank, rightRank);
+        const int separation = std::abs(leftRank - rightRank);
+        bonus += connectedPassersBonus;
+        // rank is the trailing (less advanced) pawn's rank: 5 is the sixth rank,
+        // 4 the fifth. separation is how many ranks apart the two pawns are.
+        if (rank >= 5)
+            bonus += separation == 0 ? connectedPassersFarAdvancedBonus
+                   : separation == 1 ? connectedPassersFarAdvancedBonus + 30
+                                     : connectedPassersAdvancedBonus;
+        else if (rank >= 4) {
+            if (separation == 0) bonus += connectedPassersAdvancedBonus;
+            else if (separation == 1) bonus += connectedPassersAdvancedBonus + 20;
+        }
+    }
+    return bonus;
+}
+
+// Squares attacked by the piece with board code `piece` standing on `square`.
+// Codes other than 1-6 and -1 to -6 (such as 0 for an empty square) attack nothing.
+PETIR_EVAL_INLINE std::uint64_t boardPieceAttacks(const petir_header::tdata& position, int square, int piece) {
+    using namespace petir_bitboard_mask;
+    const int pieceKind = std::abs(piece);
+    if (pieceKind == 1) return piece > 0 ? whitePawnAttacks[square] : blackPawnAttacks[square];
+    if (pieceKind == 2) return knightAttacks[square];
+    if (pieceKind == 6) return kingAttacks[square];
+    std::uint64_t reach = 0;
+    if (pieceKind == 4 || pieceKind == 5)
+        reach = horizontalAttacks[square][(position.allPieces >> ((square & 56) + 1)) & 63]
+              | verticalAttacks[square][(position.allPiecesRotated90 >> verticalShift[square]) & 63];
+    if (pieceKind == 3 || pieceKind == 5)
+        reach |= diagonalA8H1Attacks[square][(position.allPiecesA8H1 >> diagonalA8H1Shift[square]) & 255]
+               | diagonalH8A1Attacks[square][(position.allPiecesH8A1 >> diagonalH8A1Shift[square]) & 255];
+    return reach;
+}
+
+// Union of the attacks of every piece on `pieces`, each taken from its board code.
+std::uint64_t boardAttackMap(const petir_header::tdata& position, std::uint64_t pieces) {
+    std::uint64_t result = 0;
+    while (pieces) {
+        const int square = std::countr_zero(pieces);
+        pieces &= pieces - 1;
+        result |= boardPieceAttacks(position, square, position.board[square]);
+    }
+    return result;
+}
+
+// endgamePieceActivity once its early exits have passed: an endgame (both sides
+// at most 12 non-pawn material) with pawns on the board. enemyAttacks is
+// boardAttackMap of the enemy pieces.
+int endgamePieceActivityAgainst(const petir_header::tdata& position, int pieceSquare, bool isWhite,
+                                std::uint64_t enemyAttacks) {
+    using namespace petir_bitboard_mask;
+    const int pieceType = std::abs(position.board[pieceSquare]);
+    if (pieceType != 2 && pieceType != 4) return 0;
+    const auto ownPieces = isWhite ? position.whitePieces : position.blackPieces;
+    const auto ownPawns = isWhite ? position.whitePawns : position.blackPawns;
+    const auto enemyPawns = isWhite ? position.blackPawns : position.whitePawns;
+    const auto reach = boardPieceAttacks(position, pieceSquare, position.board[pieceSquare]);
+    const auto pieceBit = UINT64_C(1) << pieceSquare;
+    // No extra activity reward while the piece itself is under attack.
+    // This conservative geometric test does not resolve pins or exchanges.
+    if (enemyAttacks & pieceBit) return 0;
+    // Knight: half its outpost bonus on a pawn-supported outpost that no enemy
+    // pawn can ever attack.
+    if (pieceType == 2) {
+        const int outpostBonus = isWhite ? whiteKnightOutpostBonus[pieceSquare] : blackKnightOutpostBonus[pieceSquare];
+        if (!outpostBonus || !((isWhite ? blackPawnAttacks[pieceSquare] : whitePawnAttacks[pieceSquare]) & ownPawns)) return 0;
+        if ((isWhite ? petir_evalmask::whiteOutpostMask[pieceSquare] : petir_evalmask::blackOutpostMask[pieceSquare])
+            & enemyPawns) return 0;
+        const int frontSquare = pieceSquare + (isWhite ? 8 : -8);
+        const bool isBlockade = frontSquare >= 0 && frontSquare < 64
+                           && (enemyPawns & (UINT64_C(1) << frontSquare));
+        // Reward a supported, unchallengeable outpost only with a concrete
+        // pawn target or an enemy pawn immediately blocked by this knight.
+        if (!(reach & enemyPawns & ~enemyAttacks) && !isBlockade) return 0;
+        return outpostBonus / 2 + (isBlockade ? 4 : 0);
+    }
+    // Rook: safe squares it reaches, undefended enemy pawns it attacks, and a
+    // penalty when a passive rook (3 safe squares or fewer) is the only defender
+    // of attacked own pawns.
+    const int safeSquares = std::popcount(reach & ~ownPieces & ~enemyAttacks);
+    int bonus = 2 * std::min(6, safeSquares) - 6; // -6..+6, on top of raw mobility.
+    bonus += 4 * std::min(2, std::popcount(reach & enemyPawns & ~enemyAttacks));
+    if (safeSquares <= 3) {
+        const auto otherDefenders = boardAttackMap(position, ownPieces & ~pieceBit);
+        const auto tiedPawns = reach & ownPawns & enemyAttacks & ~otherDefenders;
+        bonus -= 3 * std::min(2, std::popcount(tiedPawns));
+    }
+    return bonus;
+}
+
+// lazyMarginAdjustment, here so that evaluateImpl can inline it.
+std::int32_t lazyMarginForTrades(const petir_header::tdata& position) {
+    // Each piece type that both sides have traded off narrows the margin.
+    return -50 * ((position.blackQueens | position.whiteQueens) == 0)
+         - 30 * ((position.blackRooks | position.whiteRooks) == 0)
+         - 20 * ((position.blackKnights | position.whiteKnights) == 0)
+         - 20 * ((position.blackBishops | position.whiteBishops) == 0);
+}
+
+// Whether isTheoreticalDraw can return true: all of its rules need at most one
+// minor piece on the board and no other piece.
+bool mayBeTheoreticalDraw(const petir_header::tdata& position) {
+    const int white = position.whiteNonPawnMaterial, black = position.blackNonPawnMaterial;
+    return (white == 0 && (black == 0 || black == 3)) || (black == 0 && white == 3);
+}
+
+// Pawn-structure terms that depend on the two pawn bitboards alone, cached by
+// those bitboards. An entry is used only when both stored bitboards equal the
+// position's, so it returns exactly what evaluating the pawns again would give.
+// The table starts zero-filled, which is the correct entry for a board without
+// pawns: keep every field zero for that case. Terms that also read the board
+// array, the kings or the pieces are not cached.
+struct alignas(64) PawnEntry {
+    std::uint64_t whitePawns, blackPawns;
+    // The foremost passed pawn of each file.
+    std::uint64_t whitePassers, blackPassers;
+    // Sum of the pawns' square bonuses, in total and for each squareWing value.
+    std::int16_t whiteSquareBonus, blackSquareBonus;
+    std::int16_t whiteWingSquareBonus[3], blackWingSquareBonus[3];
+    // Isolated-pawn penalties (without the potential-passer bonus), how many
+    // isolated pawns there are, and on which files.
+    std::int16_t whiteIsolatedPenalty, blackIsolatedPenalty;
+    std::uint8_t whiteIsolatedCount, blackIsolatedCount;
+    std::uint8_t whiteIsolatedFiles, blackIsolatedFiles;
+    // Doubled pawns: pawns minus occupied files.
+    std::uint8_t whiteDoubled, blackDoubled;
+    // connectedPasserBonus of the passers above, before scaling.
+    std::int16_t whiteConnectedBonus, blackConnectedBonus;
+};
+static_assert(sizeof(PawnEntry) == 64);
+
+constexpr int pawnTableBits = 12;
+PawnEntry pawnTable[1 << pawnTableBits];
+
+// The terms of one colour's pawns for a PawnEntry.
+struct PawnSideTerms {
+    int squareBonus = 0, wingSquareBonus[3] = {0, 0, 0};
+    int isolatedPenalty = 0, isolatedCount = 0, isolatedFiles = 0, doubled = 0, connectedBonus = 0;
+    std::uint64_t passers = 0;
+};
+
+PawnSideTerms pawnSideTerms(std::uint64_t ownPawns, std::uint64_t enemyPawns, bool isWhite) {
+    using namespace petir_bitboard_mask;
+    PawnSideTerms terms;
+    for (auto pawns = ownPawns; pawns; pawns &= pawns - 1) {
+        const int square = std::countr_zero(pawns);
+        const int bonus = isWhite ? whitePawnSquareBonus[square] : blackPawnSquareBonus[square];
+        terms.squareBonus += bonus;
+        terms.wingSquareBonus[petir_evalmask::squareWing[square]] += bonus;
+    }
+    const unsigned files = pawnFiles(ownPawns);
+    terms.isolatedFiles = files & ~((files << 1) | (files >> 1)) & 0xff;
+    // Each occupied file has exactly one foremost pawn; all others are doubled.
+    terms.doubled = std::popcount(ownPawns) - std::popcount(files);
+    // Isolated pawn: twice the file penalty; twice more when doubled (another
+    // own pawn behind it); once more (and once more if doubled) when no pawn of
+    // either colour is in front of it.
+    for (auto pawns = ownPawns & filesToSquares(terms.isolatedFiles); pawns; pawns &= pawns - 1) {
+        const int square = std::countr_zero(pawns);
+        const int penalty = isolatedPawnPenalty[square & 7];
+        const bool stacked = ((isWhite ? rookRayDownMask[square] : rookRayUpMask[square]) & ownPawns) != 0;
+        const bool nothingInFront = ((isWhite ? rookRayUpMask[square] : rookRayDownMask[square]) & (ownPawns | enemyPawns)) == 0;
+        terms.isolatedPenalty += 2 * penalty + (stacked ? 2 * penalty : 0) + (nothingInFront ? penalty * (stacked ? 2 : 1) : 0);
+        ++terms.isolatedCount;
+    }
+    terms.passers = isWhite ? foremostWhitePassers(whitePassedPawns(ownPawns, enemyPawns))
+                            : foremostBlackPassers(blackPassedPawns(enemyPawns, ownPawns));
+    terms.connectedBonus = connectedPasserBonus(terms.passers, isWhite);
+    return terms;
+}
+
+PETIR_EVAL_NOINLINE void fillPawnEntry(PawnEntry& entry, std::uint64_t whitePawns, std::uint64_t blackPawns) {
+    const auto white = pawnSideTerms(whitePawns, blackPawns, true);
+    const auto black = pawnSideTerms(blackPawns, whitePawns, false);
+    entry.whitePawns = whitePawns;
+    entry.blackPawns = blackPawns;
+    entry.whitePassers = white.passers;
+    entry.blackPassers = black.passers;
+    entry.whiteSquareBonus = static_cast<std::int16_t>(white.squareBonus);
+    entry.blackSquareBonus = static_cast<std::int16_t>(black.squareBonus);
+    for (int wing = 0; wing < 3; ++wing) {
+        entry.whiteWingSquareBonus[wing] = static_cast<std::int16_t>(white.wingSquareBonus[wing]);
+        entry.blackWingSquareBonus[wing] = static_cast<std::int16_t>(black.wingSquareBonus[wing]);
+    }
+    entry.whiteIsolatedPenalty = static_cast<std::int16_t>(white.isolatedPenalty);
+    entry.blackIsolatedPenalty = static_cast<std::int16_t>(black.isolatedPenalty);
+    entry.whiteIsolatedCount = static_cast<std::uint8_t>(white.isolatedCount);
+    entry.blackIsolatedCount = static_cast<std::uint8_t>(black.isolatedCount);
+    entry.whiteIsolatedFiles = static_cast<std::uint8_t>(white.isolatedFiles);
+    entry.blackIsolatedFiles = static_cast<std::uint8_t>(black.isolatedFiles);
+    entry.whiteDoubled = static_cast<std::uint8_t>(white.doubled);
+    entry.blackDoubled = static_cast<std::uint8_t>(black.doubled);
+    entry.whiteConnectedBonus = static_cast<std::int16_t>(white.connectedBonus);
+    entry.blackConnectedBonus = static_cast<std::int16_t>(black.connectedBonus);
+}
+
+std::size_t pawnTableIndex(std::uint64_t whitePawns, std::uint64_t blackPawns) {
+    return static_cast<std::size_t>(((whitePawns * UINT64_C(0x9e3779b97f4a7c15)) ^ (blackPawns * UINT64_C(0xc2b2ae3d27d4eb4f)))
+                                    >> (64 - pawnTableBits));
+}
+
+// Starts loading a table entry into the cache ahead of its use.
+void prefetchPawnEntry(std::size_t index) {
+#ifdef PETIR_EVAL_SSE2
+    _mm_prefetch(reinterpret_cast<const char*>(&pawnTable[index]), _MM_HINT_T0);
+#else
+    (void)index;
+#endif
+}
+
+const PawnEntry& probePawnTable(std::size_t index, std::uint64_t whitePawns, std::uint64_t blackPawns) {
+    PawnEntry& entry = pawnTable[index];
+    if (entry.whitePawns != whitePawns || entry.blackPawns != blackPawns) fillPawnEntry(entry, whitePawns, blackPawns);
+    return entry;
+}
+
+// Bit i is set when board[first + i] holds `piece`, for the 16 squares from `first`.
+std::uint32_t boardSquaresHolding(const petir_header::tdata& position, int first, int piece) {
+#ifdef PETIR_EVAL_SSE2
+    const __m128i squares = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&position.board.values[first]));
+    return static_cast<std::uint32_t>(_mm_movemask_epi8(_mm_cmpeq_epi8(squares, _mm_set1_epi8(static_cast<char>(piece)))));
+#else
+    std::uint32_t holding = 0;
+    for (int i = 0; i < 16; ++i) holding |= std::uint32_t(position.board[first + i] == piece) << i;
+    return holding;
+#endif
+}
+}
+
 // Endgame refinement for a passed pawn, from the pawn owner's point of view.
 // The caller passes the foremost passer of a file. The bonus rewards our king
 // being closer than the enemy king to the square in front of the pawn (the
@@ -91,109 +408,18 @@ int passedPawnActivity(const petir_header::tdata& position, int pawnSquare, bool
 // Count each neighboring pair of foremost passers once, before promotion
 // shortcuts. The trailing pawn's rank determines the existing pair bonus.
 int connectedPassedPawns(const petir_header::tdata& position, bool isWhite) {
-    using namespace petir_bitboard_mask;
-    const auto ownPawns = isWhite ? position.whitePawns : position.blackPawns;
-    const auto enemyPawns = isWhite ? position.blackPawns : position.whitePawns;
-    // passerRanks[file]: rank of the foremost own pawn on that file, counted
-    // from the owner's side, if it is a passed pawn; otherwise -1.
-    int passerRanks[8];
-    for (int file = 0; file < 8; ++file) {
-        passerRanks[file] = -1;
-        const auto filePawns = ownPawns & fileMask[file];
-        if (!filePawns) continue;
-        const int square = isWhite ? 63 - std::countl_zero(filePawns) : std::countr_zero(filePawns);
-        if ((isWhite ? whitePassedPawnMask[square] : blackPassedPawnMask[square]) & enemyPawns) continue;
-        passerRanks[file] = isWhite ? square / 8 : 7 - square / 8;
-    }
-    int bonus = 0;
-    for (int file = 1; file < 8; ++file) {
-        if (passerRanks[file - 1] < 0 || passerRanks[file] < 0) continue;
-        const int rank = std::min(passerRanks[file - 1], passerRanks[file]);
-        const int separation = std::abs(passerRanks[file - 1] - passerRanks[file]);
-        bonus += connectedPassersBonus;
-        // rank is the trailing (less advanced) pawn's rank: 5 is the sixth rank,
-        // 4 the fifth. separation is how many ranks apart the two pawns are.
-        if (rank >= 5)
-            bonus += separation == 0 ? connectedPassersFarAdvancedBonus
-                   : separation == 1 ? connectedPassersFarAdvancedBonus + 30
-                                     : connectedPassersAdvancedBonus;
-        else if (rank >= 4) {
-            if (separation == 0) bonus += connectedPassersAdvancedBonus;
-            else if (separation == 1) bonus += connectedPassersAdvancedBonus + 20;
-        }
-    }
-    return bonus;
+    return isWhite ? connectedPasserBonus(foremostWhitePassers(whitePassedPawns(position.whitePawns, position.blackPawns)), true)
+                   : connectedPasserBonus(foremostBlackPassers(blackPassedPawns(position.whitePawns, position.blackPawns)), false);
 }
 
 // Piece-owner perspective. Small additions to existing mobility/PST terms.
 int endgamePieceActivity(const petir_header::tdata& position, int pieceSquare, bool isWhite) {
-    using namespace petir_bitboard_mask;
     if (position.whiteNonPawnMaterial > 12 || position.blackNonPawnMaterial > 12) return 0;
     if (!(position.whitePawns | position.blackPawns)) return 0;
     const int pieceType = std::abs(position.board[pieceSquare]);
     if (pieceType != 2 && pieceType != 4) return 0;
-    const auto ownPieces = isWhite ? position.whitePieces : position.blackPieces;
     const auto enemyPieces = isWhite ? position.blackPieces : position.whitePieces;
-    const auto ownPawns = isWhite ? position.whitePawns : position.blackPawns;
-    const auto enemyPawns = isWhite ? position.blackPawns : position.whitePawns;
-    // Squares attacked by the piece with board code `piece` standing on `square`.
-    const auto attacksFrom = [&](int square, int piece) {
-        const int pieceKind = std::abs(piece);
-        if (pieceKind == 1) return piece > 0 ? whitePawnAttacks[square] : blackPawnAttacks[square];
-        if (pieceKind == 2) return knightAttacks[square];
-        if (pieceKind == 6) return kingAttacks[square];
-        std::uint64_t reach = 0;
-        if (pieceKind == 4 || pieceKind == 5)
-            reach = horizontalAttacks[square][(position.allPieces >> ((square & 56) + 1)) & 63]
-                  | verticalAttacks[square][(position.allPiecesRotated90 >> verticalShift[square]) & 63];
-        if (pieceKind == 3 || pieceKind == 5)
-            reach |= diagonalA8H1Attacks[square][(position.allPiecesA8H1 >> diagonalA8H1Shift[square]) & 255]
-                   | diagonalH8A1Attacks[square][(position.allPiecesH8A1 >> diagonalH8A1Shift[square]) & 255];
-        return reach;
-    };
-    // Union of the attacks of every piece in `pieces`.
-    const auto attackMap = [&](std::uint64_t pieces) {
-        std::uint64_t result = 0;
-        while (pieces) {
-            const int square = std::countr_zero(pieces);
-            pieces &= pieces - 1;
-            result |= attacksFrom(square, position.board[square]);
-        }
-        return result;
-    };
-    const auto enemyAttacks = attackMap(enemyPieces);
-    const auto reach = attacksFrom(pieceSquare, position.board[pieceSquare]);
-    const auto pieceBit = UINT64_C(1) << pieceSquare;
-    // No extra activity reward while the piece itself is under attack.
-    // This conservative geometric test does not resolve pins or exchanges.
-    if (enemyAttacks & pieceBit) return 0;
-    // Knight: half its outpost bonus on a pawn-supported outpost that no enemy
-    // pawn can ever attack.
-    if (pieceType == 2) {
-        const int outpostBonus = isWhite ? whiteKnightOutpostBonus[pieceSquare] : blackKnightOutpostBonus[pieceSquare];
-        if (!outpostBonus || !((isWhite ? blackPawnAttacks[pieceSquare] : whitePawnAttacks[pieceSquare]) & ownPawns)) return 0;
-        if ((isWhite ? petir_evalmask::whiteOutpostMask[pieceSquare] : petir_evalmask::blackOutpostMask[pieceSquare])
-            & enemyPawns) return 0;
-        const int frontSquare = pieceSquare + (isWhite ? 8 : -8);
-        const bool isBlockade = frontSquare >= 0 && frontSquare < 64
-                           && (enemyPawns & (UINT64_C(1) << frontSquare));
-        // Reward a supported, unchallengeable outpost only with a concrete
-        // pawn target or an enemy pawn immediately blocked by this knight.
-        if (!(reach & enemyPawns & ~enemyAttacks) && !isBlockade) return 0;
-        return outpostBonus / 2 + (isBlockade ? 4 : 0);
-    }
-    // Rook: safe squares it reaches, undefended enemy pawns it attacks, and a
-    // penalty when a passive rook (3 safe squares or fewer) is the only defender
-    // of attacked own pawns.
-    const int safeSquares = std::popcount(reach & ~ownPieces & ~enemyAttacks);
-    int bonus = 2 * std::min(6, safeSquares) - 6; // -6..+6, on top of raw mobility.
-    bonus += 4 * std::min(2, std::popcount(reach & enemyPawns & ~enemyAttacks));
-    if (safeSquares <= 3) {
-        const auto otherDefenders = attackMap(ownPieces & ~pieceBit);
-        const auto tiedPawns = reach & ownPawns & enemyAttacks & ~otherDefenders;
-        bonus -= 3 * std::min(2, std::popcount(tiedPawns));
-    }
-    return bonus;
+    return endgamePieceActivityAgainst(position, pieceSquare, isWhite, boardAttackMap(position, enemyPieces));
 }
 
 // Percent of the evaluation retained in exactly KRP versus KR. This is
@@ -277,14 +503,6 @@ int popHighestBit(std::uint64_t& bits) {
     return static_cast<int>(square);
 }
 
-// Bit f of the result is set when at least one pawn stands on file f.
-std::uint8_t pawnFiles(std::uint64_t pawns) {
-    pawns |= pawns >> 32;
-    pawns |= pawns >> 16;
-    pawns |= pawns >> 8;
-    return static_cast<std::uint8_t>(pawns);
-}
-
 #if defined(_MSC_VER) && defined(_M_X64)
 // Whether the CPU has the POPCNT instruction.
 const bool hasNativePopcount = [] {
@@ -352,8 +570,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     //                  enemy piece; a pawn's path.
     //   fileAttacks  - the ray behind a passer; a rook's file attacks.
     //   bishopSquare - square of a side's single bishop, 64 when it has none or two.
-    //   stackedOnFile - doubled isolated pawn; rook with another rook or a queen
-    //                  on its file.
+    //   stackedOnFile - rook with another rook or a queen on its file.
     bool kingsOnOppositeWings{};
     bool likelyDraw{};
     bool stackedOnFile{};
@@ -374,8 +591,6 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     std::int32_t blackKingSquare{};
     std::int32_t whiteKingFile{};
     std::int32_t blackKingFile{};
-    std::int32_t whitePassedFiles{};
-    std::int32_t blackPassedFiles{};
     std::int32_t blackKingPressure{};
     std::int32_t whiteKingPressure{};
     std::int32_t lazyMargin{};
@@ -416,9 +631,13 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     std::int32_t blackAttackerCase{};
     // 1. Dead draws by material or by known endgame rules. isMaterialDraw sets
     // likelyDraw for rook + minor against rook without pawns; such scores are
-    // divided by 8 at the end.
+    // divided by 8 at the end. isMaterialDraw only acts without pawns, and
+    // isTheoreticalDraw only with at most one minor piece on the board; it is
+    // given the side actually to move.
     likelyDraw = false;
-    if (((petir_ueval::isMaterialDraw(position, likelyDraw) || ((opponentPerspective == false) && petir_ueval::isTheoreticalDraw(position, sideToMove))) || ((opponentPerspective == true) && petir_ueval::isTheoreticalDraw(position, pas::sub(3, sideToMove))))) {
+    if (((position.blackPawns | position.whitePawns) == 0 && petir_ueval::isMaterialDraw(position, likelyDraw))
+        || (mayBeTheoreticalDraw(position)
+            && petir_ueval::isTheoreticalDraw(position, opponentPerspective ? pas::sub(3, sideToMove) : sideToMove))) {
         result = petir_header::drawScore;
         return result;
     }
@@ -539,7 +758,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     // early endgame, where passed pawns can swing the score.
     // Complete evaluation when its score needs the later draw scaling.
     if (!likelyDraw && position.fiftyMoveCounter < 80 && alpha == pas::sub(beta, 1)) {
-        lazyMargin = petir_ueval::lazyMarginAdjustment(position);
+        lazyMargin = lazyMarginForTrades(position);
         if (endgame) {
             (lazyMargin = pas::increment(lazyMargin, 600));
         } else {
@@ -561,6 +780,9 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             return result;
         }
     }
+    // Start loading the pawn cache entry, which is used below.
+    const auto pawnIndex = pawnTableIndex(position.whitePawns, position.blackPawns);
+    prefetchPawnEntry(pawnIndex);
     // 4. Full evaluation. whiteKingPressure counts attacked squares in White's
     // king zone, whiteAttackerCount the black pieces attacking it (and the other
     // way round for Black). Piece attacks on a king are counted only while the
@@ -582,8 +804,6 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     }
     whitePawnAttackMap = 0;
     blackPawnAttackMap = 0;
-    whitePassedFiles = 0;
-    blackPassedFiles = 0;
     blackKingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
     whiteKingSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
     whiteKingFile = (whiteKingSquare & 7);
@@ -878,182 +1098,169 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     else {
         bishopSquare = 64;
     }
+    // The terms of the pawn structure alone, from the pawn cache.
+    const PawnEntry& pawnStructure = probePawnTable(pawnIndex, position.whitePawns, position.blackPawns);
     // Connected passed pawns of both colours, scaled down while the enemy has pieces.
-    // Connection scoring is independent of handled-file masks and early exits.
-    score += connectedPassedPawns(position, true)
-        * endgameScale[std::min<int>(position.blackNonPawnMaterial, 41)] / 100;
-    score -= connectedPassedPawns(position, false)
-        * endgameScale[std::min<int>(position.whiteNonPawnMaterial, 41)] / 100;
-    // Black's pawns. blackIsolatedFiles: files whose pawns have no black pawn on
-    // a neighbouring file. pawnsOnBishopColor: black pawns off their two back
+    // Connection scoring is independent of the early exits in the passer loops.
+    if (const int bonus = pawnStructure.whiteConnectedBonus)
+        score += bonus * endgameScale[std::min<int>(position.blackNonPawnMaterial, 41)] / 100;
+    if (const int bonus = pawnStructure.blackConnectedBonus)
+        score -= bonus * endgameScale[std::min<int>(position.whiteNonPawnMaterial, 41)] / 100;
+    // Black's pawns. The terms of the pawn structure alone come from the pawn
+    // cache (pawnSideTerms). pawnsOnBishopColor: black pawns off their two back
     // ranks on the colour of Black's single bishop (bad bishop).
-    const auto blackPawnFiles = pawnFiles(position.blackPawns);
-    const auto blackIsolatedFiles = blackPawnFiles & ~((blackPawnFiles << 1) | (blackPawnFiles >> 1));
     blackPawnCount = countBits<NativePopcount>(position.blackPawns);
     pawnsOnBishopColor = bishopSquare < 64 ? countBits<NativePopcount>(position.blackPawns & UINT64_C(0x0000ffffffffffff)
         & (petir_ueval::squareColor[bishopSquare] == 0 ? UINT64_C(0xaa55aa55aa55aa55) : UINT64_C(0x55aa55aa55aa55aa))) : 0;
-    // Each occupied file has exactly one foremost pawn; all others are doubled.
-    pawnTally = blackPawnCount - countBits<NativePopcount>(std::uint64_t(blackPawnFiles));
+    pawnTally = pawnStructure.blackDoubled;
+    // Piece-square value, counted twice when the kings are on opposite wings
+    // and the pawn is on White's king's wing.
+    (score = pas::decrement(score, pawnStructure.blackSquareBonus));
+    if (kingsOnOppositeWings) {
+        (score = pas::decrement(score, pawnStructure.blackWingSquareBonus[petir_evalmask::squareWing[whiteKingSquare]]));
+    }
+    // Pawns on their start rank (squares a7 and up) blocked by a white pawn: the
+    // board squares eight below hold a white pawn.
+    pieces = position.blackPawns & (std::uint64_t(boardSquaresHolding(position, petir_header::a6, petir_header::whitePawn)) << 48);
+    score += petir_ueval::blockedPawnPenalty * countBits<NativePopcount>(pieces);
+    // Isolated pawns, while White has pieces: the penalties of pawnSideTerms,
+    // and the potential-passer bonus below for pawns on a7, b7, g7 and h7.
     scratchValue = 0;
-    pieces = position.blackPawns;
-    while ((pieces != 0)) {
-        square = popLowestBit(pieces);
-        // Piece-square value, counted twice when the kings are on opposite wings
-        // and the pawn is on White's king's wing.
-        (score = pas::decrement(score, petir_ueval::blackPawnSquareBonus[square]));
-        if ((kingsOnOppositeWings && (petir_evalmask::squareWing[square] == petir_evalmask::squareWing[whiteKingSquare]))) {
-            (score = pas::decrement(score, petir_ueval::blackPawnSquareBonus[square]));
-        }
-        // Pawn on its start rank blocked by a white pawn.
-        if (((square >= petir_header::a7) && (position.board[pas::sub(square, 8)] == petir_header::whitePawn))) {
-            (score = pas::increment(score, petir_ueval::blockedPawnPenalty));
-        }
-        // Isolated pawn, while White has pieces: twice the file penalty; twice more
-        // when doubled (another black pawn behind it); once more (and once more if
-        // doubled) when no pawn of either colour is in front of it.
-        if ((blackIsolatedFiles & (1 << (square & 7))) != 0) {
-            if ((position.whiteNonPawnMaterial != 0)) {
-                (scratchValue = pas::increment(scratchValue, 1));
-                (score = pas::increment(score, pas::shiftLeft(petir_ueval::isolatedPawnPenalty[(square & 7)], 1)));
-                stackedOnFile = false;
-                if (((petir_bitboard_mask::rookRayUpMask[square] & position.blackPawns) != 0)) {
-                    (score = pas::increment(score, pas::shiftLeft(petir_ueval::isolatedPawnPenalty[(square & 7)], 1)));
-                    stackedOnFile = true;
-                }
-                if (((petir_bitboard_mask::rookRayDownMask[square] & (position.whitePawns | position.blackPawns)) == 0)) {
-                    (score = pas::increment(score, petir_ueval::isolatedPawnPenalty[(square & 7)]));
-                    if (stackedOnFile) {
-                        (score = pas::increment(score, petir_ueval::isolatedPawnPenalty[(square & 7)]));
+    if (position.whiteNonPawnMaterial != 0) {
+        scratchValue = pawnStructure.blackIsolatedCount;
+        (score = pas::increment(score, pawnStructure.blackIsolatedPenalty));
+        pieces = position.blackPawns & filesToSquares(pawnStructure.blackIsolatedFiles)
+               & (petir_bitboard_mask::squareBit(petir_header::a7) | petir_bitboard_mask::squareBit(petir_header::b7)
+                  | petir_bitboard_mask::squareBit(petir_header::g7) | petir_bitboard_mask::squareBit(petir_header::h7));
+        while (pieces != 0) {
+            square = popLowestBit(pieces);
+            // A lone black pawn still on a7/b7 (g7/h7) against two white pawns on those
+            // files: White may create a passer there.
+            if (((square == petir_header::a7) || (square == petir_header::b7))) {
+                if (((((position.board[petir_header::a6] == petir_header::whitePawn) && (position.board[petir_header::b5] == petir_header::whitePawn)) || ((position.board[petir_header::b6] == petir_header::whitePawn) && (position.board[petir_header::a5] == petir_header::whitePawn))) || ((position.board[petir_header::b6] == petir_header::whitePawn) && (position.board[petir_header::a6] == petir_header::whitePawn)))) {
+                    (score = pas::increment(score, petir_ueval::potentialPasserBonus));
+                } else {
+                    if (((position.board[petir_header::a5] == petir_header::whitePawn) && (position.board[petir_header::b5] == petir_header::whitePawn))) {
+                        (score = pas::increment(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
                     }
                 }
-                // A lone black pawn still on a7/b7 (g7/h7) against two white pawns on those
-                // files: White may create a passer there.
-                if (((square == petir_header::a7) || (square == petir_header::b7))) {
-                    if (((((position.board[petir_header::a6] == petir_header::whitePawn) && (position.board[petir_header::b5] == petir_header::whitePawn)) || ((position.board[petir_header::b6] == petir_header::whitePawn) && (position.board[petir_header::a5] == petir_header::whitePawn))) || ((position.board[petir_header::b6] == petir_header::whitePawn) && (position.board[petir_header::a6] == petir_header::whitePawn)))) {
+            } else {
+                if (((square == petir_header::g7) || (square == petir_header::h7))) {
+                    if (((((position.board[petir_header::g6] == petir_header::whitePawn) && (position.board[petir_header::h5] == petir_header::whitePawn)) || ((position.board[petir_header::h6] == petir_header::whitePawn) && (position.board[petir_header::g5] == petir_header::whitePawn))) || ((position.board[petir_header::h6] == petir_header::whitePawn) && (position.board[petir_header::g6] == petir_header::whitePawn)))) {
                         (score = pas::increment(score, petir_ueval::potentialPasserBonus));
                     } else {
-                        if (((position.board[petir_header::a5] == petir_header::whitePawn) && (position.board[petir_header::b5] == petir_header::whitePawn))) {
+                        if (((position.board[petir_header::g5] == petir_header::whitePawn) && (position.board[petir_header::h5] == petir_header::whitePawn))) {
                             (score = pas::increment(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
-                        }
-                    }
-                } else {
-                    if (((square == petir_header::g7) || (square == petir_header::h7))) {
-                        if (((((position.board[petir_header::g6] == petir_header::whitePawn) && (position.board[petir_header::h5] == petir_header::whitePawn)) || ((position.board[petir_header::h6] == petir_header::whitePawn) && (position.board[petir_header::g5] == petir_header::whitePawn))) || ((position.board[petir_header::h6] == petir_header::whitePawn) && (position.board[petir_header::g6] == petir_header::whitePawn)))) {
-                            (score = pas::increment(score, petir_ueval::potentialPasserBonus));
-                        } else {
-                            if (((position.board[petir_header::g5] == petir_header::whitePawn) && (position.board[petir_header::h5] == petir_header::whitePawn))) {
-                                (score = pas::increment(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
-                            }
                         }
                     }
                 }
             }
         }
-        // Passed pawn: no white pawn in front of it or on the neighbouring files.
-        // Pawns are visited from rank 1 upwards, so the first passer found on a file
-        // is Black's foremost one; blackPassedFiles marks the files done.
-        if ((((petir_bitboard_mask::blackPassedPawnMask[square] & position.whitePawns) == 0) && ((blackPassedFiles & petir_header::powerOfTwo((square & 7))) == 0))) {
-            (blackPassedCount = pas::increment(blackPassedCount, 1));
-            file = (square & 7);
-            (score = pas::decrement(score, petir_ueval::passedPawnBonus));
-            score -= passedPawnActivity(position, square, false);
-            termScore = 0;
-            blackPassedFiles = (blackPassedFiles | petir_header::powerOfTwo(file));
-            // Against a bare white king (no white pieces) some passers promote by force.
-            // Each rule adds assuredPromotionBonus plus the rank bonus and skips the
-            // remaining passer terms (continue):
-            //  1. pawn on its sixth or seventh rank with its king diagonally in front;
-            //  2. pawn on b2-g2 with its king next to it and White's king not on the
-            //     promotion square, unless White's king stands beside the pawn, White is
-            //     to move, Black has no pieces and Black's own king is off ranks 1-2.
-            //     White's version of this exception tests the enemy (black) king's rank
-            //     instead, which cannot hold for a king beside the pawn, so White never
-            //     takes the exception;
-            //  3. the pawn is two ranks ahead of White's king, or one with Black to move;
-            //  4. rule of the square: White's king is too many files away;
-            //  5. pawn on its sixth rank (rank 3) with its king in front of it.
-            if ((position.whiteNonPawnMaterial == 0)) {
-                if (((square <= petir_header::h3) && ((petir_bitboard_mask::blackPawnAttacks[square] & position.blackKingBoard) != 0))) {
+    }
+    // Passed pawns: the foremost black pawn of each file with no white pawn in
+    // front of it on its own or a neighbouring file.
+    pieces = pawnStructure.blackPassers;
+    while (pieces != 0) {
+        square = popLowestBit(pieces);
+        (blackPassedCount = pas::increment(blackPassedCount, 1));
+        (score = pas::decrement(score, petir_ueval::passedPawnBonus));
+        // passedPawnActivity is zero outside an endgame.
+        if (endgame) score -= passedPawnActivity(position, square, false);
+        termScore = 0;
+        // Against a bare white king (no white pieces) some passers promote by force.
+        // Each rule adds assuredPromotionBonus plus the rank bonus and skips the
+        // remaining passer terms (continue):
+        //  1. pawn on its sixth or seventh rank with its king diagonally in front;
+        //  2. pawn on b2-g2 with its king next to it and White's king not on the
+        //     promotion square, unless White's king stands beside the pawn, White is
+        //     to move, Black has no pieces and Black's own king is off ranks 1-2.
+        //     White's version of this exception tests the enemy (black) king's rank
+        //     instead, which cannot hold for a king beside the pawn, so White never
+        //     takes the exception;
+        //  3. the pawn is two ranks ahead of White's king, or one with Black to move;
+        //  4. rule of the square: White's king is too many files away;
+        //  5. pawn on its sixth rank (rank 3) with its king in front of it.
+        if ((position.whiteNonPawnMaterial == 0)) {
+            if (((square <= petir_header::h3) && ((petir_bitboard_mask::blackPawnAttacks[square] & position.blackKingBoard) != 0))) {
+                (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                (score = pas::decrement(score, pas::shiftLeft(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
+                continue;
+            }
+            if (((((square <= petir_header::g2) && (square >= petir_header::b2)) && (position.board[pas::sub(square, 8)] != petir_header::whiteKing)) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0))) {
+                if ((((((blackKingSquare >= petir_header::a3) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0)) && (realSideToMove == petir_header::whiteSide)) && (position.blackNonPawnMaterial == 0)) && ((whiteKingSquare == pas::sub(square, 1)) || (whiteKingSquare == pas::add(square, 1))))) {
+                } else {
                     (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
                     (score = pas::decrement(score, pas::shiftLeft(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
                     continue;
                 }
-                if (((((square <= petir_header::g2) && (square >= petir_header::b2)) && (position.board[pas::sub(square, 8)] != petir_header::whiteKing)) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0))) {
-                    if ((((((blackKingSquare >= petir_header::a3) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0)) && (realSideToMove == petir_header::whiteSide)) && (position.blackNonPawnMaterial == 0)) && ((whiteKingSquare == pas::sub(square, 1)) || (whiteKingSquare == pas::add(square, 1))))) {
-                    } else {
-                        (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
-                        (score = pas::decrement(score, pas::shiftLeft(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
-                        continue;
-                    }
-                }
-                if (((pas::add(pas::shiftRight(square, 3), 1) < pas::shiftRight(whiteKingSquare, 3)) || ((pas::shiftRight(square, 3) < pas::shiftRight(whiteKingSquare, 3)) && (realSideToMove == petir_header::blackSide)))) {
-                    (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
-                    (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
-                    continue;
-                }
-                if (((pas::shiftRight(square, 3) < pas::sub(pas::abs(pas::sub((square & 7), whiteKingFile)), 1)) || ((pas::shiftRight(square, 3) == pas::sub(pas::abs(pas::sub((square & 7), whiteKingFile)), 1)) && (realSideToMove == petir_header::blackSide)))) {
-                    (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
-                    (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
-                    continue;
-                }
-                if (((pas::shiftRight(square, 3) == 2) && ((petir_bitboard_mask::blackPassedPawnMask[square] & position.blackKingBoard) != 0))) {
-                    (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
-                    (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
-                    continue;
-                }
             }
-            // The remaining passer terms collect in termScore, scaled down at the end
-            // while White has pieces. A black rook behind the pawn helps it (unless a
-            // white piece blocks the pawn); a white rook behind it holds it back, worse in
-            // a pure rook ending with Black's king far from the pawn (closeness 5 or less).
-            (termScore = pas::increment(termScore, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
-            fileAttacks = petir_bitboard_mask::rookRayUpMask[square];
-            if (((fileAttacks & position.blackRooks) != 0)) {
-                if ((((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.blackRooks) != 0) && (!(position.board[pas::sub(square, 8)] > 0)))) {
-                    (termScore = pas::increment(termScore, petir_ueval::rookBehindPassedPawnBonus));
-                }
-            } else {
-                if (((fileAttacks & position.whiteRooks) != 0)) {
-                    if (((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.whiteRooks) != 0)) {
-                        (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 1)));
-                        if ((((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 5)) && (petir_evalmask::closenessTable[square][blackKingSquare] <= 5))) {
-                            (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 2)));
-                        }
+            if (((pas::add(pas::shiftRight(square, 3), 1) < pas::shiftRight(whiteKingSquare, 3)) || ((pas::shiftRight(square, 3) < pas::shiftRight(whiteKingSquare, 3)) && (realSideToMove == petir_header::blackSide)))) {
+                (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
+                continue;
+            }
+            if (((pas::shiftRight(square, 3) < pas::sub(pas::abs(pas::sub((square & 7), whiteKingFile)), 1)) || ((pas::shiftRight(square, 3) == pas::sub(pas::abs(pas::sub((square & 7), whiteKingFile)), 1)) && (realSideToMove == petir_header::blackSide)))) {
+                (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
+                continue;
+            }
+            if (((pas::shiftRight(square, 3) == 2) && ((petir_bitboard_mask::blackPassedPawnMask[square] & position.blackKingBoard) != 0))) {
+                (score = pas::decrement(score, petir_ueval::assuredPromotionBonus));
+                (score = pas::decrement(score, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
+                continue;
+            }
+        }
+        // The remaining passer terms collect in termScore, scaled down at the end
+        // while White has pieces. A black rook behind the pawn helps it (unless a
+        // white piece blocks the pawn); a white rook behind it holds it back, worse in
+        // a pure rook ending with Black's king far from the pawn (closeness 5 or less).
+        (termScore = pas::increment(termScore, petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)]));
+        fileAttacks = petir_bitboard_mask::rookRayUpMask[square];
+        if (((fileAttacks & position.blackRooks) != 0)) {
+            if ((((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.blackRooks) != 0) && (!(position.board[pas::sub(square, 8)] > 0)))) {
+                (termScore = pas::increment(termScore, petir_ueval::rookBehindPassedPawnBonus));
+            }
+        } else {
+            if (((fileAttacks & position.whiteRooks) != 0)) {
+                if (((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.whiteRooks) != 0)) {
+                    (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 1)));
+                    if ((((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 5)) && (petir_evalmask::closenessTable[square][blackKingSquare] <= 5))) {
+                        (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 2)));
                     }
                 }
             }
-            // Blocked by a white piece: keep 1/2 + 1/8 of the rank bonus. Otherwise a
-            // pawn on its seventh rank that can promote without losing material (SEE 0)
-            // earns safeAdvanceBonus (+40 with Black to move), unscaled.
-            if ((position.board[pas::sub(square, 8)] > 0)) {
-                (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
-                (termScore = pas::increment(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 3)));
-            } else {
-                if ((((square <= petir_header::h2) && (position.board[pas::sub(square, 8)] == 0)) && (petir_usee::staticExchange(petir_header::blackSide, position, square, pas::sub(square, 8)) == 0))) {
-                    if ((realSideToMove == petir_header::blackSide)) {
-                        (score = pas::decrement(score, pas::add(petir_ueval::safeAdvanceBonus, 40)));
-                    } else {
-                        (score = pas::decrement(score, petir_ueval::safeAdvanceBonus));
-                    }
+        }
+        // Blocked by a white piece: keep 1/2 + 1/8 of the rank bonus. Otherwise a
+        // pawn on its seventh rank that can promote without losing material (SEE 0)
+        // earns safeAdvanceBonus (+40 with Black to move), unscaled.
+        if ((position.board[pas::sub(square, 8)] > 0)) {
+            (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
+            (termScore = pas::increment(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 3)));
+        } else {
+            if ((((square <= petir_header::h2) && (position.board[pas::sub(square, 8)] == 0)) && (petir_usee::staticExchange(petir_header::blackSide, position, square, pas::sub(square, 8)) == 0))) {
+                if ((realSideToMove == petir_header::blackSide)) {
+                    (score = pas::decrement(score, pas::add(petir_ueval::safeAdvanceBonus, 40)));
+                } else {
+                    (score = pas::decrement(score, petir_ueval::safeAdvanceBonus));
                 }
             }
-            // Black's king next to the pawn supports it. Otherwise White's king close to
-            // the pawn (closeness 7+, about three squares or less) and in front of it,
-            // within reach of its path, takes away a half or a quarter of the rank bonus.
-            if (((pas::sub(blackKingSquare, square) <= 9) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0))) {
-                (termScore = pas::increment(termScore, petir_ueval::blackKingSupportedPasserBonus[pas::shiftRight(square, 3)]));
-            } else {
-                if ((((petir_evalmask::closenessTable[square][whiteKingSquare] >= 7) && (pas::shiftRight(whiteKingSquare, 3) <= pas::shiftRight(square, 3))) && (pas::shiftRight(square, 3) >= pas::abs(pas::sub(whiteKingFile, (square & 7)))))) {
-                    if ((petir_evalmask::closenessTable[square][whiteKingSquare] >= 8)) {
-                        (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
-                    } else {
-                        (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 2)));
-                    }
+        }
+        // Black's king next to the pawn supports it. Otherwise White's king close to
+        // the pawn (closeness 7+, about three squares or less) and in front of it,
+        // within reach of its path, takes away a half or a quarter of the rank bonus.
+        if (((pas::sub(blackKingSquare, square) <= 9) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0))) {
+            (termScore = pas::increment(termScore, petir_ueval::blackKingSupportedPasserBonus[pas::shiftRight(square, 3)]));
+        } else {
+            if ((((petir_evalmask::closenessTable[square][whiteKingSquare] >= 7) && (pas::shiftRight(whiteKingSquare, 3) <= pas::shiftRight(square, 3))) && (pas::shiftRight(square, 3) >= pas::abs(pas::sub(whiteKingFile, (square & 7)))))) {
+                if ((petir_evalmask::closenessTable[square][whiteKingSquare] >= 8)) {
+                    (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
+                } else {
+                    (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 2)));
                 }
             }
-            if ((termScore > 0)) {
-                (score = pas::decrement(score, (pas::mul(termScore, petir_ueval::endgameScale[std::min<int>(position.whiteNonPawnMaterial, 41)]) / 100)));
-            }
+        }
+        if ((termScore > 0)) {
+            (score = pas::decrement(score, (pas::mul(termScore, petir_ueval::endgameScale[std::min<int>(position.whiteNonPawnMaterial, 41)]) / 100)));
         }
     }
     // Squares attacked by black pawns; then the doubled and isolated pawn counts,
@@ -1103,143 +1310,132 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     }
     // White's pawns, mirroring Black's above. Here termScore holds the pawn's
     // rank and weightedTerm collects the scaled passer terms.
-    pieces = position.whitePawns;
-    const auto whitePawnFiles = pawnFiles(position.whitePawns);
-    const auto whiteIsolatedFiles = whitePawnFiles & ~((whitePawnFiles << 1) | (whitePawnFiles >> 1));
     whitePawnCount = countBits<NativePopcount>(position.whitePawns);
     pawnsOnBishopColor = bishopSquare < 64 ? countBits<NativePopcount>(position.whitePawns & UINT64_C(0xffffffffffff0000)
         & (petir_ueval::squareColor[bishopSquare] == 0 ? UINT64_C(0xaa55aa55aa55aa55) : UINT64_C(0x55aa55aa55aa55aa))) : 0;
-    pawnTally = whitePawnCount - countBits<NativePopcount>(std::uint64_t(whitePawnFiles));
+    pawnTally = pawnStructure.whiteDoubled;
+    // Piece-square value, counted twice when the kings are on opposite wings
+    // and the pawn is on Black's king's wing.
+    (score = pas::increment(score, pawnStructure.whiteSquareBonus));
+    if (kingsOnOppositeWings) {
+        (score = pas::increment(score, pawnStructure.whiteWingSquareBonus[petir_evalmask::squareWing[blackKingSquare]]));
+    }
+    // Pawns on their start rank (squares h2 and below) blocked by a black pawn:
+    // the board squares eight above hold a black pawn.
+    pieces = position.whitePawns & boardSquaresHolding(position, petir_header::a2, petir_header::blackPawn);
+    score -= petir_ueval::blockedPawnPenalty * countBits<NativePopcount>(pieces);
+    // Isolated pawns, while Black has pieces, as for Black above.
     scratchValue = 0;
-    while ((pieces != 0)) {
-        // Evaluate the foremost white passer before marking its file handled.
-        square = popHighestBit(pieces);
-        (score = pas::increment(score, petir_ueval::whitePawnSquareBonus[square]));
-        if ((kingsOnOppositeWings && (petir_evalmask::squareWing[square] == petir_evalmask::squareWing[blackKingSquare]))) {
-            (score = pas::increment(score, petir_ueval::whitePawnSquareBonus[square]));
-        }
-        if ((position.board[pas::add(square, 8)] == petir_header::blackPawn)) {
-            if ((square <= petir_header::h2)) {
-                (score = pas::decrement(score, petir_ueval::blockedPawnPenalty));
-            }
-        }
-        if ((whiteIsolatedFiles & (1 << (square & 7))) != 0) {
-            if ((position.blackNonPawnMaterial != 0)) {
-                (scratchValue = pas::increment(scratchValue, 1));
-                (score = pas::decrement(score, pas::shiftLeft(petir_ueval::isolatedPawnPenalty[(square & 7)], 1)));
-                stackedOnFile = false;
-                if (((petir_bitboard_mask::rookRayDownMask[square] & position.whitePawns) != 0)) {
-                    (score = pas::decrement(score, pas::shiftLeft(petir_ueval::isolatedPawnPenalty[(square & 7)], 1)));
-                    stackedOnFile = true;
-                }
-                if (((petir_bitboard_mask::rookRayUpMask[square] & (position.blackPawns | position.whitePawns)) == 0)) {
-                    (score = pas::decrement(score, petir_ueval::isolatedPawnPenalty[(square & 7)]));
-                    if (stackedOnFile) {
-                        (score = pas::decrement(score, petir_ueval::isolatedPawnPenalty[(square & 7)]));
+    if (position.blackNonPawnMaterial != 0) {
+        scratchValue = pawnStructure.whiteIsolatedCount;
+        (score = pas::decrement(score, pawnStructure.whiteIsolatedPenalty));
+        pieces = position.whitePawns & filesToSquares(pawnStructure.whiteIsolatedFiles)
+               & (petir_bitboard_mask::squareBit(petir_header::a2) | petir_bitboard_mask::squareBit(petir_header::b2)
+                  | petir_bitboard_mask::squareBit(petir_header::g2) | petir_bitboard_mask::squareBit(petir_header::h2));
+        while (pieces != 0) {
+            square = popLowestBit(pieces);
+            if (((square == petir_header::a2) || (square == petir_header::b2))) {
+                if (((((position.board[petir_header::a3] == petir_header::blackPawn) && (position.board[petir_header::b4] == petir_header::blackPawn)) || ((position.board[petir_header::b3] == petir_header::blackPawn) && (position.board[petir_header::a4] == petir_header::blackPawn))) || ((position.board[petir_header::b3] == petir_header::blackPawn) && (position.board[petir_header::a3] == petir_header::blackPawn)))) {
+                    (score = pas::decrement(score, petir_ueval::potentialPasserBonus));
+                } else {
+                    if (((position.board[petir_header::a4] == petir_header::blackPawn) && (position.board[petir_header::b4] == petir_header::blackPawn))) {
+                        (score = pas::decrement(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
                     }
                 }
-                if (((square == petir_header::a2) || (square == petir_header::b2))) {
-                    if (((((position.board[petir_header::a3] == petir_header::blackPawn) && (position.board[petir_header::b4] == petir_header::blackPawn)) || ((position.board[petir_header::b3] == petir_header::blackPawn) && (position.board[petir_header::a4] == petir_header::blackPawn))) || ((position.board[petir_header::b3] == petir_header::blackPawn) && (position.board[petir_header::a3] == petir_header::blackPawn)))) {
+            } else {
+                if (((square == petir_header::g2) || (square == petir_header::h2))) {
+                    if (((((position.board[petir_header::g3] == petir_header::blackPawn) && (position.board[petir_header::h4] == petir_header::blackPawn)) || ((position.board[petir_header::h3] == petir_header::blackPawn) && (position.board[petir_header::g4] == petir_header::blackPawn))) || ((position.board[petir_header::h3] == petir_header::blackPawn) && (position.board[petir_header::g3] == petir_header::blackPawn)))) {
                         (score = pas::decrement(score, petir_ueval::potentialPasserBonus));
                     } else {
-                        if (((position.board[petir_header::a4] == petir_header::blackPawn) && (position.board[petir_header::b4] == petir_header::blackPawn))) {
+                        if (((position.board[petir_header::g4] == petir_header::blackPawn) && (position.board[petir_header::h4] == petir_header::blackPawn))) {
                             (score = pas::decrement(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
                         }
                     }
-                } else {
-                    if (((square == petir_header::g2) || (square == petir_header::h2))) {
-                        if (((((position.board[petir_header::g3] == petir_header::blackPawn) && (position.board[petir_header::h4] == petir_header::blackPawn)) || ((position.board[petir_header::h3] == petir_header::blackPawn) && (position.board[petir_header::g4] == petir_header::blackPawn))) || ((position.board[petir_header::h3] == petir_header::blackPawn) && (position.board[petir_header::g3] == petir_header::blackPawn)))) {
-                            (score = pas::decrement(score, petir_ueval::potentialPasserBonus));
-                        } else {
-                            if (((position.board[petir_header::g4] == petir_header::blackPawn) && (position.board[petir_header::h4] == petir_header::blackPawn))) {
-                                (score = pas::decrement(score, pas::shiftRight(petir_ueval::potentialPasserBonus, 1)));
-                            }
-                        }
-                    }
                 }
             }
         }
-        if ((((petir_bitboard_mask::whitePassedPawnMask[square] & position.blackPawns) == 0) && ((whitePassedFiles & petir_header::powerOfTwo((square & 7))) == 0))) {
-            (whitePassedCount = pas::increment(whitePassedCount, 1));
-            weightedTerm = 0;
-            file = (square & 7);
-            (score = pas::increment(score, petir_ueval::passedPawnBonus));
-            score += passedPawnActivity(position, square, true);
-            termScore = pas::shiftRight(square, 3);
-            whitePassedFiles = (whitePassedFiles | petir_header::powerOfTwo(file));
-            // Unstoppable passers against a bare black king; see the Black rules above.
-            if ((position.blackNonPawnMaterial == 0)) {
-                if (((square >= petir_header::a6) && ((petir_bitboard_mask::whitePawnAttacks[square] & position.whiteKingBoard) != 0))) {
+    }
+    // Passed pawns, as for Black above: the foremost passer of each file.
+    pieces = pawnStructure.whitePassers;
+    while (pieces != 0) {
+        square = popHighestBit(pieces);
+        (whitePassedCount = pas::increment(whitePassedCount, 1));
+        weightedTerm = 0;
+        (score = pas::increment(score, petir_ueval::passedPawnBonus));
+        if (endgame) score += passedPawnActivity(position, square, true);
+        termScore = pas::shiftRight(square, 3);
+        // Unstoppable passers against a bare black king; see the Black rules above.
+        if ((position.blackNonPawnMaterial == 0)) {
+            if (((square >= petir_header::a6) && ((petir_bitboard_mask::whitePawnAttacks[square] & position.whiteKingBoard) != 0))) {
+                (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                (score = pas::increment(score, pas::shiftLeft(petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
+                continue;
+            }
+            if (((((square >= petir_header::b7) && (square <= petir_header::g7)) && (position.board[pas::add(square, 8)] != petir_header::blackKing)) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0))) {
+                if ((((((blackKingSquare <= petir_header::h6) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0)) && (realSideToMove == petir_header::blackSide)) && (position.whiteNonPawnMaterial == 0)) && ((blackKingSquare == pas::sub(square, 1)) || (blackKingSquare == pas::add(square, 1))))) {
+                } else {
                     (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
                     (score = pas::increment(score, pas::shiftLeft(petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
                     continue;
                 }
-                if (((((square >= petir_header::b7) && (square <= petir_header::g7)) && (position.board[pas::add(square, 8)] != petir_header::blackKing)) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0))) {
-                    if ((((((blackKingSquare <= petir_header::h6) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0)) && (realSideToMove == petir_header::blackSide)) && (position.whiteNonPawnMaterial == 0)) && ((blackKingSquare == pas::sub(square, 1)) || (blackKingSquare == pas::add(square, 1))))) {
-                    } else {
-                        (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
-                        (score = pas::increment(score, pas::shiftLeft(petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
-                        continue;
-                    }
-                }
-                if (((pas::shiftRight(square, 3) > pas::add(pas::shiftRight(blackKingSquare, 3), 1)) || ((pas::shiftRight(square, 3) > pas::shiftRight(blackKingSquare, 3)) && (realSideToMove == petir_header::whiteSide)))) {
-                    (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
-                    (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[termScore]));
-                    continue;
-                }
-                if (((pas::sub(7, pas::shiftRight(square, 3)) < pas::sub(pas::abs(pas::sub((square & 7), blackKingFile)), 1)) || ((pas::sub(7, pas::shiftRight(square, 3)) == pas::sub(pas::abs(pas::sub((square & 7), blackKingFile)), 1)) && (realSideToMove == petir_header::whiteSide)))) {
-                    (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
-                    (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[termScore]));
-                    continue;
-                }
-                if (((pas::shiftRight(square, 3) == 5) && ((petir_bitboard_mask::whitePassedPawnMask[square] & position.whiteKingBoard) != 0))) {
-                    (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
-                    (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)]));
-                    continue;
-                }
             }
-            (weightedTerm = pas::increment(weightedTerm, petir_ueval::whitePassedPawnRankBonus[termScore]));
-            fileAttacks = petir_bitboard_mask::rookRayDownMask[square];
-            if (((fileAttacks & position.whiteRooks) != 0)) {
-                if ((((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.whiteRooks) != 0) && (!(position.board[pas::add(square, 8)] < 0)))) {
-                    (weightedTerm = pas::increment(weightedTerm, petir_ueval::rookBehindPassedPawnBonus));
-                }
-            } else {
-                if (((fileAttacks & position.blackRooks) != 0)) {
-                    if (((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.blackRooks) != 0)) {
-                        (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 1)));
-                        if ((((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 5)) && (petir_evalmask::closenessTable[square][whiteKingSquare] <= 5))) {
-                            (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 2)));
-                        }
+            if (((pas::shiftRight(square, 3) > pas::add(pas::shiftRight(blackKingSquare, 3), 1)) || ((pas::shiftRight(square, 3) > pas::shiftRight(blackKingSquare, 3)) && (realSideToMove == petir_header::whiteSide)))) {
+                (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[termScore]));
+                continue;
+            }
+            if (((pas::sub(7, pas::shiftRight(square, 3)) < pas::sub(pas::abs(pas::sub((square & 7), blackKingFile)), 1)) || ((pas::sub(7, pas::shiftRight(square, 3)) == pas::sub(pas::abs(pas::sub((square & 7), blackKingFile)), 1)) && (realSideToMove == petir_header::whiteSide)))) {
+                (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[termScore]));
+                continue;
+            }
+            if (((pas::shiftRight(square, 3) == 5) && ((petir_bitboard_mask::whitePassedPawnMask[square] & position.whiteKingBoard) != 0))) {
+                (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
+                (score = pas::increment(score, petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)]));
+                continue;
+            }
+        }
+        (weightedTerm = pas::increment(weightedTerm, petir_ueval::whitePassedPawnRankBonus[termScore]));
+        fileAttacks = petir_bitboard_mask::rookRayDownMask[square];
+        if (((fileAttacks & position.whiteRooks) != 0)) {
+            if ((((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.whiteRooks) != 0) && (!(position.board[pas::add(square, 8)] < 0)))) {
+                (weightedTerm = pas::increment(weightedTerm, petir_ueval::rookBehindPassedPawnBonus));
+            }
+        } else {
+            if (((fileAttacks & position.blackRooks) != 0)) {
+                if (((petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)] & position.blackRooks) != 0)) {
+                    (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 1)));
+                    if ((((position.whiteNonPawnMaterial == 5) && (position.blackNonPawnMaterial == 5)) && (petir_evalmask::closenessTable[square][whiteKingSquare] <= 5))) {
+                        (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::rookBehindPassedPawnBonus, 2)));
                     }
                 }
             }
-            if ((position.board[pas::add(square, 8)] < 0)) {
-                (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 1)));
-                (weightedTerm = pas::increment(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 3)));
-            } else {
-                if ((((square >= petir_header::a7) && (position.board[pas::add(square, 8)] == 0)) && (petir_usee::staticExchange(petir_header::whiteSide, position, square, pas::add(square, 8)) == 0))) {
-                    if ((realSideToMove == petir_header::whiteSide)) {
-                        (score = pas::increment(score, pas::add(petir_ueval::safeAdvanceBonus, 40)));
-                    } else {
-                        (score = pas::increment(score, petir_ueval::safeAdvanceBonus));
-                    }
+        }
+        if ((position.board[pas::add(square, 8)] < 0)) {
+            (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 1)));
+            (weightedTerm = pas::increment(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 3)));
+        } else {
+            if ((((square >= petir_header::a7) && (position.board[pas::add(square, 8)] == 0)) && (petir_usee::staticExchange(petir_header::whiteSide, position, square, pas::add(square, 8)) == 0))) {
+                if ((realSideToMove == petir_header::whiteSide)) {
+                    (score = pas::increment(score, pas::add(petir_ueval::safeAdvanceBonus, 40)));
+                } else {
+                    (score = pas::increment(score, petir_ueval::safeAdvanceBonus));
                 }
             }
-            if (((pas::sub(square, whiteKingSquare) <= 9) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0))) {
-                (weightedTerm = pas::increment(weightedTerm, petir_ueval::whiteKingSupportedPasserBonus[termScore]));
-            } else {
-                if (((petir_evalmask::closenessTable[square][blackKingSquare] >= 7) && (pas::shiftRight(blackKingSquare, 3) >= pas::shiftRight(square, 3)) && (7 - pas::shiftRight(square, 3) >= pas::abs(blackKingFile - (square & 7))))) {
-                    if ((petir_evalmask::closenessTable[square][blackKingSquare] >= 8)) {
-                        (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 1)));
-                    } else {
-                        (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 2)));
-                    }
+        }
+        if (((pas::sub(square, whiteKingSquare) <= 9) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0))) {
+            (weightedTerm = pas::increment(weightedTerm, petir_ueval::whiteKingSupportedPasserBonus[termScore]));
+        } else {
+            if (((petir_evalmask::closenessTable[square][blackKingSquare] >= 7) && (pas::shiftRight(blackKingSquare, 3) >= pas::shiftRight(square, 3)) && (7 - pas::shiftRight(square, 3) >= pas::abs(blackKingFile - (square & 7))))) {
+                if ((petir_evalmask::closenessTable[square][blackKingSquare] >= 8)) {
+                    (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 1)));
+                } else {
+                    (weightedTerm = pas::decrement(weightedTerm, pas::shiftRight(petir_ueval::whitePassedPawnRankBonus[termScore], 2)));
                 }
             }
-            if ((weightedTerm > 0)) {
-                (score = pas::increment(score, (pas::mul(weightedTerm, petir_ueval::endgameScale[std::min<int>(position.blackNonPawnMaterial, 41)]) / 100)));
-            }
+        }
+        if ((weightedTerm > 0)) {
+            (score = pas::increment(score, (pas::mul(weightedTerm, petir_ueval::endgameScale[std::min<int>(position.blackNonPawnMaterial, 41)]) / 100)));
         }
     }
     whitePawnAttackMap = pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileAMask), 7);
@@ -1260,6 +1456,15 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             (score = pas::decrement(score, 35));
         }
     }
+    // Endgame activity of rooks and knights (endgamePieceActivity) needs every
+    // square the enemy attacks. It is zero outside an endgame or without pawns.
+    const bool pieceActivity = endgame && (position.whitePawns | position.blackPawns) != 0;
+    std::uint64_t whiteAttackSquares = 0;
+    std::uint64_t blackAttackSquares = 0;
+    if (pieceActivity) {
+        if ((position.whiteRooks | position.whiteKnights) != 0) blackAttackSquares = boardAttackMap(position, position.blackPieces);
+        if ((position.blackRooks | position.blackKnights) != 0) whiteAttackSquares = boardAttackMap(position, position.whitePieces);
+    }
     termScore = 0;
     // White rooks: endgame activity, mobility, attacks on Black's king zone,
     // piece-square value, half-open and open files (termScore, scaled by
@@ -1268,7 +1473,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     pieces = position.whiteRooks;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
-        if (endgame) score += endgamePieceActivity(position, square, true);
+        if (pieceActivity) score += endgamePieceActivityAgainst(position, square, true, blackAttackSquares);
         rankAttacks = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
         fileAttacks = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
         attacks = (rankAttacks | fileAttacks);
@@ -1315,11 +1520,6 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 }
                 if (nearEnemyKingWing) {
                     (termScore = pas::increment(termScore, petir_ueval::rookOpenFileNearKingBonus));
-                } else {
-                    // Never true: this repeats the nearEnemyKingWing test above.
-                    if (((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[blackKingSquare]) && (!endgame))) {
-                        (termScore = pas::increment(termScore, pas::shiftRight(petir_ueval::rookOpenFileNearKingBonus, 1)));
-                    }
                 }
                 if (stackedOnFile) {
                     (termScore = pas::increment(termScore, petir_ueval::doubledRooksOpenFileBonus));
@@ -1363,14 +1563,16 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             }
         }
     }
-    (score = pas::increment(score, (pas::mul(termScore, petir_ueval::rookScale[std::min<int>(position.whiteNonPawnMaterial, 41)]) / 100)));
+    if (termScore != 0) {
+        (score = pas::increment(score, (pas::mul(termScore, petir_ueval::rookScale[std::min<int>(position.whiteNonPawnMaterial, 41)]) / 100)));
+    }
     termScore = 0;
     // Black rooks, the same mirrored.
     pieces = position.blackRooks;
     while ((pieces != 0)) {
         // Rook scores and attack unions are independent of iteration order.
         square = popLowestBit(pieces);
-        if (endgame) score -= endgamePieceActivity(position, square, false);
+        if (pieceActivity) score -= endgamePieceActivityAgainst(position, square, false, whiteAttackSquares);
         rankAttacks = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
         fileAttacks = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
         attacks = (rankAttacks | fileAttacks);
@@ -1413,11 +1615,6 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 }
                 if (nearEnemyKingWing) {
                     (termScore = pas::increment(termScore, petir_ueval::rookOpenFileNearKingBonus));
-                } else {
-                    // Never true: this repeats the nearEnemyKingWing test above.
-                    if (((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[whiteKingSquare]) && (!endgame))) {
-                        (termScore = pas::increment(termScore, pas::shiftRight(petir_ueval::rookOpenFileNearKingBonus, 1)));
-                    }
                 }
                 if (stackedOnFile) {
                     (termScore = pas::increment(termScore, petir_ueval::doubledRooksOpenFileBonus));
@@ -1457,7 +1654,9 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             }
         }
     }
-    (score = pas::decrement(score, (pas::mul(termScore, petir_ueval::rookScale[std::min<int>(position.blackNonPawnMaterial, 41)]) / 100)));
+    if (termScore != 0) {
+        (score = pas::decrement(score, (pas::mul(termScore, petir_ueval::rookScale[std::min<int>(position.blackNonPawnMaterial, 41)]) / 100)));
+    }
     // White knights: endgame activity, piece-square value, closeness to Black's
     // king (not in an early endgame), mobility, attacks on Black's king zone, and
     // outposts: a square no black pawn can ever attack, supported by one (half
@@ -1466,7 +1665,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     pieces = position.whiteKnights;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
-        if (endgame) score += endgamePieceActivity(position, square, true);
+        if (pieceActivity) score += endgamePieceActivityAgainst(position, square, true, blackAttackSquares);
         (score = pas::increment(score, petir_ueval::whiteKnightSquareBonus[square]));
         if ((!earlyEndgame)) {
             (score = pas::increment(score, pas::mul(petir_evalmask::closenessHalfTable[square][blackKingSquare], petir_ueval::knightTropismBonus)));
@@ -1503,7 +1702,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     pieces = position.blackKnights;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
-        if (endgame) score -= endgamePieceActivity(position, square, false);
+        if (pieceActivity) score -= endgamePieceActivityAgainst(position, square, false, whiteAttackSquares);
         (score = pas::decrement(score, petir_ueval::blackKnightSquareBonus[square]));
         if ((!earlyEndgame)) {
             (score = pas::decrement(score, pas::mul(petir_evalmask::closenessHalfTable[square][whiteKingSquare], petir_ueval::knightTropismBonus)));
@@ -1604,15 +1803,12 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     // Black's king zone (always counted, unlike the other pieces); before the
     // endgame, closeness to Black's king. A rook lined up with the queen on a
     // rank (scratchBits) or file (kingZoneHits) that reaches Black's king zone
-    // adds that line to the rook attack map. The diagonal attacks are computed
-    // twice; the second computation gives the same result.
+    // adds that line to the rook attack map.
     pieces = position.whiteQueens;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
         (score = pas::increment(score, petir_ueval::whiteQueenSquareBonus[square]));
         if ((!endgame)) {
-            attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
-            attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
             attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
             attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
             scratchBits = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
@@ -1646,8 +1842,6 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         square = popLowestBit(pieces);
         (score = pas::decrement(score, petir_ueval::blackQueenSquareBonus[square]));
         if ((!endgame)) {
-            attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
-            attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
             attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
             attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
             scratchBits = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
@@ -1946,9 +2140,10 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
 }
 
 std::int32_t evaluate(const petir_header::tdata& position, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, bool opponentPerspective) {
-    // King + pawn against king is answered exactly by the KPK table.
+    // King + pawn against king is answered exactly by the KPK table. The probe
+    // needs a board without pieces other than kings and pawns.
     int kpkScore;
-    if (petir_kpk::probe(position, opponentPerspective ? 3 - sideToMove : sideToMove, kpkScore)) {
+    if ((position.whiteNonPawnMaterial | position.blackNonPawnMaterial) == 0 && petir_kpk::probe(position, opponentPerspective ? 3 - sideToMove : sideToMove, kpkScore)) {
         // opponentPerspective supplies the opponent's score perspective after a move.
         if (!kpkScore) return petir_header::drawScore;
         return opponentPerspective ? -kpkScore : kpkScore;
@@ -2306,21 +2501,10 @@ bool hasSingleBit(std::uint64_t bits) {
 // Narrows the lazy-evaluation margin for each piece type that both sides have
 // traded off, since fewer pieces mean smaller positional swings.
 std::int32_t lazyMarginAdjustment(const petir_header::tdata& position) {
-    std::int32_t result{};
-    result = 0;
-    if (((position.blackQueens == 0) && (position.whiteQueens == 0))) {
-        (result = pas::decrement(result, 50));
-    }
-    if (((position.blackRooks == 0) && (position.whiteRooks == 0))) {
-        (result = pas::decrement(result, 30));
-    }
-    if (((position.blackKnights == 0) && (position.whiteKnights == 0))) {
-        (result = pas::decrement(result, 20));
-    }
-    if (((position.blackBishops == 0) && (position.whiteBishops == 0))) {
-        (result = pas::decrement(result, 20));
-    }
-    return result;
+    return lazyMarginForTrades(position);
 }
 
 }
+#undef PETIR_EVAL_SSE2
+#undef PETIR_EVAL_INLINE
+#undef PETIR_EVAL_NOINLINE
