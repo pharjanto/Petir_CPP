@@ -32,13 +32,15 @@ class Console {
     std::condition_variable holdCondition;
     petir::TimeBudget ponderBudget;
     int moveOverheadMs=50;
-    std::int64_t winboardWhiteMs=0,winboardBlackMs=0,winboardBaseMs=0,winboardIncrementMs=0,winboardMoveMs=0;
+    // winboardEngineMs is the engine's own clock: the search only runs for the
+    // engine's side, and WinBoard's "time" command always gives that clock.
+    std::int64_t winboardEngineMs=0,winboardBaseMs=0,winboardIncrementMs=0,winboardMoveMs=0;
     petir::ClockLimits winboardLimits() const {
         petir::ClockLimits limits;
         limits.timed=useTimer;limits.overheadMs=moveOverheadMs;
         if(timeMode==secondsPerMove)limits.moveTimeMs=winboardMoveMs;
         else {
-            limits.remainingMs=sideToMove==1?winboardWhiteMs:winboardBlackMs;
+            limits.remainingMs=winboardEngineMs;
             limits.incrementMs=winboardIncrementMs;
             if(movesPerTimeControl>0)limits.movesToGo=movesPerTimeControl-(gamePlyCount/2)%movesPerTimeControl;
         }
@@ -244,12 +246,14 @@ class Console {
         if(command=="protover") {emit(std::string("feature myname=\"")+engineName+"\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=0 option=\"Move Overhead -spin 50 0 5000\" done=1");return;}
         if(command=="ping" && tokens.size()>1) {emit("pong "+tokens[1]);return;}
         if(command=="?") {finish(true);return;}
+        // "time" is the engine's clock and "otim" the opponent's, whichever colour
+        // the engine plays (the colour may not be known yet, before "go").
+        // Only the engine's clock is used.
         if(command=="time" || command=="otim") {
-            if(tokens.size()>1) {
+            if(command=="time" && tokens.size()>1) {
                 const auto milliseconds=std::clamp<std::int64_t>(std::stoll(tokens[1]),0,INT32_MAX/10)*10;
-                if((computerSide==1)==(command=="time"))winboardWhiteMs=milliseconds;
-                else winboardBlackMs=milliseconds;
-                if(command=="time" && useTimer && timeMode!=secondsPerMove) {
+                winboardEngineMs=milliseconds;
+                if(useTimer && timeMode!=secondsPerMove) {
                     petir::searchTime.tighten(receivedAt,milliseconds,moveOverheadMs);
                 }
             }
@@ -270,7 +274,7 @@ class Console {
         finish();
         if(command=="new") {
             petir::newGame();position=gamePosition;sideToMove=1;fullMoveNumber=1;computerSide=2;forceMode=false;resetHistory();
-            if(useTimer)winboardWhiteMs=winboardBlackMs=winboardBaseMs;
+            if(useTimer)winboardEngineMs=winboardBaseMs;
         }
         else if(command=="force")forceMode=true;
         else if(command=="go") {forceMode=false;computerSide=sideToMove;beginSearch(depthLimit,winboardLimits(),receivedAt);}
@@ -285,7 +289,7 @@ class Console {
         else if(command=="level" && tokens.size()>3) {
             depthLimit=49;
             movesPerTimeControl=std::max(0,std::stoi(tokens[1]));auto colonPosition=tokens[2].find(':');std::int64_t seconds=std::stoll(tokens[2])*60;if(colonPosition!=std::string::npos)seconds+=std::stoll(tokens[2].substr(colonPosition+1));
-            winboardBaseMs=std::clamp<std::int64_t>(seconds,0,INT32_MAX/1000)*1000;winboardWhiteMs=winboardBlackMs=winboardBaseMs;
+            winboardBaseMs=std::clamp<std::int64_t>(seconds,0,INT32_MAX/1000)*1000;winboardEngineMs=winboardBaseMs;
             winboardIncrementMs=static_cast<std::int64_t>(std::clamp(std::stod(tokens[3])*1000,0.0,double(INT32_MAX)));
             useTimer=true;timeMode=movesPerTimeControl?movesInMinutes:minutesPerGameWithIncrement;
         }
