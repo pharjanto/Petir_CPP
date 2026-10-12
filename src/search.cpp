@@ -43,6 +43,7 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     auto& frame = searchStack[ply];
     const auto& parentFrame = searchStack[ply - 1];
     frame.checkExtended = false;
+    frame.mateThreatExtended = false;
 
     if (position.fiftyMoveCounter >= 101) return petir_header::drawScore;
 
@@ -80,9 +81,6 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     // is then extended by 3/4 of a ply and marked mateThreatExtended.
     bool mateThreatExtended = false;
     if (!inCheck) {
-        // Reset only when not in check: in check this keeps whatever an earlier
-        // node at this ply stored.
-        frame.mateThreatExtended = false;
         const std::int32_t plies = wholePlies(searchDepth);
         const std::int32_t ownMaterial = petir_ueval::materialForSide(sideToMove, position.materialScore);
         const bool betaIsMateScore = (beta >= petir_header::infinity - 100);
