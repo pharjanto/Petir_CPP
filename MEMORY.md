@@ -187,6 +187,38 @@ starting anyway.
   `(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue`
   for overall CPU use.
 
+## EPD test suites (tactical and endgame positions)
+
+Added 2026-10-12 for checking that a search change doesn't hide tactics or
+break zugzwang handling. A suite score is a safety check, not a strength
+measure: a stronger build can solve fewer positions. Matches decide.
+
+- Python: the portable one, `C:/Users/USER/AppData/Local/Temp/petir-protocol-python-3.12.10/python.exe`
+  (run with `-I`). python-chess is needed only to fetch or convert. It is
+  imported from `build/kpk-audit/python-chess-master` when not installed.
+- `tools/epd_suites.py fetch [NAME,..]` downloads the suites into
+  `build/suites/NAME.json` (expected moves already in UCI; raw files in
+  `build/suites/raw/`). `epd_suites.py list` shows what is fetched;
+  `epd_suites.py convert FILE.epd NAME` adds a local EPD file.
+- Suites: `wac` (300, easy tactics), `arasan` (200, hard), `ecm` (183,
+  middlegame tactics), `bt2630` (30), `eet` (100, endgames), `sbd` (134,
+  quiet best moves: good for pruning and reduction changes), `bk` (24),
+  `kaufman` (24), `lct2` (35), `hard-mates` (24, long mates), `zugzwang` (5,
+  null-move failure positions). Sources: the Arasan repo (jdart1/arasan-chess
+  `tests/`), ChrisWhittington/Chess-EPDs, and the Chess Programming Wiki.
+- `tools/epd_test.py LABEL=EXE [LABEL=EXE ..] --suites wac,sbd,...
+  --movetime MS | --depth N [--jobs N --pin K] [--json OUT --report OUT]`
+  runs every engine on each position in the same worker, one after the other,
+  and reports solved counts, mean time to solution over positions all engines
+  solved, and the positions solved by some engines but not all. Petir supports
+  `go movetime` and `go depth`, not `go nodes`.
+- Compare pruning changes at fixed time (`--movetime`), not fixed depth:
+  pruning makes each depth cheaper, so fixed depth hides its cost. With
+  `--jobs 10 --pin 2` each worker gets its own physical core (cores 2-20),
+  which leaves two cores free. Fixed-time results depend on load: compare only
+  builds from the same run.
+- First use: `build/rfp/epd/` (RFP none/v1/v2 at 1 s per position).
+
 ## Todo queue
 
 Items the user parked to revisit later. Don't start one without a new request,
@@ -273,3 +305,29 @@ CMake, and build Release. Run `symmetry_harness.exe 40 < targeted.fen` for the
 full run, or `symmetry_harness.exe show "<fen>" ...` to print a FEN's eval next
 to its mirror's. Write `targeted.fen` to stdin without a byte-order mark,
 because PowerShell piping adds one and the first FEN is then dropped.
+
+### Reverse futility: dropped, revisit later (queued 2026-10-12)
+
+RFP (static null move) was tried and dropped; main and `build/searches` are
+back to plain 9990d93/cff1185 with no RFP. Patches kept for a later retry:
+`build/rfp/rfp-v1-main.patch` (another session's v1: fires only below a parent
+move that went through futility step 1b) and `build/rfp/rfp-v2-searches.patch`
+(v2: own lazy eval when the parent didn't evaluate, incoming captures allowed,
+1-3 plies, 90 per ply plus the threatened piece). Bench and counters:
+`build/rfp/RESULTS.md`. v2 saved about 3-4.5% nodes and 3% time to depth, EPD
+suites unchanged, margins 50/70/90 indistinguishable. Match `rfp9990.bat`
+(9990d93 + v2 vs 9990d93, 10+0.1) stopped at 532 games: +124 -142 =266, about
+-12 Elo, with RFP losing both time forfeits. Why it gains little in Petir: null
+move is tried at nearly every non-PV node with a flat 4-ply reduction, so at
+1-3 plies it is a quiescence search of about 2.4 nodes that is more accurate
+than a static eval; futility step 1b already reduces late quiet moves on the
+eval after the move; the static eval is not otherwise computed at interior
+nodes (RFP adds an eval call, -1.7% nps); and the lazy eval exit can skip king
+safety. Engines that gain from RFP compute and cache a static eval at every
+node, use it up to 8-18 plies, and add improving flags and correction history.
+Don't retry RFP without that foundation, and only on a new request.
+
+10. **Revisit RFP later.** Candidates once the foundation is there: RFP up to
+    6-8 plies (where it replaces a real null-move search, not a quiescence
+    call), margins with an improving term, and a full eval instead of the lazy
+    exit so king safety counts. Judge each step with the bench and a match.
