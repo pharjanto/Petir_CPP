@@ -215,10 +215,11 @@ bool exposesWhiteKing(petir_header::tdata& position, std::uint16_t move) {
     absoluteDirection = pas::abs(direction);
     toSquare = (pas::shiftRight(move, 7) & 127);
     if ((toSquare == petir_header::enPassantTarget)) {
+        // The white pawn captures upwards, towards the en passant file.
         if ((position.enPassantFile > (fromSquare & 7))) {
-            toSquare = pas::sub(fromSquare, 7);
+            toSquare = pas::add(fromSquare, 9);
         } else {
-            toSquare = pas::sub(fromSquare, 9);
+            toSquare = pas::add(fromSquare, 7);
         }
     } else {
         if ((toSquare > 63)) {
@@ -385,10 +386,11 @@ bool exposesBlackKing(petir_header::tdata& position, std::uint16_t move) {
     }
     toSquare = (pas::shiftRight(move, 7) & 127);
     if ((toSquare == petir_header::enPassantTarget)) {
+        // The black pawn captures downwards, towards the en passant file.
         if ((position.enPassantFile > (fromSquare & 7))) {
-            toSquare = pas::add(fromSquare, 9);
+            toSquare = pas::sub(fromSquare, 7);
         } else {
-            toSquare = pas::add(fromSquare, 7);
+            toSquare = pas::sub(fromSquare, 9);
         }
     } else {
         if ((toSquare > 63)) {
