@@ -219,6 +219,37 @@ measure: a stronger build can solve fewer positions. Matches decide.
   builds from the same run.
 - First use: `build/rfp/epd/` (RFP none/v1/v2 at 1 s per position).
 
+## Exactness tests for speed-ups and refactors
+
+Added 2026-10-12 during the exact-score `ueval.cpp` optimization. Use these
+tests whenever a change must leave scores and search output unchanged. Build
+the baseline and the candidate from separate trees, for example
+`git worktree add --detach build/<work>/base-tree HEAD`, never from the shared
+`src/`. Run them only when at least two cores are idle.
+
+- `tools/eval_diff/` (see its README.md) compares evaluation scores call by
+  call. It is a CMake project with `-DCANDIDATE_SRC=<tree>/src` and
+  `-DBASELINE_SRC=<tree>/src`, and it builds two harnesses:
+  - `evaldiff` is the UCI engine. Every `evaluate()` call that search makes
+    also runs the baseline evaluation, with extra windows, sides and helper
+    checks. Drive it with `tools/eval_diff/diff_driver.py EXE --jobs 10`,
+    which prints `PASS` or `FAIL` and coverage counts.
+  - `evalrandom GAMES ROUNDS PAWN_BOARDS SEED` covers random games, random
+    endgames, random pawn structures, and boards after every pseudo-legal
+    capture, including king captures (stale king bitboards).
+  - A mutation test (one bonus changed by 1) failed in both harnesses.
+    `-DEVAL_DIFF_CHECK_BOUNDS=ON` builds with Pascal bounds checks.
+- `tools/search_parity.py BASE_EXE CAND_EXE [--depth-offset 2]` compares UCI
+  output on the 360-position bench (`tools/eval_diff/bench-games.json`),
+  with a fresh hash per position and with the hash carried over (22 shards).
+  It removes time, nps and hashfull from each line and prints `PASS` when
+  everything else is identical.
+- Speed: `tools/order_timing.py BASE CAND --positions tools/eval_diff/bench-games.json
+  --depth-offset 2 --shard K/6 --core 2K --trials 3 --json tK.json`, run as 6
+  shards in parallel, one pinned core each. Sum the medians of the shards.
+  Judge a speed change only by engine nps against a baseline built from the
+  same commit, since micro-benchmarks have not predicted engine nps here.
+
 ## Todo queue
 
 Items the user parked to revisit later. Don't start one without a new request,
