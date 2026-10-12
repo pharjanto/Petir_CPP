@@ -1192,7 +1192,7 @@ bool blackMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, s
         }
     }
     else if (((movedPiece == petir_header::blackKing))) {
-        attackedSquares = petir_bitboard_mask::knightAttacks[toSquare];
+        attackedSquares = petir_bitboard_mask::kingAttacks[toSquare];
     }
     threatenedValue = 0;
     if (((attackedSquares & kingZone) != 0)) {
