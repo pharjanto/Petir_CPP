@@ -837,10 +837,13 @@ bool whiteMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, s
             square = pas::add(pas::shiftLeft(rank, 3), file);
             attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
             if ((position.board[square] == petir_header::whitePawn)) {
+                // The square the pawn attacks along this diagonal, if on the board.
                 (file = pas::increment(file, 1));
                 (rank = pas::increment(rank, 1));
-                square = pas::add(pas::shiftLeft(rank, 3), file);
-                attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+                if (file <= 7) {
+                    square = pas::add(pas::shiftLeft(rank, 3), file);
+                    attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+                }
                 break;
             }
             if ((position.board[square] == petir_header::whiteQueen)) {
@@ -864,8 +867,10 @@ bool whiteMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, s
             if ((position.board[square] == petir_header::whitePawn)) {
                 (file = pas::decrement(file, 1));
                 (rank = pas::increment(rank, 1));
-                square = pas::add(pas::shiftLeft(rank, 3), file);
-                attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+                if (file >= 0) {
+                    square = pas::add(pas::shiftLeft(rank, 3), file);
+                    attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+                }
                 break;
             }
             if ((position.board[square] == petir_header::whiteQueen)) {
@@ -1088,10 +1093,13 @@ bool blackMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, s
             square = pas::add(pas::shiftLeft(rank, 3), file);
             attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
             if ((position.board[square] == petir_header::blackPawn)) {
+                // The square the pawn attacks along this diagonal, if on the board.
                 (file = pas::increment(file, 1));
                 (rank = pas::decrement(rank, 1));
-                square = pas::add(pas::shiftLeft(rank, 3), file);
-                attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+                if (file <= 7) {
+                    square = pas::add(pas::shiftLeft(rank, 3), file);
+                    attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+                }
                 break;
             }
             if ((position.board[square] == petir_header::blackQueen)) {
@@ -1115,8 +1123,10 @@ bool blackMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, s
             if ((position.board[square] == petir_header::blackPawn)) {
                 (file = pas::decrement(file, 1));
                 (rank = pas::decrement(rank, 1));
-                square = pas::add(pas::shiftLeft(rank, 3), file);
-                attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+                if (file >= 0) {
+                    square = pas::add(pas::shiftLeft(rank, 3), file);
+                    attackedSquares = (attackedSquares | petir_bitboard_mask::squareBit(square));
+                }
                 break;
             }
             if ((position.board[square] == petir_header::blackQueen)) {
