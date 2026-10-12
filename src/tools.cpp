@@ -1130,8 +1130,6 @@ bool blackMoveThreatensKing(petir_header::tdata& position, std::uint16_t move, s
             (file = pas::decrement(file, 1));
             (rank = pas::decrement(rank, 1));
         }
-        attackedSquares = petir_bitboard_mask::diagonalA8H1Attacks[toSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[toSquare]) & 255)];
-        attackedSquares = (attackedSquares | petir_bitboard_mask::diagonalH8A1Attacks[toSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[toSquare]) & 255)]);
     }
     else if (((movedPiece == petir_header::blackRook))) {
         occupancyWithoutSlider = (position.allPieces & (~position.blackQueens));
