@@ -8,6 +8,7 @@ void updateBlackHashKey(std::int32_t move, petir_header::tdata& position) {
     std::int32_t fromSquare{};
     std::int32_t toSquare{};
     std::int32_t promotion{};
+    std::int32_t newCastleRights{};
     fromSquare = (move & 127);
     toSquare = (pas::shiftRight(move, 7) & 127);
     promotion = (pas::shiftRight(move, 14) & 7);
@@ -52,22 +53,33 @@ void updateBlackHashKey(std::int32_t move, petir_header::tdata& position) {
                         position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[(fromSquare % 8)]);
                     }
                 }
+                // Collect every right the move clears, then rehash once, so a
+                // move that clears both sides' rights hashes correctly.
+                newCastleRights = position.castleRights;
+                if ((capturedPiece == petir_header::whiteRook)) {
+                    if ((toSquare == petir_header::h1)) {
+                        newCastleRights = (newCastleRights & (~petir_header::whiteShortCastleRight));
+                    } else {
+                        if ((toSquare == petir_header::a1)) {
+                            newCastleRights = (newCastleRights & (~petir_header::whiteLongCastleRight));
+                        }
+                    }
+                }
                 if ((position.board[fromSquare] == petir_header::blackRook)) {
                     if ((fromSquare == petir_header::h8)) {
-                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
-                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~petir_header::blackShortCastleRight))]);
+                        newCastleRights = (newCastleRights & (~petir_header::blackShortCastleRight));
                     } else {
                         if ((fromSquare == petir_header::a8)) {
-                            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
-                            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~petir_header::blackLongCastleRight))]);
+                            newCastleRights = (newCastleRights & (~petir_header::blackLongCastleRight));
                         }
                     }
                 } else {
                     if ((position.board[fromSquare] == petir_header::blackKing)) {
-                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
-                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~12))]);
+                        newCastleRights = (newCastleRights & (~12));
                     }
                 }
+                position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[newCastleRights]);
                 if ((promotion != 0)) {
                     position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackPawn][toSquare]);
                     if ((promotion == petir_header::queenPromotion)) {
@@ -98,6 +110,7 @@ void updateWhiteHashKey(std::int32_t move, petir_header::tdata& position) {
     std::int32_t fromSquare{};
     std::int32_t toSquare{};
     std::int32_t promotion{};
+    std::int32_t newCastleRights{};
     fromSquare = (move & 127);
     toSquare = (pas::shiftRight(move, 7) & 127);
     promotion = (pas::shiftRight(move, 14) & 7);
@@ -142,22 +155,33 @@ void updateWhiteHashKey(std::int32_t move, petir_header::tdata& position) {
                         position.hashKey = (position.hashKey ^ petir_header::zobristEnPassantKeys[(fromSquare % 8)]);
                     }
                 }
+                // Collect every right the move clears, then rehash once, so a
+                // move that clears both sides' rights hashes correctly.
+                newCastleRights = position.castleRights;
+                if ((capturedPiece == petir_header::blackRook)) {
+                    if ((toSquare == petir_header::h8)) {
+                        newCastleRights = (newCastleRights & (~petir_header::blackShortCastleRight));
+                    } else {
+                        if ((toSquare == petir_header::a8)) {
+                            newCastleRights = (newCastleRights & (~petir_header::blackLongCastleRight));
+                        }
+                    }
+                }
                 if ((position.board[fromSquare] == petir_header::whiteRook)) {
                     if ((fromSquare == petir_header::h1)) {
-                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
-                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~petir_header::whiteShortCastleRight))]);
+                        newCastleRights = (newCastleRights & (~petir_header::whiteShortCastleRight));
                     } else {
                         if ((fromSquare == petir_header::a1)) {
-                            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
-                            position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~petir_header::whiteLongCastleRight))]);
+                            newCastleRights = (newCastleRights & (~petir_header::whiteLongCastleRight));
                         }
                     }
                 } else {
                     if ((position.board[fromSquare] == petir_header::whiteKing)) {
-                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
-                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[(position.castleRights & (~3))]);
+                        newCastleRights = (newCastleRights & (~3));
                     }
                 }
+                position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[newCastleRights]);
                 if ((promotion != 0)) {
                     position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whitePawn][toSquare]);
                     if ((promotion == petir_header::queenPromotion)) {

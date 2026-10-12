@@ -63,6 +63,20 @@ void makeWhiteMove(std::int32_t move, petir_header::tdata& position) {
                             position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackRook][toSquare]);
                             position.lastCaptureType = petir_header::whiteRook;
                             (position.blackNonPawnMaterial = pas::decrement(position.blackNonPawnMaterial, 5));
+                            // A rook captured on its corner takes its castling right with it.
+                            if (((position.castleRights & petir_header::blackCastleRights) != 0)) {
+                                if ((toSquare == petir_header::h8)) {
+                                    position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                                    position.castleRights = (position.castleRights & (~petir_header::blackShortCastleRight));
+                                    position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                                } else {
+                                    if ((toSquare == petir_header::a8)) {
+                                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                                        position.castleRights = (position.castleRights & (~petir_header::blackLongCastleRight));
+                                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                                    }
+                                }
+                            }
                         } else {
                             (position.materialScore = pas::increment(position.materialScore, petir_header::queenValue));
                             position.blackQueens = (position.blackQueens & petir_bitboard_mask::squareBitInverted(toSquare));
@@ -236,6 +250,20 @@ void makeBlackMove(std::int32_t move, petir_header::tdata& position) {
                             position.rooksAndQueens = (position.rooksAndQueens & petir_bitboard_mask::squareBitInverted(toSquare));
                             (position.whiteNonPawnMaterial = pas::decrement(position.whiteNonPawnMaterial, 5));
                             position.lastCaptureType = petir_header::whiteRook;
+                            // A rook captured on its corner takes its castling right with it.
+                            if (((position.castleRights & petir_header::whiteCastleRights) != 0)) {
+                                if ((toSquare == petir_header::h1)) {
+                                    position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                                    position.castleRights = (position.castleRights & (~petir_header::whiteShortCastleRight));
+                                    position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                                } else {
+                                    if ((toSquare == petir_header::a1)) {
+                                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                                        position.castleRights = (position.castleRights & (~petir_header::whiteLongCastleRight));
+                                        position.hashKey = (position.hashKey ^ petir_header::zobristCastleKeys[position.castleRights]);
+                                    }
+                                }
+                            }
                         } else {
                             (position.materialScore = pas::decrement(position.materialScore, petir_header::queenValue));
                             position.whiteQueens = (position.whiteQueens & petir_bitboard_mask::squareBitInverted(toSquare));
