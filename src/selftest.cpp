@@ -279,23 +279,34 @@ int selfTest() {
         }
         check(xraysMatch,"SEE x-rays match a ray walker for all directions and independent occupancy fields");
     }
-    // Frozen pre-optimization order includes targets in different 16-bit words
-    // and two en passant sources interleaved with ordinary pawn captures.
-    for(const auto& fixture:std::array<std::array<const char*,3>,2>{{
+    // Frozen forward-first order: pieces and targets nearest the enemy's back
+    // rank come first, files a to h within a rank, and White mirrors Black.
+    // The fixtures span several ranks and interleave two en passant sources
+    // with ordinary pawn captures.
+    for(const auto& fixture:std::array<std::array<const char*,3>,4>{{
         {{"4k3/2n5/8/6n1/8/1n6/8/7K b - - 0 1", "",
-          "c7a8 c7b5 c7d5 c7a6 c7e6 g5f7 g5h7 g5e6 g5f3 g5h3 g5e4 b3a5 b3c5 b3d4 b3a1 b3c1 b3d2 e8d7 e8e7 e8f7 e8d8 e8f8 "}},
+          "b3a1 b3c1 b3d2 b3d4 b3a5 b3c5 g5f3 g5h3 g5e4 g5e6 g5f7 g5h7 c7b5 c7d5 c7a6 c7e6 c7a8 e8d7 e8e7 e8f7 e8d8 e8f8 "}},
+        {{"7k/8/1N6/8/6N1/8/2N5/4K3 w - - 0 1", "",
+          "b6a8 b6c8 b6d7 b6d5 b6a4 b6c4 g4f6 g4h6 g4e5 g4e3 g4f2 g4h2 c2b4 c2d4 c2a3 c2e3 c2a1 e1d2 e1e2 e1f2 e1d1 e1f1 "}},
         {{"7k/8/8/8/pPp1pPp1/1R1B3R/8/7K b - f3 0 1",
-          "a4b3 c4b3 c4d3 e4d3 e4f3 g4h3 g4f3 ",
-          "a4a3 c4c3 e4e3 g4g3 h8g7 h8h7 h8g8 "}}
+          "c4b3 e4d3 a4b3 c4d3 g4h3 e4f3 g4f3 ",
+          "a4a3 c4c3 e4e3 g4g3 h8g7 h8h7 h8g8 "}},
+        {{"7k/8/1r1b3r/PpP1PpP1/8/8/8/7K w - f6 0 1",
+          "c5b6 e5d6 a5b6 c5d6 g5h6 e5f6 g5f6 ",
+          "a5a6 c5c6 e5e6 g5g6 h1g2 h1h2 h1g1 "}}
     }}) {
         auto ordered=fromFen(fixture[0],sideToMove);
+        const bool isWhite=sideToMove==petir_header::whiteSide;
         for(int kind=0;kind<2;++kind) {
             tmovelist list;int count=0;
-            if(kind==0)petir_movgen::generateBlackCaptures(ordered,list,count);
-            else petir_movgen::generateBlackQuietMoves(ordered,list,count);
+            if(kind==0) {
+                if(isWhite)petir_movgen::generateWhiteCaptures(ordered,list,count);else petir_movgen::generateBlackCaptures(ordered,list,count);
+            } else {
+                if(isWhite)petir_movgen::generateWhiteQuietMoves(ordered,list,count);else petir_movgen::generateBlackQuietMoves(ordered,list,count);
+            }
             std::string sequence;
             for(int itemIndex=1;itemIndex<=count;++itemIndex)sequence+=moveText(list[itemIndex].move,ordered,sideToMove)+" ";
-            check(sequence==fixture[kind+1],"optimized generator preserves frozen Black move order");
+            check(sequence==fixture[kind+1],"generator keeps the forward-first move order for both colours");
         }
     }
     struct PinFixture {const char* fen;std::uint64_t expected;};

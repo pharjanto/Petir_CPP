@@ -3,21 +3,29 @@
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
 #endif
+#if defined(_MSC_VER)
+#include <stdlib.h>
+#endif
 namespace petir_movgen {
 namespace {
-// Iteration order affects move ordering. Legacy loops visit the highest
-// occupied 16-bit word first, least bit first within each word.
-template<bool Legacy>
+// Iteration order affects move ordering: moves with equal scores are tried in
+// generation order. Each side scans from the enemy's back rank towards its own,
+// files a to h within a rank, so pieces and targets nearest the enemy come
+// first. White loops use HighRanksFirst (rank 8 down to 1), Black loops rank 1
+// up to 8, so both colours order ties as exact mirrors.
+template<bool HighRanksFirst>
 class move_bits {
     std::uint64_t remainingBits;
 public:
     explicit move_bits(std::uint64_t& sourceBits):remainingBits(sourceBits) {
         // Each loop consumes its source mask; its body uses returned squares.
         sourceBits=0;
-        if constexpr(Legacy) {
-            remainingBits=std::rotl(remainingBits,32);
-            remainingBits=((remainingBits & UINT64_C(0x0000ffff0000ffff))<<16)
-                 |((remainingBits>>16) & UINT64_C(0x0000ffff0000ffff));
+        if constexpr(HighRanksFirst) {
+#if defined(_MSC_VER)
+            remainingBits=_byteswap_uint64(remainingBits);
+#else
+            remainingBits=__builtin_bswap64(remainingBits);
+#endif
         }
     }
     explicit operator bool() const {return remainingBits!=0;}
@@ -30,7 +38,7 @@ public:
         const int square=std::countr_zero(remainingBits);
 #endif
         remainingBits &= remainingBits-1;
-        return static_cast<int>(square) ^ (Legacy?48:0);
+        return static_cast<int>(square) ^ (HighRanksFirst?56:0);
     }
 };
 void appendLegalEnPassantEvasions(petir_header::tdata& position, petir_header::tmovelist& moveList, std::int32_t& moveCount, int side) {
@@ -64,7 +72,7 @@ void generateBlackQuietMoves(petir_header::tdata& position, petir_header::tmovel
     std::int32_t moveIndex=0;
     moveCount = 0;
     pieces = (position.blackPawns & (~petir_bitboard_mask::rankMask[1]));
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
             (moveCount = pas::increment(moveCount, 1));
@@ -80,10 +88,10 @@ void generateBlackQuietMoves(petir_header::tdata& position, petir_header::tmovel
         }
     }
     pieces = position.blackKnights;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = (petir_bitboard_mask::knightAttacks[fromSquare] & (~position.allPieces));
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             auto& entry = moveList[++moveIndex];
@@ -92,14 +100,14 @@ void generateBlackQuietMoves(petir_header::tdata& position, petir_header::tmovel
         }
     }
     pieces = position.blackQueens;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         targets = (targets & (~position.allPieces));
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             auto& entry = moveList[++moveIndex];
             entry.move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -108,12 +116,12 @@ void generateBlackQuietMoves(petir_header::tdata& position, petir_header::tmovel
         }
     }
     pieces = position.blackBishops;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         targets = (targets & (~position.allPieces));
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             auto& entry = moveList[++moveIndex];
@@ -122,12 +130,12 @@ void generateBlackQuietMoves(petir_header::tdata& position, petir_header::tmovel
         }
     }
     pieces = position.blackRooks;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         targets = (targets & (~position.allPieces));
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             auto& entry = moveList[++moveIndex];
@@ -137,7 +145,7 @@ void generateBlackQuietMoves(petir_header::tdata& position, petir_header::tmovel
     }
     fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & (~position.allPieces));
-    for(move_bits<true> remaining(targets); remaining; ) {
+    for(move_bits<false> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         (moveCount = pas::increment(moveCount, 1));
         moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -167,21 +175,13 @@ void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelis
     std::uint64_t targets{};
     std::int32_t fromSquare{};
     std::int32_t toSquare{};
-    std::int32_t file{};
+    std::uint64_t unpromotedPawns{};
     std::int32_t* moveListAddress{};
     moveCount = 0;
     moveListAddress = pas::address(moveList);
     pieces = (position.blackPawns & petir_bitboard_mask::rankMask[1]);
     for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
-        if ((((fromSquare & 7) > 0) && (position.board[pas::sub(fromSquare, 9)] > 0))) {
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
-            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
-            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
-        }
         if ((((fromSquare & 7) < 7) && (position.board[pas::sub(fromSquare, 7)] > 0))) {
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
@@ -189,6 +189,14 @@ void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelis
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
             moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
+        }
+        if ((((fromSquare & 7) > 0) && (position.board[pas::sub(fromSquare, 9)] > 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
         }
         if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
             (moveCount = pas::increment(moveCount, 1));
@@ -205,31 +213,41 @@ void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelis
             }
         }
     }
-    pieces = (position.blackPawns & (~petir_bitboard_mask::rankMask[1]));
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    // Same structure as the White generators, so ties come out mirrored:
+    // captures towards the a-file, then towards the h-file, then en passant.
+    unpromotedPawns = (position.blackPawns & (~petir_bitboard_mask::rankMask[1]));
+    pieces = (pas::shiftRight((unpromotedPawns & petir_bitboard_mask::notFileAMask), 9) & position.whitePieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
-        file = (fromSquare & 7);
-        if (((position.board[pas::sub(fromSquare, 9)] > 0) && (file > 0))) {
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7));
-            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue);
-        }
-        if (((position.board[pas::sub(fromSquare, 7)] > 0) && (file < 7))) {
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7));
-            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue);
-        }
-        if (((pas::shiftRight(fromSquare, 3) == 3) && (pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1))) {
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
-            moveList[moveCount].score = petir_movgen::pawnOrderValue;
+        fromSquare = pas::add(fromSquare, 9);
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7));
+        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue);
+    }
+    pieces = (pas::shiftRight((unpromotedPawns & petir_bitboard_mask::notFileHMask), 7) & position.whitePieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::add(fromSquare, 7);
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7));
+        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue);
+    }
+    if ((position.enPassantFile != petir_header::noEnPassant)) {
+        pieces = (position.blackPawns & petir_bitboard_mask::rankMask[3]);
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
+                (moveCount = pas::increment(moveCount, 1));
+                moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
+                moveList[moveCount].score = petir_movgen::pawnOrderValue;
+            }
         }
     }
     pieces = position.blackKnights;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -240,12 +258,12 @@ void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelis
         }
     }
     pieces = position.blackBishops;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -256,12 +274,12 @@ void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelis
         }
     }
     pieces = position.blackRooks;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -272,14 +290,14 @@ void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelis
         }
     }
     pieces = position.blackQueens;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -288,7 +306,7 @@ void generateBlackCaptures(petir_header::tdata& position, petir_header::tmovelis
     }
     fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.whitePieces);
-    for(move_bits<true> remaining(targets); remaining; ) {
+    for(move_bits<false> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         (moveCount = pas::increment(moveCount, 1));
         moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -306,19 +324,11 @@ void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header:
     std::uint64_t targets{};
     std::int32_t fromSquare{};
     std::int32_t toSquare{};
-    std::int32_t file{};
+    std::uint64_t unpromotedPawns{};
     moveCount = 0;
     pieces = (position.blackPawns & petir_bitboard_mask::rankMask[1]);
     for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
-        if ((((fromSquare & 7) > 0) && (position.board[pas::sub(fromSquare, 9)] > 0))) {
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
-            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
-            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
-        }
         if ((((fromSquare & 7) < 7) && (position.board[pas::sub(fromSquare, 7)] > 0))) {
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
@@ -326,6 +336,14 @@ void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header:
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
             moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue), 5);
+        }
+        if ((((fromSquare & 7) > 0) && (position.board[pas::sub(fromSquare, 9)] > 0))) {
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::queenPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
+            (moveCount = pas::increment(moveCount, 1));
+            moveList[moveCount].move = pas::add(pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7)), pas::shiftLeft(petir_header::knightPromotion, 14));
+            moveList[moveCount].score = pas::add(pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue), 5);
         }
         if ((position.board[pas::sub(fromSquare, 8)] == 0)) {
             (moveCount = pas::increment(moveCount, 1));
@@ -354,31 +372,41 @@ void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header:
             }
         }
     }
-    pieces = (position.blackPawns & (~petir_bitboard_mask::rankMask[1]));
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    // Same structure as the White generators, so ties come out mirrored:
+    // captures towards the a-file, then towards the h-file, then en passant.
+    unpromotedPawns = (position.blackPawns & (~petir_bitboard_mask::rankMask[1]));
+    pieces = (pas::shiftRight((unpromotedPawns & petir_bitboard_mask::notFileAMask), 9) & position.whitePieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
-        file = (fromSquare & 7);
-        if (((position.board[pas::sub(fromSquare, 9)] > 0) && (file > 0))) {
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7));
-            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue);
-        }
-        if (((position.board[pas::sub(fromSquare, 7)] > 0) && (file < 7))) {
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7));
-            moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue);
-        }
-        if (((pas::shiftRight(fromSquare, 3) == 3) && (pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1))) {
-            (moveCount = pas::increment(moveCount, 1));
-            moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
-            moveList[moveCount].score = petir_movgen::pawnOrderValue;
+        fromSquare = pas::add(fromSquare, 9);
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 9), 7));
+        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 9)]], petir_movgen::pawnOrderValue);
+    }
+    pieces = (pas::shiftRight((unpromotedPawns & petir_bitboard_mask::notFileHMask), 7) & position.whitePieces);
+    for(move_bits<false> remaining(pieces); remaining; ) {
+        fromSquare = remaining.pop();
+        fromSquare = pas::add(fromSquare, 7);
+        (moveCount = pas::increment(moveCount, 1));
+        moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(pas::sub(fromSquare, 7), 7));
+        moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::sub(fromSquare, 7)]], petir_movgen::pawnOrderValue);
+    }
+    if ((position.enPassantFile != petir_header::noEnPassant)) {
+        pieces = (position.blackPawns & petir_bitboard_mask::rankMask[3]);
+        for(move_bits<false> remaining(pieces); remaining; ) {
+            fromSquare = remaining.pop();
+            if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
+                (moveCount = pas::increment(moveCount, 1));
+                moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(petir_header::enPassantTarget, 7));
+                moveList[moveCount].score = petir_movgen::pawnOrderValue;
+            }
         }
     }
     pieces = position.blackKnights;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -389,12 +417,12 @@ void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.blackBishops;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -405,12 +433,12 @@ void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.blackRooks;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -421,14 +449,14 @@ void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.blackQueens;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -437,7 +465,7 @@ void generateBlackCapturesAndPushes(petir_header::tdata& position, petir_header:
     }
     fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.whitePieces);
-    for(move_bits<true> remaining(targets); remaining; ) {
+    for(move_bits<false> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         (moveCount = pas::increment(moveCount, 1));
         moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -560,10 +588,10 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.blackKnights;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -573,7 +601,7 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
             }
         }
         targets = ((petir_bitboard_mask::knightAttacks[fromSquare] & knightCheckSquares) & (~position.allPieces));
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -581,13 +609,13 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.blackBishops;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         allTargets = targets;
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -597,7 +625,7 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
             }
         }
         targets = ((allTargets & diagonalCheckSquares) & (~position.allPieces));
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -605,13 +633,13 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.blackRooks;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         allTargets = targets;
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -621,7 +649,7 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
             }
         }
         targets = ((allTargets & straightCheckSquares) & (~position.allPieces));
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -629,7 +657,7 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.blackQueens;
-    for(move_bits<true> remaining(pieces); remaining; ) {
+    for(move_bits<false> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -637,14 +665,14 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         allTargets = targets;
         targets = (targets & position.whitePieces);
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
             moveList[moveCount].score = petir_usee::staticExchange(petir_header::blackSide, position, fromSquare, toSquare);
         }
         targets = ((allTargets & (straightCheckSquares | diagonalCheckSquares)) & (~position.allPieces));
-        for(move_bits<true> remaining(targets); remaining; ) {
+        for(move_bits<false> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -653,7 +681,7 @@ void generateBlackCapturesAndChecks(petir_header::tdata& position, petir_header:
     }
     fromSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.whitePieces);
-    for(move_bits<true> remaining(targets); remaining; ) {
+    for(move_bits<false> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         (moveCount = pas::increment(moveCount, 1));
         moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -694,7 +722,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
     straightCheckSquares = (straightCheckSquares | petir_bitboard_mask::verticalAttacks[enemyKingSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[enemyKingSquare]) & 63)]);
     knightCheckSquares = petir_bitboard_mask::knightAttacks[enemyKingSquare];
     pieces = (pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileAMask), 15) & position.blackKingBoard);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         (fromSquare = pas::decrement(fromSquare, 15));
         if ((position.board[pas::add(fromSquare, 8)] == 0)) {
@@ -704,7 +732,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = (pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileHMask), 17) & position.blackKingBoard);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         (fromSquare = pas::decrement(fromSquare, 17));
         if ((position.board[pas::add(fromSquare, 8)] == 0)) {
@@ -714,7 +742,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = (pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileAMask), 7) & position.blackPieces);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         fromSquare = pas::sub(fromSquare, 7);
         if ((pas::shiftRight(fromSquare, 3) == 6)) {
@@ -728,7 +756,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = (pas::shiftLeft((position.whitePawns & petir_bitboard_mask::notFileHMask), 9) & position.blackPieces);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         fromSquare = pas::sub(fromSquare, 9);
         if ((pas::shiftRight(fromSquare, 3) == 6)) {
@@ -742,7 +770,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = (position.whitePawns & petir_bitboard_mask::rankMask[6]);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         if ((position.board[pas::add(fromSquare, 8)] == 0)) {
             (moveCount = pas::increment(moveCount, 1));
@@ -754,7 +782,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = (position.whitePawns & (petir_bitboard_mask::rankMask[5] | petir_bitboard_mask::rankMask[4]));
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         if ((position.board[pas::add(fromSquare, 8)] == 0)) {
             (moveCount = pas::increment(moveCount, 1));
@@ -767,7 +795,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
     }
     if ((position.enPassantFile != petir_header::noEnPassant)) {
         pieces = (position.whitePawns & petir_bitboard_mask::rankMask[4]);
-        for(move_bits<false> remaining(pieces); remaining; ) {
+        for(move_bits<true> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
                 (moveCount = pas::increment(moveCount, 1));
@@ -777,10 +805,10 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.whiteKnights;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.blackPieces);
-        for(move_bits<false> remaining(targets); remaining; ) {
+        for(move_bits<true> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -790,7 +818,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
             }
         }
         targets = ((petir_bitboard_mask::knightAttacks[fromSquare] & knightCheckSquares) & (~position.allPieces));
-        for(move_bits<false> remaining(targets); remaining; ) {
+        for(move_bits<true> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -798,7 +826,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.whiteBishops;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
@@ -822,7 +850,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.whiteRooks;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -846,7 +874,7 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.whiteQueens;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -870,14 +898,14 @@ void generateWhiteCapturesAndChecks(petir_header::tdata& position, petir_header:
     }
     fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.blackPieces);
-    for(move_bits<false> remaining(targets); remaining; ) {
+    for(move_bits<true> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         (moveCount = pas::increment(moveCount, 1));
         moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
         moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
     }
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & pas::shiftRight(position.blackPawns, 8));
-    for(move_bits<false> remaining(targets); remaining; ) {
+    for(move_bits<true> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         if (((position.board[toSquare] == 0) && ((petir_bitboard_mask::blackPassedPawnMask[pas::add(toSquare, 8)] & position.whitePawns) == 0))) {
             (moveCount = pas::increment(moveCount, 1));
@@ -935,7 +963,7 @@ void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelis
     }
     unpromotedPawns = (position.whitePawns & (~petir_bitboard_mask::rankMask[6]));
     pieces = (pas::shiftLeft((unpromotedPawns & petir_bitboard_mask::notFileAMask), 7) & position.blackPieces);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         fromSquare = pas::sub(fromSquare, 7);
         (moveCount = pas::increment(moveCount, 1));
@@ -943,7 +971,7 @@ void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelis
         moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue);
     }
     pieces = (pas::shiftLeft((unpromotedPawns & petir_bitboard_mask::notFileHMask), 9) & position.blackPieces);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         fromSquare = pas::sub(fromSquare, 9);
         (moveCount = pas::increment(moveCount, 1));
@@ -952,7 +980,7 @@ void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelis
     }
     if ((position.enPassantFile != petir_header::noEnPassant)) {
         pieces = (position.whitePawns & petir_bitboard_mask::rankMask[4]);
-        for(move_bits<false> remaining(pieces); remaining; ) {
+        for(move_bits<true> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
                 (moveCount = pas::increment(moveCount, 1));
@@ -962,12 +990,11 @@ void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelis
         }
     }
     pieces = position.whiteKnights;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.blackPieces);
-        while ((targets != 0)) {
-            toSquare = petir_bitboard_mask::firstBit(pas::address(targets));
-            targets = (targets & (~petir_bitboard_mask::squareBit(toSquare)));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
             moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue);
@@ -977,7 +1004,7 @@ void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelis
         }
     }
     pieces = position.whiteBishops;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
@@ -993,7 +1020,7 @@ void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelis
         }
     }
     pieces = position.whiteRooks;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -1009,7 +1036,7 @@ void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelis
         }
     }
     pieces = position.whiteQueens;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -1025,7 +1052,7 @@ void generateWhiteCaptures(petir_header::tdata& position, petir_header::tmovelis
     }
     fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.blackPieces);
-    for(move_bits<false> remaining(targets); remaining; ) {
+    for(move_bits<true> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         (moveCount = pas::increment(moveCount, 1));
         moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -1080,7 +1107,7 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
         }
     }
     pieces = (position.whitePawns & (petir_bitboard_mask::rankMask[5] | petir_bitboard_mask::rankMask[4]));
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         if ((position.board[pas::add(fromSquare, 8)] == 0)) {
             (moveCount = pas::increment(moveCount, 1));
@@ -1093,7 +1120,7 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
     }
     unpromotedPawns = (position.whitePawns & (~petir_bitboard_mask::rankMask[6]));
     pieces = (pas::shiftLeft((unpromotedPawns & petir_bitboard_mask::notFileAMask), 7) & position.blackPieces);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         fromSquare = pas::sub(fromSquare, 7);
         (moveCount = pas::increment(moveCount, 1));
@@ -1101,7 +1128,7 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
         moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[pas::add(fromSquare, 7)]], petir_movgen::pawnOrderValue);
     }
     pieces = (pas::shiftLeft((unpromotedPawns & petir_bitboard_mask::notFileHMask), 9) & position.blackPieces);
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         fromSquare = pas::sub(fromSquare, 9);
         (moveCount = pas::increment(moveCount, 1));
@@ -1110,7 +1137,7 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
     }
     if ((position.enPassantFile != petir_header::noEnPassant)) {
         pieces = (position.whitePawns & petir_bitboard_mask::rankMask[4]);
-        for(move_bits<false> remaining(pieces); remaining; ) {
+        for(move_bits<true> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             if ((pas::abs(pas::sub((fromSquare & 7), position.enPassantFile)) == 1)) {
                 (moveCount = pas::increment(moveCount, 1));
@@ -1120,12 +1147,11 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.whiteKnights;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = (petir_bitboard_mask::knightAttacks[fromSquare] & position.blackPieces);
-        while ((targets != 0)) {
-            toSquare = petir_bitboard_mask::firstBit(pas::address(targets));
-            targets = (targets & (~petir_bitboard_mask::squareBit(toSquare)));
+        for(move_bits<true> remaining(targets); remaining; ) {
+            toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
             moveList[moveCount].score = pas::sub(petir_movgen::pieceOrderValue[position.board[toSquare]], petir_movgen::knightOrderValue);
@@ -1135,7 +1161,7 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.whiteBishops;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
@@ -1151,7 +1177,7 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.whiteRooks;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -1167,7 +1193,7 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
         }
     }
     pieces = position.whiteQueens;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -1183,14 +1209,14 @@ void generateWhiteCapturesAndPushes(petir_header::tdata& position, petir_header:
     }
     fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & position.blackPieces);
-    for(move_bits<false> remaining(targets); remaining; ) {
+    for(move_bits<true> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         (moveCount = pas::increment(moveCount, 1));
         moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
         moveList[moveCount].score = petir_usee::staticExchange(petir_header::whiteSide, position, fromSquare, toSquare);
     }
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & pas::shiftRight(position.blackPawns, 8));
-    for(move_bits<false> remaining(targets); remaining; ) {
+    for(move_bits<true> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         if (((position.board[toSquare] == 0) && ((petir_bitboard_mask::blackPassedPawnMask[pas::add(toSquare, 8)] & position.whitePawns) == 0))) {
             (moveCount = pas::increment(moveCount, 1));
@@ -1212,7 +1238,7 @@ void generateWhiteQuietMoves(petir_header::tdata& position, petir_header::tmovel
     std::int32_t toSquare{};
     moveCount = 0;
     pieces = (position.whitePawns & (~petir_bitboard_mask::rankMask[6]));
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         if ((position.board[pas::add(fromSquare, 8)] == 0)) {
             (moveCount = pas::increment(moveCount, 1));
@@ -1226,10 +1252,10 @@ void generateWhiteQuietMoves(petir_header::tdata& position, petir_header::tmovel
         }
     }
     pieces = position.whiteKnights;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = (petir_bitboard_mask::knightAttacks[fromSquare] & (~position.allPieces));
-        for(move_bits<false> remaining(targets); remaining; ) {
+        for(move_bits<true> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -1237,14 +1263,14 @@ void generateWhiteQuietMoves(petir_header::tdata& position, petir_header::tmovel
         }
     }
     pieces = position.whiteQueens;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         targets = (targets | petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)]);
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         targets = (targets & (~position.allPieces));
-        for(move_bits<false> remaining(targets); remaining; ) {
+        for(move_bits<true> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -1252,12 +1278,12 @@ void generateWhiteQuietMoves(petir_header::tdata& position, petir_header::tmovel
         }
     }
     pieces = position.whiteBishops;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
         targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
         targets = (targets & (~position.allPieces));
-        for(move_bits<false> remaining(targets); remaining; ) {
+        for(move_bits<true> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -1265,12 +1291,12 @@ void generateWhiteQuietMoves(petir_header::tdata& position, petir_header::tmovel
         }
     }
     pieces = position.whiteRooks;
-    for(move_bits<false> remaining(pieces); remaining; ) {
+    for(move_bits<true> remaining(pieces); remaining; ) {
         fromSquare = remaining.pop();
         targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
         targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
         targets = (targets & (~position.allPieces));
-        for(move_bits<false> remaining(targets); remaining; ) {
+        for(move_bits<true> remaining(targets); remaining; ) {
             toSquare = remaining.pop();
             (moveCount = pas::increment(moveCount, 1));
             moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -1279,7 +1305,7 @@ void generateWhiteQuietMoves(petir_header::tdata& position, petir_header::tmovel
     }
     fromSquare = petir_bitboard_mask::kingSquare(position.whiteKingBoard);
     targets = (petir_bitboard_mask::kingAttacks[fromSquare] & (~position.allPieces));
-    for(move_bits<false> remaining(targets); remaining; ) {
+    for(move_bits<true> remaining(targets); remaining; ) {
         toSquare = remaining.pop();
         (moveCount = pas::increment(moveCount, 1));
         moveList[moveCount].move = pas::add(fromSquare, pas::shiftLeft(toSquare, 7));
@@ -1406,7 +1432,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
         blockingSquares = petir_bitboard_mask::betweenMask[kingSquare][checkerSquare];
         pieces = position.whiteKnights;
         checkDirection = petir_bitboard_mask::rayDirection[kingSquare][checkerSquare];
-        for(move_bits<false> remaining(pieces); remaining; ) {
+        for(move_bits<true> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::knightAttacks[fromSquare];
             answerSquares = (targets & checkerBit);
@@ -1422,7 +1448,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
                 }
             }
             answerSquares = (targets & blockingSquares);
-            for(move_bits<false> remaining(answerSquares); remaining; ) {
+            for(move_bits<true> remaining(answerSquares); remaining; ) {
                 toSquare = remaining.pop();
                 if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
                     (moveCount = pas::increment(moveCount, 1));
@@ -1432,7 +1458,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
             }
         }
         pieces = position.whitePawns;
-        for(move_bits<false> remaining(pieces); remaining; ) {
+        for(move_bits<true> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::whitePawnAttacks[fromSquare];
             answerSquares = (targets & checkerBit);
@@ -1483,7 +1509,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
             }
         }
         pieces = position.whiteBishops;
-        for(move_bits<false> remaining(pieces); remaining; ) {
+        for(move_bits<true> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
             targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
@@ -1500,7 +1526,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
                 }
             }
             answerSquares = (targets & blockingSquares);
-            for(move_bits<false> remaining(answerSquares); remaining; ) {
+            for(move_bits<true> remaining(answerSquares); remaining; ) {
                 toSquare = remaining.pop();
                 if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
                     (moveCount = pas::increment(moveCount, 1));
@@ -1510,7 +1536,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
             }
         }
         pieces = position.whiteRooks;
-        for(move_bits<false> remaining(pieces); remaining; ) {
+        for(move_bits<true> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
             targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -1527,7 +1553,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
                 }
             }
             answerSquares = (targets & blockingSquares);
-            for(move_bits<false> remaining(answerSquares); remaining; ) {
+            for(move_bits<true> remaining(answerSquares); remaining; ) {
                 toSquare = remaining.pop();
                 if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
                     (moveCount = pas::increment(moveCount, 1));
@@ -1537,7 +1563,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
             }
         }
         pieces = position.whiteQueens;
-        for(move_bits<false> remaining(pieces); remaining; ) {
+        for(move_bits<true> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
             targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -1556,7 +1582,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
                 }
             }
             answerSquares = (targets & blockingSquares);
-            for(move_bits<false> remaining(answerSquares); remaining; ) {
+            for(move_bits<true> remaining(answerSquares); remaining; ) {
                 toSquare = remaining.pop();
                 if ((!petir_tools::exposesWhiteKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
                     (moveCount = pas::increment(moveCount, 1));
@@ -1672,7 +1698,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
         checkerBit = petir_bitboard_mask::squareBit(checkerSquare);
         blockingSquares = petir_bitboard_mask::betweenMask[kingSquare][checkerSquare];
         pieces = position.blackKnights;
-        for(move_bits<true> remaining(pieces); remaining; ) {
+        for(move_bits<false> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::knightAttacks[fromSquare];
             answerSquares = (targets & checkerBit);
@@ -1688,7 +1714,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
                 }
             }
             answerSquares = (targets & blockingSquares);
-            for(move_bits<true> remaining(answerSquares); remaining; ) {
+            for(move_bits<false> remaining(answerSquares); remaining; ) {
                 toSquare = remaining.pop();
                 if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
                     (moveCount = pas::increment(moveCount, 1));
@@ -1698,7 +1724,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
             }
         }
         pieces = position.blackPawns;
-        for(move_bits<true> remaining(pieces); remaining; ) {
+        for(move_bits<false> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::blackPawnAttacks[fromSquare];
             answerSquares = (targets & checkerBit);
@@ -1749,7 +1775,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
             }
         }
         pieces = position.blackBishops;
-        for(move_bits<true> remaining(pieces); remaining; ) {
+        for(move_bits<false> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::diagonalA8H1Attacks[fromSquare][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[fromSquare]) & 255)];
             targets = (targets | petir_bitboard_mask::diagonalH8A1Attacks[fromSquare][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[fromSquare]) & 255)]);
@@ -1766,7 +1792,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
                 }
             }
             answerSquares = (targets & blockingSquares);
-            for(move_bits<true> remaining(answerSquares); remaining; ) {
+            for(move_bits<false> remaining(answerSquares); remaining; ) {
                 toSquare = remaining.pop();
                 if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
                     (moveCount = pas::increment(moveCount, 1));
@@ -1776,7 +1802,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
             }
         }
         pieces = position.blackRooks;
-        for(move_bits<true> remaining(pieces); remaining; ) {
+        for(move_bits<false> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
             targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -1793,7 +1819,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
                 }
             }
             answerSquares = (targets & blockingSquares);
-            for(move_bits<true> remaining(answerSquares); remaining; ) {
+            for(move_bits<false> remaining(answerSquares); remaining; ) {
                 toSquare = remaining.pop();
                 if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
                     (moveCount = pas::increment(moveCount, 1));
@@ -1803,7 +1829,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
             }
         }
         pieces = position.blackQueens;
-        for(move_bits<true> remaining(pieces); remaining; ) {
+        for(move_bits<false> remaining(pieces); remaining; ) {
             fromSquare = remaining.pop();
             targets = petir_bitboard_mask::horizontalAttacks[fromSquare][(pas::shiftRight(position.allPieces, pas::add((fromSquare & 56), 1)) & 63)];
             targets = (targets | petir_bitboard_mask::verticalAttacks[fromSquare][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[fromSquare]) & 63)]);
@@ -1822,7 +1848,7 @@ void generateBlackEvasions(petir_header::tdata& position, petir_header::tmovelis
                 }
             }
             answerSquares = (targets & blockingSquares);
-            for(move_bits<true> remaining(answerSquares); remaining; ) {
+            for(move_bits<false> remaining(answerSquares); remaining; ) {
                 toSquare = remaining.pop();
                 if ((!petir_tools::exposesBlackKing(position, pas::add(fromSquare, pas::shiftLeft(toSquare, 7))))) {
                     (moveCount = pas::increment(moveCount, 1));
