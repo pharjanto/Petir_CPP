@@ -1395,7 +1395,7 @@ void generateWhiteEvasions(petir_header::tdata& position, petir_header::tmovelis
         if ((position.board[toSquare] == 0)) {
             moveList[moveCount].score = petir_header::whiteHistory[petir_header::whiteKing][toSquare];
         } else {
-            moveList[moveCount].score = pas::shiftLeft(petir_movgen::pieceOrderValue[position.board[toSquare]], 14);
+            moveList[moveCount].score = pas::shiftLeft(petir_movgen::pieceOrderValue[position.board[toSquare]], 15);
         }
     }
     // Removing both pawns can uncover an attack; making the move also handles
