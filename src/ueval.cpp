@@ -1173,10 +1173,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         //  1. pawn on its sixth or seventh rank with its king diagonally in front;
         //  2. pawn on b2-g2 with its king next to it and White's king not on the
         //     promotion square, unless White's king stands beside the pawn, White is
-        //     to move, Black has no pieces and Black's own king is off ranks 1-2.
-        //     White's version of this exception tests the enemy (black) king's rank
-        //     instead, which cannot hold for a king beside the pawn, so White never
-        //     takes the exception;
+        //     to move, Black has no pieces and Black's own king is off ranks 1-2;
         //  3. the pawn is two ranks ahead of White's king, or one with Black to move;
         //  4. rule of the square: White's king is too many files away;
         //  5. pawn on its sixth rank (rank 3) with its king in front of it.
@@ -1372,7 +1369,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 continue;
             }
             if (((((square >= petir_header::b7) && (square <= petir_header::g7)) && (position.board[pas::add(square, 8)] != petir_header::blackKing)) && ((petir_bitboard_mask::kingAttacks[square] & position.whiteKingBoard) != 0))) {
-                if ((((((blackKingSquare <= petir_header::h6) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0)) && (realSideToMove == petir_header::blackSide)) && (position.whiteNonPawnMaterial == 0)) && ((blackKingSquare == pas::sub(square, 1)) || (blackKingSquare == pas::add(square, 1))))) {
+                if ((((((whiteKingSquare <= petir_header::h6) && ((petir_bitboard_mask::kingAttacks[square] & position.blackKingBoard) != 0)) && (realSideToMove == petir_header::blackSide)) && (position.whiteNonPawnMaterial == 0)) && ((blackKingSquare == pas::sub(square, 1)) || (blackKingSquare == pas::add(square, 1))))) {
                 } else {
                     (score = pas::increment(score, petir_ueval::assuredPromotionBonus));
                     (score = pas::increment(score, pas::shiftLeft(petir_ueval::whitePassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
