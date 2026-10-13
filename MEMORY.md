@@ -219,6 +219,80 @@ measure: a stronger build can solve fewer positions. Matches decide.
   builds from the same run.
 - First use: `build/rfp/epd/` (RFP none/v1/v2 at 1 s per position).
 
+## Texel tuning data (started 2026-10-14)
+
+Positions labelled for tuning the evaluation. Labels will blend the game
+result with a Stockfish score; the blend weight is chosen once a tuner exists.
+
+- Source: the CCRL 40/15 database (2,463,682 games), extracted to
+  `build/texel/ccrl/CCRL-4040.pgn`. Windows `tar` can't decode its PPMd
+  compression; the 7-Zip in `C:\Program Files\NVIDIA Corporation\NVIDIA app\`
+  can. Keep the Arena tournament games (`C:\chess\arena_3.5.1\Tournaments\pgn`)
+  out of training: they are the held-out check.
+- `tools/texel/sample_positions.py` samples positions (seeded, spread over
+  the whole file, book plies skipped, cheap quiet filter, duplicates removed).
+  `tools/texel/label_stockfish.py` labels them with Stockfish 14
+  (`C:\chess\arena_3.5.1\Engines\stockfish_14_win_x64_avx2\`), keeping the
+  score of every depth from one search. `tools/texel/pilot_report.py`
+  summarises a labelled set.
+- Pilot (`build/texel/pilot/REPORT.txt`, 1,000 positions to depth 20): the
+  fitted K is about 1.62; on 10 cores depth 14 labels about 490,000 positions
+  an hour, depth 16 about 205,000, depth 18 about 92,000. The fit to game
+  results stops improving at depth 14.
+- Quiet filter, run after sampling and before labelling:
+  `tools/texel/quiet_filter.py QUIET_EVAL IN OUT [--rejected FILE]`. It keeps
+  a position when Petir's full-window quiescence search (captures and pushes)
+  returns its static eval, and drops in-check positions and exact-rule scores
+  (KPK, material and theoretical draws, rook + minor against rook). Build
+  `quiet_eval` from a separate tree whose eval will be tuned:
+  `cmake -S tools/texel/qfilter -B build/texel/qfilter -G "Visual Studio 17 2022" -A x64 -DPETIR_SRC=<tree>/src`
+  (currently built from `build/base-08c0f11`). It scores about 10,000
+  positions a second. On the pilot it kept 87.5%. On the positions it dropped,
+  the quiescence score agreed better with Stockfish than the static eval did
+  (correlation 0.74 against 0.65). Don't use `--checks`: it dropped 7% more,
+  mostly for small eval shifts (median 15 cp) rather than tactics, and the
+  dropped positions were the more decided ones.
+- On the pilot's kept positions, squared error against game results: constant
+  0.124, material count 0.111, Petir's static eval 0.100, Stockfish depth 16
+  0.056.
+- Plan agreed with the user (2026-10-14), two tuning rounds on the same
+  labelled data, each with its own match:
+  1. Tune the current eval (no taper): about 750 additive weights (material,
+     piece-square tables, outposts, mobility, pawn structure, passers, bishop,
+     knight and rook terms, king-safety tables). Keep fixed: scale factors
+     (endgameScale, rookScale, king-attack multipliers, draw divisors, 50-move
+     fade), rare terms (trapped knight, KRP-KR, bare-king promotion rules) and
+     exact rules. The pawn-shield hole counts and king-pressure counts stay
+     fixed too: they index pawnShieldPenalty and kingPressurePenalty, whose
+     entries are tuned instead. Match against base.
+  2. Only if the user decides to: untie middlegame and endgame values for
+     material, piece-square tables and mobility, blend them by non-pawn
+     material in the engine (this revives suggestion 6, smooth phase
+     transitions, which was shelved),
+     retune, and match against round 1. Measure nps: it is a structural change.
+  The tuner keeps a middlegame and an endgame value per weight from the start,
+  tied together in round 1, so round 2 needs no rewrite. Piece values also
+  steer search (quiescence pruning margin, threat detection in tools.cpp),
+  and the lazy-eval margin (280 plus adjustments) needs a recheck if tuned
+  terms grow.
+- Eval weights for tuning (2026-10-14): the numbers ueval.cpp used to write
+  inline (side to move 10, +4/+8 per pawn, queen against pawns 35, safe
+  advance on move 40, staggered connected passers, passer activity, endgame
+  knight and rook activity, breakthrough 16) are named weights in
+  petir.hpp. Scalar weights are declared `PETIR_EVAL_WEIGHT`: `inline
+  constexpr` in the engine, plain variables when PETIR_EVAL_TUNING is
+  defined, which also makes the pawn caches recompute every entry.
+- `tools/texel/tuner/eval_trace` (built with PETIR_EVAL_TUNING, same CMake
+  pattern as the quiet filter) lists the 744 tunable weights (`--list`) and
+  writes, per FEN, the White-view eval and each weight's coefficient
+  (d eval / d weight, measured by changing the weight by 16). It ties White
+  and Black tables (and the kingside/queenside endgame king tables) into one
+  weight and checks they are mirrored. Material is traced through the
+  position's running material score. The linear model holds:
+  `--check` with every weight changed by up to 10 predicted the eval within
+  1 cp in 98% of pilot positions (mean error 0.36 cp). About 33 non-zero
+  coefficients per position; 875 positions take 0.15 s.
+
 ## Exactness tests for speed-ups and refactors
 
 Added 2026-10-12 during the exact-score `ueval.cpp` optimization. Use these
