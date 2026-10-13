@@ -742,6 +742,30 @@ std::uint8_t countBits(std::uint64_t bits) {
 #endif
 }
 
+// Endgame king placement, White minus Black: piece-square tables chosen by
+// where the pawns are (both wings or no pawns, queenside only, kingside only).
+int endgameKingPlacement(const petir_header::tdata& position, int whiteKingSquare, int blackKingSquare) {
+    const std::uint64_t allPawns = position.whitePawns | position.blackPawns;
+    const bool queensidePawns = (petir_evalmask::filesABCDMask & allPawns) != 0;
+    const bool kingsidePawns = (petir_evalmask::filesEFGHMask & allPawns) != 0;
+    if (queensidePawns && !kingsidePawns) {
+        return whiteKingEndgameQueensideBonus[whiteKingSquare] - blackKingEndgameQueensideBonus[blackKingSquare];
+    }
+    if (kingsidePawns && !queensidePawns) {
+        return whiteKingEndgameKingsideBonus[whiteKingSquare] - blackKingEndgameKingsideBonus[blackKingSquare];
+    }
+    return whiteKingEndgameBothWingsBonus[whiteKingSquare] - blackKingEndgameBothWingsBonus[blackKingSquare];
+}
+
+// Weight of endgame king placement against middlegame king placement, 0..256,
+// from the larger side's non-pawn material: 0 (middlegame only) at 16 or more,
+// 256 (endgame only) at 10 or less, linear in between. Both ends match the old
+// hard switch, which used the endgame tables when both sides had at most 12.
+int endgameKingWeight(const petir_header::tdata& position) {
+    const int largerMaterial = std::max<int>(position.whiteNonPawnMaterial, position.blackNonPawnMaterial);
+    return std::clamp((16 - largerMaterial) * 256 / 6, 0, 256);
+}
+
 // The main evaluation. Returns the score from sideToMove's point of view.
 // opponentPerspective: the caller wants sideToMove's score although the other
 // side is to move in `position`; realSideToMove below is the side actually to
@@ -755,8 +779,9 @@ std::uint8_t countBits(std::uint64_t bits) {
 //     blocked by their king;
 //  3. lazy exit;
 //  4. kings, castling, pawn shelter, bishops, pawn structure and passed pawns
-//     (Black first, then White), rooks, knights, bishops, queens, king safety
-//     or endgame king placement, small extra terms;
+//     (Black first, then White), rooks, knights, bishops, queens, king
+//     placement (middlegame and endgame tables mixed by material), king safety
+//     outside endgames, small extra terms;
 //  5. scaling towards a draw: opposite bishops, the 50-move rule, drawish
 //     material, likely draws.
 // ueval.pas:850
@@ -2078,10 +2103,23 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             (score = pas::decrement(score, pas::mul(petir_evalmask::closenessHalfTable[square][whiteKingSquare], petir_ueval::queenTropismBonus)));
         }
     }
+    // King placement: the middlegame and endgame tables mixed by
+    // endgameKingWeight. Integer division truncates towards zero, so mirrored
+    // positions still score exactly opposite.
+    {
+        const int endgameWeight = endgameKingWeight(position);
+        const int middlegameKingScore = petir_ueval::blackKingSquarePenalty[blackKingSquare] - petir_ueval::whiteKingSquarePenalty[whiteKingSquare];
+        if (endgameWeight == 0) {
+            score += middlegameKingScore;
+        } else if (endgameWeight == 256) {
+            score += endgameKingPlacement(position, whiteKingSquare, blackKingSquare);
+        } else {
+            score += ((256 - endgameWeight) * middlegameKingScore
+                      + endgameWeight * endgameKingPlacement(position, whiteKingSquare, blackKingSquare)) / 256;
+        }
+    }
     if ((!endgame)) {
-        // Middlegame king placement.
-        (score = pas::decrement(score, petir_ueval::whiteKingSquarePenalty[whiteKingSquare]));
-        (score = pas::increment(score, petir_ueval::blackKingSquarePenalty[blackKingSquare]));
+        // King danger.
         // scratchValue: the side actually to move (the same as realSideToMove).
         if (opponentPerspective) {
             scratchValue = pas::sub(3, sideToMove);
@@ -2174,26 +2212,6 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             (score = pas::increment(score, weightedTerm));
         }
     } else {
-        scratchBits = (position.blackPawns | position.whitePawns);
-        // Endgame king placement: piece-square tables chosen by where the pawns are
-        // (both wings or no pawns, queenside only, kingside only).
-        if (((petir_evalmask::filesABCDMask & scratchBits) != 0)) {
-            if (((petir_evalmask::filesEFGHMask & scratchBits) != 0)) {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
-            } else {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameQueensideBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameQueensideBonus[blackKingSquare]));
-            }
-        } else {
-            if (((petir_evalmask::filesEFGHMask & scratchBits) != 0)) {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameKingsideBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameKingsideBonus[blackKingSquare]));
-            } else {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
-            }
-        }
         // Only in pawn endings: kings and pawns, no pieces.
         if ((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0)) {
             score += pawnPotentialScoreForEval(position);
