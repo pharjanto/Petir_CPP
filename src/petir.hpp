@@ -521,6 +521,14 @@ extern petir_repetition::tarrreprecord repetitionTable;
 }
 namespace petir_next {
 }
+// The evaluation's scalar weights are constants in the engine. The Texel tuner
+// (tools/texel/tuner) defines PETIR_EVAL_TUNING to make them variables it can
+// change between evaluations. The weight tables are variables in both builds.
+#ifdef PETIR_EVAL_TUNING
+#define PETIR_EVAL_WEIGHT inline
+#else
+#define PETIR_EVAL_WEIGHT inline constexpr
+#endif
 namespace petir_ueval {
 inline constexpr auto queensideMajority = 1;
 inline constexpr auto kingsideMajority = 2;
@@ -547,80 +555,113 @@ inline pas::Array<std::int8_t, 0, 63> blackKingEndgameBothWingsBonus = {pas::neg
 inline pas::Array<std::int8_t, 0, 63> whiteQueenSquareBonus = {pas::negate(5), pas::negate(8), 0, 0, 0, 0, pas::negate(8), pas::negate(5), pas::negate(3), 2, 4, 4, 4, 4, 2, pas::negate(3), pas::negate(1), 2, 3, 6, 6, 3, 2, pas::negate(1), pas::negate(0), 2, 6, 8, 8, 6, 2, pas::negate(0), 0, 2, 6, 8, 8, 6, 2, 0, 0, 2, 6, 6, 6, 6, 2, 0, 0, 3, 5, 5, 5, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 inline pas::Array<std::int8_t, 0, 63> blackQueenSquareBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 5, 5, 5, 5, 3, 0, 0, 2, 6, 6, 6, 6, 2, 0, 0, 2, 6, 8, 8, 6, 2, 0, pas::negate(0), 2, 6, 8, 8, 6, 2, pas::negate(0), pas::negate(1), 2, 3, 6, 6, 3, 2, pas::negate(1), pas::negate(3), 2, 4, 4, 4, 4, 2, pas::negate(3), pas::negate(5), pas::negate(8), 0, 0, 0, 0, pas::negate(8), pas::negate(5)};
 inline pas::Array<std::uint8_t, 0, 64> squareColor = {0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 2};
-inline constexpr auto twoBishopsKingAttackBonus = 10;
-inline constexpr auto lostCastlingPenalty = 40;
-inline constexpr auto castledBonus = 10;
-inline constexpr auto castledWrongSideBonus = 10;
-inline constexpr auto trappedBishopPenalty = 155;
-inline constexpr auto trappedBishopPenalty2 = 30;
-inline constexpr auto trappedKnightPenalty = 200;
-inline constexpr auto undevelopedCenterPawnPenalty = 10;
-inline constexpr auto blockedCenterPawnPenalty = 25;
-inline constexpr auto rookSemiOpenFileNearKingBonus = 6;
-inline constexpr auto doubledRooksSemiOpenNearKingBonus = 11;
-inline constexpr auto rookOpenFileNearKingBonus = 8;
-inline constexpr auto doubledRooksBonus = 8;
-inline constexpr auto doubledRooksNearKingBonus = 6;
-inline constexpr auto rookQueenOpenFileBonus = 3;
-inline constexpr auto rookQueenSemiOpenFileBonus = 1;
-inline constexpr auto rookQueenSemiOpenNearKingBonus = 12;
-inline constexpr auto doubledRooksOpenFileBonus = 12;
+PETIR_EVAL_WEIGHT auto twoBishopsKingAttackBonus = 10;
+PETIR_EVAL_WEIGHT auto lostCastlingPenalty = 40;
+PETIR_EVAL_WEIGHT auto castledBonus = 10;
+PETIR_EVAL_WEIGHT auto castledWrongSideBonus = 10;
+PETIR_EVAL_WEIGHT auto trappedBishopPenalty = 155;
+PETIR_EVAL_WEIGHT auto trappedBishopPenalty2 = 30;
+PETIR_EVAL_WEIGHT auto trappedKnightPenalty = 200;
+PETIR_EVAL_WEIGHT auto undevelopedCenterPawnPenalty = 10;
+PETIR_EVAL_WEIGHT auto blockedCenterPawnPenalty = 25;
+PETIR_EVAL_WEIGHT auto rookSemiOpenFileNearKingBonus = 6;
+PETIR_EVAL_WEIGHT auto doubledRooksSemiOpenNearKingBonus = 11;
+PETIR_EVAL_WEIGHT auto rookOpenFileNearKingBonus = 8;
+PETIR_EVAL_WEIGHT auto doubledRooksBonus = 8;
+PETIR_EVAL_WEIGHT auto doubledRooksNearKingBonus = 6;
+PETIR_EVAL_WEIGHT auto rookQueenOpenFileBonus = 3;
+PETIR_EVAL_WEIGHT auto rookQueenSemiOpenFileBonus = 1;
+PETIR_EVAL_WEIGHT auto rookQueenSemiOpenNearKingBonus = 12;
+PETIR_EVAL_WEIGHT auto doubledRooksOpenFileBonus = 12;
 inline pas::Array<std::uint8_t, 0, 6> doubledPawnPenalty = {0, 6, 20, 40, 65, 90, 120};
-inline constexpr auto backwardPawnPenalty = 3;
+PETIR_EVAL_WEIGHT auto backwardPawnPenalty = 3;
 inline pas::Array<std::uint8_t, 0, 7> isolatedPawnPenalty = {2, 4, 4, 4, 4, 4, 4, 2};
-inline constexpr auto missingPawnPenalty = 45;
+PETIR_EVAL_WEIGHT auto missingPawnPenalty = 45;
 inline pas::Array<std::uint8_t, 0, 7> whitePotentialPasserBonus = {0, 0, 3, 4, 5, 6, 6, 6};
 inline pas::Array<std::uint8_t, 0, 7> blackPotentialPasserBonus = {6, 6, 6, 5, 4, 3, 0, 0};
 inline pas::Array<std::uint8_t, 0, 8> isolatedPawnCountPenalty = {0, 0, 2, 5, 10, 30, 50, 50, 65};
-inline constexpr auto rookOnSeventhBonus = 18;
-inline constexpr auto rookOnEighthBonus = 4;
-inline constexpr auto safeAdvanceBonus = 40;
-inline constexpr auto doubledRooksSeventhBonus = 25;
-inline constexpr auto rookQueenSeventhBonus = 33;
-inline constexpr auto blockedRookPenalty = 9;
-inline constexpr auto passedPawnBonus = 16;
-inline constexpr auto mobilityBonus = 2;
-inline constexpr auto queenTropismBonus = 2;
-inline constexpr auto bishopTropismBonus = 1;
-inline constexpr auto knightTropismBonus = 2;
-inline constexpr auto blockedPawnPenalty = 7;
-inline constexpr auto connectedPassersBonus = 7;
-inline constexpr auto connectedPassersAdvancedBonus = 45;
-inline constexpr auto connectedPassersFarAdvancedBonus = 120;
+PETIR_EVAL_WEIGHT auto rookOnSeventhBonus = 18;
+PETIR_EVAL_WEIGHT auto rookOnEighthBonus = 4;
+PETIR_EVAL_WEIGHT auto safeAdvanceBonus = 40;
+PETIR_EVAL_WEIGHT auto doubledRooksSeventhBonus = 25;
+PETIR_EVAL_WEIGHT auto rookQueenSeventhBonus = 33;
+PETIR_EVAL_WEIGHT auto blockedRookPenalty = 9;
+PETIR_EVAL_WEIGHT auto passedPawnBonus = 16;
+PETIR_EVAL_WEIGHT auto mobilityBonus = 2;
+PETIR_EVAL_WEIGHT auto queenTropismBonus = 2;
+PETIR_EVAL_WEIGHT auto bishopTropismBonus = 1;
+PETIR_EVAL_WEIGHT auto knightTropismBonus = 2;
+PETIR_EVAL_WEIGHT auto blockedPawnPenalty = 7;
+PETIR_EVAL_WEIGHT auto connectedPassersBonus = 7;
+PETIR_EVAL_WEIGHT auto connectedPassersAdvancedBonus = 45;
+PETIR_EVAL_WEIGHT auto connectedPassersFarAdvancedBonus = 120;
 inline pas::Array<std::uint8_t, 0, 8> bishopPairBonus = {10, 80, 75, 70, 60, 50, 30, 15, 5};
-inline constexpr auto noPawnPenalty = 40;
-inline constexpr auto missingFianchettoPenalty = 4;
-inline constexpr auto blockedKingPenalty = 8;
-inline constexpr auto safePromotionBonus = 225;
-inline constexpr auto safePromotionBonus1 = 125;
-inline constexpr auto weakStructurePenalty = 6;
-inline constexpr auto bishopOverKnightEndgameBonus = 12;
+PETIR_EVAL_WEIGHT auto noPawnPenalty = 40;
+PETIR_EVAL_WEIGHT auto missingFianchettoPenalty = 4;
+PETIR_EVAL_WEIGHT auto blockedKingPenalty = 8;
+PETIR_EVAL_WEIGHT auto safePromotionBonus = 225;
+PETIR_EVAL_WEIGHT auto safePromotionBonus1 = 125;
+PETIR_EVAL_WEIGHT auto weakStructurePenalty = 6;
+PETIR_EVAL_WEIGHT auto bishopOverKnightEndgameBonus = 12;
 inline pas::Array<std::int8_t, 0, 8> knightLowMobilityBonus = {pas::negate(25), pas::negate(5), 0, 0, 0, 0, 0, 0, 0};
 inline pas::Array<std::int8_t, 0, 8> knightMobilityBonus = {pas::negate(20), pas::negate(5), 0, 2, 6, 10, 14, 16, 18};
 inline pas::Array<std::int8_t, 0, 15> bishopMobilityBonus = {pas::negate(20), pas::negate(10), 0, 4, 8, 12, 16, 20, 24, 28, 31, 34, 35, 36, 37, 38};
 inline pas::Array<std::int8_t, 0, 15> rookMobilityBonus = {pas::negate(12), pas::negate(8), pas::negate(4), 0, 4, 8, 11, 14, 16, 18, 19, 20, 21, 22, 23, 24};
 inline pas::Array<std::int8_t, 0, 31> queenMobilityBonus = {pas::negate(10), pas::negate(8), pas::negate(6), pas::negate(4), pas::negate(2), 0, 2, 4, 6, 8, 10, 12, 13, 14, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16};
-inline constexpr auto assuredPromotionBonus = 550;
-inline constexpr auto potentialPasserBonus = 45;
-inline constexpr auto rookBlockedByKingPenalty = 35;
+PETIR_EVAL_WEIGHT auto assuredPromotionBonus = 550;
+PETIR_EVAL_WEIGHT auto potentialPasserBonus = 45;
+PETIR_EVAL_WEIGHT auto rookBlockedByKingPenalty = 35;
 inline pas::Array<std::uint8_t, 0, 7> semiOpenFileBonus = {2, 2, 3, 4, 4, 3, 2, 2};
 inline pas::Array<std::uint8_t, 0, 7> openFileBonus = {3, 3, 4, 5, 5, 4, 3, 3};
 inline pas::Array<std::uint8_t, 1, 7> whitePassedPawnRankBonus = {0, 2, 5, 25, 55, 120, 0};
 inline pas::Array<std::uint8_t, 0, 6> blackPassedPawnRankBonus = {0, 120, 55, 25, 5, 2, 0};
-inline constexpr auto rookBehindPassedPawnBonus = 25;
-inline constexpr auto blockedPassedPawnPenalty = 15;
+PETIR_EVAL_WEIGHT auto rookBehindPassedPawnBonus = 25;
+PETIR_EVAL_WEIGHT auto blockedPassedPawnPenalty = 15;
 inline pas::Array<std::uint8_t, 1, 7> whiteKingSupportedPasserBonus = {0, 0, 0, 10, 20, 40, 0};
 inline pas::Array<std::uint8_t, 0, 6> blackKingSupportedPasserBonus = {0, 40, 20, 10, 0, 0, 0};
-inline constexpr auto blockedBishopPenalty2 = 5;
-inline constexpr auto offsideBishopPenalty = 20;
+PETIR_EVAL_WEIGHT auto blockedBishopPenalty2 = 5;
+PETIR_EVAL_WEIGHT auto offsideBishopPenalty = 20;
 inline pas::Array<std::uint8_t, 0, 8> blockedBishopPenalty = {0, 2, 5, 12, 30, 50, 70, 100, 100};
 inline pas::Array<std::uint8_t, 0, 14> pawnShieldPenalty = {0, 5, 10, 15, 20, 30, 40, 60, 70, 80, 90, 100, 120, 180, 200};
 inline pas::Array<std::int32_t, 0, 63> kingPressurePenalty = {0, 1, 5, 15, 35, 70, 125, 145, 150, 160, 170, 170, 175, 200, 225, 250, 300, 325, 350, 400, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500};
 inline pas::Array<std::uint8_t, 0, 41> endgameScale = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 90, 80, 70, 60, 50, 40, 30, 20, 20, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 inline pas::Array<std::uint8_t, 0, 41> rookScale = {0, 0, 0, 0, 0, 0, 0, 0, 20, 20, 20, 20, 20, 20, 20, 20, 50, 60, 70, 70, 80, 90, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
-inline constexpr auto queenKnightEndgameBonus = 5;
-inline constexpr auto pawnEndgameBonus = 10;
-inline constexpr auto pawnEndgameBonus2 = 5;
+PETIR_EVAL_WEIGHT auto queenKnightEndgameBonus = 5;
+PETIR_EVAL_WEIGHT auto pawnEndgameBonus = 10;
+PETIR_EVAL_WEIGHT auto pawnEndgameBonus2 = 5;
+// Weights that ueval.cpp used to write as plain numbers.
+PETIR_EVAL_WEIGHT auto sideToMoveBonus = 10;
+// Per own pawn once either side has less than 16 non-pawn material:
+// realEndgamePawnBonus when both have at most 10, else earlyEndgamePawnBonus.
+PETIR_EVAL_WEIGHT auto earlyEndgamePawnBonus = 4;
+PETIR_EVAL_WEIGHT auto realEndgamePawnBonus = 8;
+// Three points more piece material, including a queen, against two or three
+// extra enemy pawns.
+PETIR_EVAL_WEIGHT auto queenAgainstPawnsBonus = 35;
+// Added to safeAdvanceBonus when the passer's side is to move.
+PETIR_EVAL_WEIGHT auto safeAdvanceOnMoveBonus = 40;
+// Added to the connected-passer bonus when the two passers stand one rank
+// apart: the trailing one on its sixth rank or beyond, or on its fifth.
+PETIR_EVAL_WEIGHT auto staggeredFarAdvancedPassersBonus = 30;
+PETIR_EVAL_WEIGHT auto staggeredAdvancedPassersBonus = 20;
+// passedPawnActivity, each times the passer's weight (1, 2 or 3 on its fifth,
+// sixth or seventh rank).
+PETIR_EVAL_WEIGHT auto passerKingDistanceBonus = 2;
+PETIR_EVAL_WEIGHT auto passerStopBlockedPenalty = 8;
+PETIR_EVAL_WEIGHT auto passerStopAttackedPenalty = 6;
+PETIR_EVAL_WEIGHT auto passerSafeStopBonus = 4;
+PETIR_EVAL_WEIGHT auto passerFreePathBonus = 4;
+// endgamePieceActivityAgainst.
+PETIR_EVAL_WEIGHT auto knightBlockadeBonus = 4;
+PETIR_EVAL_WEIGHT auto rookSafeSquareBonus = 2;
+PETIR_EVAL_WEIGHT auto rookPawnTargetBonus = 4;
+PETIR_EVAL_WEIGHT auto rookTiedDefenderPenalty = 3;
+// Candidate passers in pawn endings: the bonus by rank (counted from the
+// pawn's side) times candidateFileQuarters / 4, and the three-against-three
+// breakthrough.
+PETIR_EVAL_WEIGHT int candidateRankBonus[] = {0, 4, 5, 8, 16, 30, 0, 0};
+PETIR_EVAL_WEIGHT int candidateFileQuarters[] = {6, 5, 4, 4, 4, 4, 5, 6};
+PETIR_EVAL_WEIGHT auto breakthroughBonus = 16;
 }
 namespace petir_search {
 struct anonymous_record_1 {

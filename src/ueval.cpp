@@ -119,11 +119,11 @@ int connectedPasserBonus(std::uint64_t passers, bool isWhite) {
         // 4 the fifth. separation is how many ranks apart the two pawns are.
         if (rank >= 5)
             bonus += separation == 0 ? connectedPassersFarAdvancedBonus
-                   : separation == 1 ? connectedPassersFarAdvancedBonus + 30
+                   : separation == 1 ? connectedPassersFarAdvancedBonus + staggeredFarAdvancedPassersBonus
                                      : connectedPassersAdvancedBonus;
         else if (rank >= 4) {
             if (separation == 0) bonus += connectedPassersAdvancedBonus;
-            else if (separation == 1) bonus += connectedPassersAdvancedBonus + 20;
+            else if (separation == 1) bonus += connectedPassersAdvancedBonus + staggeredAdvancedPassersBonus;
         }
     }
     return bonus;
@@ -187,18 +187,19 @@ int endgamePieceActivityAgainst(const petir_header::tdata& position, int pieceSq
         // Reward a supported, unchallengeable outpost only with a concrete
         // pawn target or an enemy pawn immediately blocked by this knight.
         if (!(reach & enemyPawns & ~enemyAttacks) && !isBlockade) return 0;
-        return outpostBonus / 2 + (isBlockade ? 4 : 0);
+        return outpostBonus / 2 + (isBlockade ? knightBlockadeBonus : 0);
     }
     // Rook: safe squares it reaches, undefended enemy pawns it attacks, and a
     // penalty when a passive rook (3 safe squares or fewer) is the only defender
     // of attacked own pawns.
     const int safeSquares = std::popcount(reach & ~ownPieces & ~enemyAttacks);
-    int bonus = 2 * std::min(6, safeSquares) - 6; // -6..+6, on top of raw mobility.
-    bonus += 4 * std::min(2, std::popcount(reach & enemyPawns & ~enemyAttacks));
+    // -3..+3 times the weight (-6..+6 with 2), on top of raw mobility.
+    int bonus = rookSafeSquareBonus * (std::min(6, safeSquares) - 3);
+    bonus += rookPawnTargetBonus * std::min(2, std::popcount(reach & enemyPawns & ~enemyAttacks));
     if (safeSquares <= 3) {
         const auto otherDefenders = boardAttackMap(position, ownPieces & ~pieceBit);
         const auto tiedPawns = reach & ownPawns & enemyAttacks & ~otherDefenders;
-        bonus -= 3 * std::min(2, std::popcount(tiedPawns));
+        bonus -= rookTiedDefenderPenalty * std::min(2, std::popcount(tiedPawns));
     }
     return bonus;
 }
@@ -325,7 +326,12 @@ void prefetchPawnEntry(std::size_t index) {
 
 const PawnEntry& probePawnTable(std::size_t index, std::uint64_t whitePawns, std::uint64_t blackPawns) {
     PawnEntry& entry = pawnTable[index];
+#ifdef PETIR_EVAL_TUNING
+    // The tuner changes weights between evaluations, so a stored entry may be stale.
+    fillPawnEntry(entry, whitePawns, blackPawns);
+#else
     if (entry.whitePawns != whitePawns || entry.blackPawns != blackPawns) fillPawnEntry(entry, whitePawns, blackPawns);
+#endif
     return entry;
 }
 
@@ -342,8 +348,6 @@ struct alignas(64) PawnPotentialEntry {
 };
 static_assert(sizeof(PawnPotentialEntry) == 64);
 PawnPotentialEntry pawnPotentialTable[1 << pawnTableBits];
-constexpr int candidateRankBonus[] = {0, 4, 5, 8, 16, 30, 0, 0};
-constexpr int candidateFileQuarters[] = {6, 5, 4, 4, 4, 4, 5, 6};
 
 std::uint64_t potentialPawnAttacks(std::uint64_t pawns, bool isWhite) {
     using namespace petir_bitboard_mask;
@@ -437,7 +441,7 @@ PawnPotentialTerms buildPawnPotential(std::uint64_t own, std::uint64_t enemy, bo
             const auto front = isWhite ? rookRayUpMask[result] : rookRayDownMask[result];
             if (withNeighbourFiles(front) & remaining) createsPasser = false;
         }
-        if (createsPasser) options[optionCount++] = {file, (7 << (file - 1)) & ~(1 << file), 16, true};
+        if (createsPasser) options[optionCount++] = {file, (7 << (file - 1)) & ~(1 << file), breakthroughBonus, true};
     }
     std::sort(options.begin(), options.begin() + optionCount, [](const Option& a, const Option& b) {
         if (a.value != b.value) return a.value > b.value;
@@ -461,6 +465,10 @@ PawnPotentialTerms buildPawnPotential(std::uint64_t own, std::uint64_t enemy, bo
 
 const PawnPotentialEntry& probePawnPotential(std::uint64_t white, std::uint64_t black) {
     auto& entry = pawnPotentialTable[pawnTableIndex(white, black)];
+#ifdef PETIR_EVAL_TUNING
+    // The tuner changes weights between evaluations, so a stored entry may be stale.
+    entry.whitePawns = ~white;
+#endif
     if (entry.whitePawns != white || entry.blackPawns != black) {
         entry.whitePawns = white;
         entry.blackPawns = black;
@@ -579,9 +587,9 @@ int passedPawnActivity(const petir_header::tdata& position, int pawnSquare, bool
                                     std::abs(king / 8 - blockSquare / 8)));
     };
     // King distance to the stop square, capped at 5: enemy king far and own king near is good.
-    int bonus = 2 * weight * (kingDistance(enemyKing) - kingDistance(ownKing));
+    int bonus = passerKingDistanceBonus * weight * (kingDistance(enemyKing) - kingDistance(ownKing));
     // Stop square occupied by any piece.
-    if (position.board[blockSquare] != 0) return bonus - 8 * weight;
+    if (position.board[blockSquare] != 0) return bonus - passerStopBlockedPenalty * weight;
 
     const auto enemyRooks = isWhite ? position.blackRooks | position.blackQueens
                                   : position.whiteRooks | position.whiteQueens;
@@ -610,11 +618,11 @@ int passedPawnActivity(const petir_header::tdata& position, int pawnSquare, bool
     };
     // Geometric safety is deliberately conservative: defended but attacked
     // squares receive no safe-path bonus. This is not a promotion proof.
-    if (isAttacked(blockSquare)) return bonus - 6 * weight;
-    bonus += 4 * weight;
+    if (isAttacked(blockSquare)) return bonus - passerStopAttackedPenalty * weight;
+    bonus += passerSafeStopBonus * weight;
     for (int square = blockSquare + step; square >= 0 && square < 64; square += step)
         if (position.board[square] != 0 || isAttacked(square)) return bonus;
-    return bonus + 4 * weight;
+    return bonus + passerFreePathBonus * weight;
 }
 
 // Count each neighboring pair of foremost passers once, before promotion
@@ -913,18 +921,18 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     }
     // Game phase. earlyEndgame: either side has less than 16 non-pawn material;
     // endgame: both have at most 12; realEndgame: both have at most 10.
-    // Pawns gain value as pieces come off: +8 each (shiftLeft 3) in a real
-    // endgame, else +4 (shiftLeft 2). With queen + minor on both sides, a knight
-    // goes well with the queen.
+    // Pawns gain value as pieces come off: realEndgamePawnBonus (8) each in a
+    // real endgame, else earlyEndgamePawnBonus (4). With queen + minor on both
+    // sides, a knight goes well with the queen.
     if (((position.whiteNonPawnMaterial < 16) || (position.blackNonPawnMaterial < 16))) {
         realEndgame = ((position.whiteNonPawnMaterial <= 10) && (position.blackNonPawnMaterial <= 10));
         endgame = ((position.whiteNonPawnMaterial <= 12) && (position.blackNonPawnMaterial <= 12));
         if (realEndgame) {
-            (score = pas::increment(score, pas::shiftLeft(countBits<NativePopcount>(position.whitePawns), 3)));
-            (score = pas::decrement(score, pas::shiftLeft(countBits<NativePopcount>(position.blackPawns), 3)));
+            (score = pas::increment(score, countBits<NativePopcount>(position.whitePawns) * petir_ueval::realEndgamePawnBonus));
+            (score = pas::decrement(score, countBits<NativePopcount>(position.blackPawns) * petir_ueval::realEndgamePawnBonus));
         } else {
-            (score = pas::increment(score, pas::shiftLeft(countBits<NativePopcount>(position.whitePawns), 2)));
-            (score = pas::decrement(score, pas::shiftLeft(countBits<NativePopcount>(position.blackPawns), 2)));
+            (score = pas::increment(score, countBits<NativePopcount>(position.whitePawns) * petir_ueval::earlyEndgamePawnBonus));
+            (score = pas::decrement(score, countBits<NativePopcount>(position.blackPawns) * petir_ueval::earlyEndgamePawnBonus));
         }
         if (((((position.whiteNonPawnMaterial == 12) && (position.blackNonPawnMaterial == 12)) && (position.blackQueens != 0)) && (position.whiteQueens != 0))) {
             if ((position.whiteKnights != 0)) {
@@ -940,11 +948,11 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         earlyEndgame = false;
         realEndgame = false;
     }
-    // Bonus of 10 for the side to move.
+    // Bonus for the side to move.
     if ((realSideToMove == petir_header::whiteSide)) {
-        (score = pas::increment(score, 10));
+        (score = pas::increment(score, petir_ueval::sideToMoveBonus));
     } else {
-        (score = pas::decrement(score, 10));
+        (score = pas::decrement(score, petir_ueval::sideToMoveBonus));
     }
     // With most pieces still on: a king on f1/g1 (c1/b1) with its own rook still
     // in that corner (h1, g1, h2 / a1, a2, b1) keeps the rook out of play. The
@@ -1441,14 +1449,14 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         }
         // Blocked by a white piece: keep 1/2 + 1/8 of the rank bonus. Otherwise a
         // pawn on its seventh rank that can promote without losing material (SEE 0)
-        // earns safeAdvanceBonus (+40 with Black to move), unscaled.
+        // earns safeAdvanceBonus (plus safeAdvanceOnMoveBonus with Black to move), unscaled.
         if ((position.board[pas::sub(square, 8)] > 0)) {
             (termScore = pas::decrement(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 1)));
             (termScore = pas::increment(termScore, pas::shiftRight(petir_ueval::blackPassedPawnRankBonus[pas::shiftRight(square, 3)], 3)));
         } else {
             if ((((square <= petir_header::h2) && (position.board[pas::sub(square, 8)] == 0)) && (petir_usee::staticExchange(petir_header::blackSide, position, square, pas::sub(square, 8)) == 0))) {
                 if ((realSideToMove == petir_header::blackSide)) {
-                    (score = pas::decrement(score, pas::add(petir_ueval::safeAdvanceBonus, 40)));
+                    (score = pas::decrement(score, pas::add(petir_ueval::safeAdvanceBonus, petir_ueval::safeAdvanceOnMoveBonus)));
                 } else {
                     (score = pas::decrement(score, petir_ueval::safeAdvanceBonus));
                 }
@@ -1626,7 +1634,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         } else {
             if ((((square >= petir_header::a7) && (position.board[pas::add(square, 8)] == 0)) && (petir_usee::staticExchange(petir_header::whiteSide, position, square, pas::add(square, 8)) == 0))) {
                 if ((realSideToMove == petir_header::whiteSide)) {
-                    (score = pas::increment(score, pas::add(petir_ueval::safeAdvanceBonus, 40)));
+                    (score = pas::increment(score, pas::add(petir_ueval::safeAdvanceBonus, petir_ueval::safeAdvanceOnMoveBonus)));
                 } else {
                     (score = pas::increment(score, petir_ueval::safeAdvanceBonus));
                 }
@@ -1657,12 +1665,12 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     kingZoneHits = (whitePawnAttackMap & blackKingZone);
     (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(kingZoneHits)));
     // Three points more piece material including a queen, against two or three
-    // extra enemy pawns: +35 for the side with the queen.
+    // extra enemy pawns: queenAgainstPawnsBonus for the side with the queen.
     if ((((position.whiteNonPawnMaterial == pas::add(position.blackNonPawnMaterial, 3)) && (position.whiteQueens != 0)) && ((pas::sub(blackPawnCount, whitePawnCount) >= 2 && pas::sub(blackPawnCount, whitePawnCount) <= 3)))) {
-        (score = pas::increment(score, 35));
+        (score = pas::increment(score, petir_ueval::queenAgainstPawnsBonus));
     } else {
         if ((((position.blackNonPawnMaterial == pas::add(position.whiteNonPawnMaterial, 3)) && (position.blackQueens != 0)) && ((pas::sub(whitePawnCount, blackPawnCount) >= 2 && pas::sub(whitePawnCount, blackPawnCount) <= 3)))) {
-            (score = pas::decrement(score, 35));
+            (score = pas::decrement(score, petir_ueval::queenAgainstPawnsBonus));
         }
     }
     // Endgame activity of rooks and knights (endgamePieceActivity) needs every
