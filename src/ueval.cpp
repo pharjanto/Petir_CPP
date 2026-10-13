@@ -742,6 +742,57 @@ std::uint8_t countBits(std::uint64_t bits) {
 #endif
 }
 
+// Endgame king placement, White minus Black: piece-square tables chosen by
+// where the pawns are (both wings or no pawns, queenside only, kingside only).
+int endgameKingPlacement(const petir_header::tdata& position, int whiteKingSquare, int blackKingSquare) {
+    const std::uint64_t allPawns = position.whitePawns | position.blackPawns;
+    const bool queensidePawns = (petir_evalmask::filesABCDMask & allPawns) != 0;
+    const bool kingsidePawns = (petir_evalmask::filesEFGHMask & allPawns) != 0;
+    if (queensidePawns && !kingsidePawns) {
+        return whiteKingEndgameQueensideBonus[whiteKingSquare] - blackKingEndgameQueensideBonus[blackKingSquare];
+    }
+    if (kingsidePawns && !queensidePawns) {
+        return whiteKingEndgameKingsideBonus[whiteKingSquare] - blackKingEndgameKingsideBonus[blackKingSquare];
+    }
+    return whiteKingEndgameBothWingsBonus[whiteKingSquare] - blackKingEndgameBothWingsBonus[blackKingSquare];
+}
+
+// Weight of endgame king placement against middlegame king placement, 0..256,
+// from the larger side's non-pawn material: 0 (middlegame only) at 16 or more,
+// 256 (endgame only) at 10 or less, linear in between. Both ends match the old
+// hard switch, which used the endgame tables when both sides had at most 12.
+int endgameKingWeight(const petir_header::tdata& position) {
+    const int largerMaterial = std::max<int>(position.whiteNonPawnMaterial, position.blackNonPawnMaterial);
+    return std::clamp((16 - largerMaterial) * 256 / 6, 0, 256);
+}
+
+// Weight of the terms that used to stop at once in an endgame (both sides at
+// most 12): king danger, queen mobility, outposts and rooks on the enemy king's
+// wing. 0..256 from the larger side's non-pawn material: 256 at 16 or more, 0 at
+// 12 or less, linear in between, so these terms never start in an endgame.
+int middlegameTermWeight(const petir_header::tdata& position) {
+    const int largerMaterial = std::max<int>(position.whiteNonPawnMaterial, position.blackNonPawnMaterial);
+    return std::clamp((largerMaterial - 12) * 64, 0, 256);
+}
+
+// Weight of the queen's closeness to the enemy king, which used to stop at once
+// in an early endgame (either side below 16). 0..256 from the smaller side's
+// non-pawn material: 256 at 16 or more, 0 at 12 or less, linear in between.
+int queenClosenessWeight(const petir_header::tdata& position) {
+    const int smallerMaterial = std::min<int>(position.whiteNonPawnMaterial, position.blackNonPawnMaterial);
+    return std::clamp((smallerMaterial - 12) * 64, 0, 256);
+}
+
+// Extra value of each pawn as pieces come off, 0..8. It used to be 4 once either
+// side was below 16 and 8 once both had at most 10. Each step of 4 now comes one
+// point at a time: one per point the smaller side is below 16 (at most 4), and
+// one per point the larger side is below 14 (at most 4).
+int pawnValueBonus(const petir_header::tdata& position) {
+    const int smallerMaterial = std::min<int>(position.whiteNonPawnMaterial, position.blackNonPawnMaterial);
+    const int largerMaterial = std::max<int>(position.whiteNonPawnMaterial, position.blackNonPawnMaterial);
+    return std::clamp(16 - smallerMaterial, 0, 4) + std::clamp(14 - largerMaterial, 0, 4);
+}
+
 // The main evaluation. Returns the score from sideToMove's point of view.
 // opponentPerspective: the caller wants sideToMove's score although the other
 // side is to move in `position`; realSideToMove below is the side actually to
@@ -755,8 +806,9 @@ std::uint8_t countBits(std::uint64_t bits) {
 //     blocked by their king;
 //  3. lazy exit;
 //  4. kings, castling, pawn shelter, bishops, pawn structure and passed pawns
-//     (Black first, then White), rooks, knights, bishops, queens, king safety
-//     or endgame king placement, small extra terms;
+//     (Black first, then White), rooks, knights, bishops, queens, king
+//     placement (middlegame and endgame tables mixed by material), king safety
+//     fading out towards endgames, small extra terms;
 //  5. scaling towards a draw: opposite bishops, the 50-move rule, drawish
 //     material, likely draws.
 // ueval.pas:850
@@ -913,18 +965,16 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     }
     // Game phase. earlyEndgame: either side has less than 16 non-pawn material;
     // endgame: both have at most 12; realEndgame: both have at most 10.
-    // Pawns gain value as pieces come off: +8 each (shiftLeft 3) in a real
-    // endgame, else +4 (shiftLeft 2). With queen + minor on both sides, a knight
-    // goes well with the queen.
+    // Pawns gain value as pieces come off, up to +8 each in a real endgame
+    // (pawnValueBonus). With queen + minor on both sides, a knight goes well with
+    // the queen.
     if (((position.whiteNonPawnMaterial < 16) || (position.blackNonPawnMaterial < 16))) {
         realEndgame = ((position.whiteNonPawnMaterial <= 10) && (position.blackNonPawnMaterial <= 10));
         endgame = ((position.whiteNonPawnMaterial <= 12) && (position.blackNonPawnMaterial <= 12));
-        if (realEndgame) {
-            (score = pas::increment(score, pas::shiftLeft(countBits<NativePopcount>(position.whitePawns), 3)));
-            (score = pas::decrement(score, pas::shiftLeft(countBits<NativePopcount>(position.blackPawns), 3)));
-        } else {
-            (score = pas::increment(score, pas::shiftLeft(countBits<NativePopcount>(position.whitePawns), 2)));
-            (score = pas::decrement(score, pas::shiftLeft(countBits<NativePopcount>(position.blackPawns), 2)));
+        {
+            const int pawnBonus = pawnValueBonus(position);
+            score += pawnBonus * countBits<NativePopcount>(position.whitePawns);
+            score -= pawnBonus * countBits<NativePopcount>(position.blackPawns);
         }
         if (((((position.whiteNonPawnMaterial == 12) && (position.blackNonPawnMaterial == 12)) && (position.blackQueens != 0)) && (position.whiteQueens != 0))) {
             if ((position.whiteKnights != 0)) {
@@ -992,6 +1042,10 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             return result;
         }
     }
+    // Weights (0..256) of the terms that fade out as pieces come off; see
+    // middlegameTermWeight and queenClosenessWeight.
+    const int middlegameWeight = middlegameTermWeight(position);
+    const int queenNearKingWeight = queenClosenessWeight(position);
     // Start loading the pawn cache entry, which is used below.
     const auto pawnIndex = pawnTableIndex(position.whitePawns, position.blackPawns);
     prefetchPawnEntry(pawnIndex);
@@ -1674,6 +1728,12 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         if ((position.whiteRooks | position.whiteKnights) != 0) blackAttackSquares = boardAttackMap(position, position.blackPieces);
         if ((position.blackRooks | position.blackKnights) != 0) whiteAttackSquares = boardAttackMap(position, position.whitePieces);
     }
+    // Bonuses for a rook on the enemy king's wing, faded by middlegameWeight.
+    const int semiOpenNearKingBonus = petir_ueval::rookSemiOpenFileNearKingBonus * middlegameWeight / 256;
+    const int doubledSemiOpenNearKingBonus = petir_ueval::doubledRooksSemiOpenNearKingBonus * middlegameWeight / 256;
+    const int queenSemiOpenNearKingBonus = petir_ueval::rookQueenSemiOpenNearKingBonus * middlegameWeight / 256;
+    const int openNearKingBonus = petir_ueval::rookOpenFileNearKingBonus * middlegameWeight / 256;
+    const int doubledNearKingBonus = petir_ueval::doubledRooksNearKingBonus * middlegameWeight / 256;
     termScore = 0;
     // White rooks: endgame activity, mobility, attacks on Black's king zone,
     // piece-square value, half-open and open files (termScore, scaled by
@@ -1698,19 +1758,20 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         }
         (score = pas::increment(score, petir_ueval::rookSquareBonus[square]));
         // Half-open file: no white pawn in front of the rook. nearEnemyKingWing: the
-        // rook is on the same wing as Black's king (not in an endgame).
+        // rook is on the same wing as Black's king (not in an endgame; the bonuses
+        // are faded by middlegameWeight).
         // stackedOnFile: another rook in front of it, or a queen on the file.
         if (((petir_bitboard_mask::rookRayUpMask[square] & position.whitePawns) == 0)) {
             (termScore = pas::increment(termScore, petir_ueval::semiOpenFileBonus[(square & 7)]));
             nearEnemyKingWing = ((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[blackKingSquare]) && (!endgame));
             if (nearEnemyKingWing) {
-                (termScore = pas::increment(termScore, petir_ueval::rookSemiOpenFileNearKingBonus));
+                (termScore = pas::increment(termScore, semiOpenNearKingBonus));
             }
             stackedOnFile = false;
             if (((petir_bitboard_mask::rookRayUpMask[square] & position.whiteRooks) != 0)) {
                 (termScore = pas::increment(termScore, petir_ueval::doubledRooksBonus));
                 if (nearEnemyKingWing) {
-                    (termScore = pas::increment(termScore, petir_ueval::doubledRooksSemiOpenNearKingBonus));
+                    (termScore = pas::increment(termScore, doubledSemiOpenNearKingBonus));
                 }
                 stackedOnFile = true;
             }
@@ -1718,7 +1779,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 (termScore = pas::increment(termScore, petir_ueval::rookQueenSemiOpenFileBonus));
                 stackedOnFile = true;
                 if (nearEnemyKingWing) {
-                    (termScore = pas::increment(termScore, petir_ueval::rookQueenSemiOpenNearKingBonus));
+                    (termScore = pas::increment(termScore, queenSemiOpenNearKingBonus));
                 }
             }
             // Fully open file: no black pawn in front either.
@@ -1728,12 +1789,12 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                     (termScore = pas::increment(termScore, petir_ueval::rookQueenOpenFileBonus));
                 }
                 if (nearEnemyKingWing) {
-                    (termScore = pas::increment(termScore, petir_ueval::rookOpenFileNearKingBonus));
+                    (termScore = pas::increment(termScore, openNearKingBonus));
                 }
                 if (stackedOnFile) {
                     (termScore = pas::increment(termScore, petir_ueval::doubledRooksOpenFileBonus));
                     if (nearEnemyKingWing) {
-                        (termScore = pas::increment(termScore, petir_ueval::doubledRooksNearKingBonus));
+                        (termScore = pas::increment(termScore, doubledNearKingBonus));
                     }
                 }
             }
@@ -1800,20 +1861,20 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             (termScore = pas::increment(termScore, petir_ueval::semiOpenFileBonus[(square & 7)]));
             nearEnemyKingWing = ((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[whiteKingSquare]) && (!endgame));
             if (nearEnemyKingWing) {
-                (termScore = pas::increment(termScore, petir_ueval::rookSemiOpenFileNearKingBonus));
+                (termScore = pas::increment(termScore, semiOpenNearKingBonus));
             }
             stackedOnFile = false;
             if (((fileAttacks & position.blackQueens) != 0)) {
                 (termScore = pas::increment(termScore, petir_ueval::rookQueenSemiOpenFileBonus));
                 if (nearEnemyKingWing) {
-                    (termScore = pas::increment(termScore, petir_ueval::rookQueenSemiOpenNearKingBonus));
+                    (termScore = pas::increment(termScore, queenSemiOpenNearKingBonus));
                 }
                 stackedOnFile = true;
             }
             if (((petir_bitboard_mask::rookRayDownMask[square] & position.blackRooks) != 0)) {
                 (termScore = pas::increment(termScore, petir_ueval::doubledRooksBonus));
                 if (nearEnemyKingWing) {
-                    (termScore = pas::increment(termScore, petir_ueval::doubledRooksSemiOpenNearKingBonus));
+                    (termScore = pas::increment(termScore, doubledSemiOpenNearKingBonus));
                 }
                 stackedOnFile = true;
             }
@@ -1823,13 +1884,13 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                     (termScore = pas::increment(termScore, petir_ueval::rookQueenOpenFileBonus));
                 }
                 if (nearEnemyKingWing) {
-                    (termScore = pas::increment(termScore, petir_ueval::rookOpenFileNearKingBonus));
+                    (termScore = pas::increment(termScore, openNearKingBonus));
                 }
                 if (stackedOnFile) {
                     (termScore = pas::increment(termScore, petir_ueval::doubledRooksOpenFileBonus));
                 }
                 if ((stackedOnFile && nearEnemyKingWing)) {
-                    (termScore = pas::increment(termScore, petir_ueval::doubledRooksNearKingBonus));
+                    (termScore = pas::increment(termScore, doubledNearKingBonus));
                 }
             }
         }
@@ -1870,7 +1931,8 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     // king (not in an early endgame), mobility, attacks on Black's king zone, and
     // outposts: a square no black pawn can ever attack, supported by one (half
     // bonus) or two (full bonus) white pawns, plus half the bonus when Black has
-    // no knight and no bishop that can attack the square.
+    // no knight and no bishop that can attack the square. Outposts, like the
+    // bishop outposts below, are faded by middlegameWeight.
     pieces = position.whiteKnights;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
@@ -1895,15 +1957,17 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 scratchBits = (petir_bitboard_mask::blackPawnAttacks[square] & position.whitePawns);
                 pawnTally = countBits<NativePopcount>(scratchBits);
                 whiteSupporterCase = pawnTally;
+                int outpostScore = 0;
                 if (((whiteSupporterCase == 1))) {
-                    (score = pas::increment(score, pas::shiftRight(petir_ueval::whiteKnightOutpostBonus[square], 1)));
+                    outpostScore += pas::shiftRight(petir_ueval::whiteKnightOutpostBonus[square], 1);
                 }
                 else if (((whiteSupporterCase == 2))) {
-                    (score = pas::increment(score, petir_ueval::whiteKnightOutpostBonus[square]));
+                    outpostScore += petir_ueval::whiteKnightOutpostBonus[square];
                 }
                 if ((((pawnTally > 0) && (position.blackKnights == 0)) && ((position.blackBishopCount == 0) || ((position.blackBishopCount == 1) && (petir_ueval::squareColor[petir_bitboard_mask::lastBit(pas::address(position.blackBishops))] != petir_ueval::squareColor[square]))))) {
-                    (score = pas::increment(score, pas::shiftRight(petir_ueval::whiteKnightOutpostBonus[square], 1)));
+                    outpostScore += pas::shiftRight(petir_ueval::whiteKnightOutpostBonus[square], 1);
                 }
+                score += outpostScore * middlegameWeight / 256;
             }
         }
     }
@@ -1932,15 +1996,17 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 scratchBits = (petir_bitboard_mask::whitePawnAttacks[square] & position.blackPawns);
                 pawnTally = countBits<NativePopcount>(scratchBits);
                 blackSupporterCase = pawnTally;
+                int outpostScore = 0;
                 if (((blackSupporterCase == 1))) {
-                    (score = pas::decrement(score, pas::shiftRight(petir_ueval::blackKnightOutpostBonus[square], 1)));
+                    outpostScore += pas::shiftRight(petir_ueval::blackKnightOutpostBonus[square], 1);
                 }
                 else if (((blackSupporterCase == 2))) {
-                    (score = pas::decrement(score, petir_ueval::blackKnightOutpostBonus[square]));
+                    outpostScore += petir_ueval::blackKnightOutpostBonus[square];
                 }
                 if ((((pawnTally > 0) && (position.whiteKnights == 0)) && ((position.whiteBishopCount == 0) || ((position.whiteBishopCount == 1) && (petir_ueval::squareColor[petir_bitboard_mask::firstBit(pas::address(position.whiteBishops))] != petir_ueval::squareColor[square]))))) {
-                    (score = pas::decrement(score, pas::shiftRight(petir_ueval::blackKnightOutpostBonus[square], 1)));
+                    outpostScore += pas::shiftRight(petir_ueval::blackKnightOutpostBonus[square], 1);
                 }
+                score -= outpostScore * middlegameWeight / 256;
             }
         }
     }
@@ -1956,7 +2022,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         scratchBits = (attacks & (~position.whitePieces));
         (score = pas::increment(score, petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)]));
         if (((((!endgame) && (petir_ueval::whiteBishopOutpostBonus[square] > 0)) && ((petir_bitboard_mask::blackPawnAttacks[square] & position.whitePawns) != 0)) && ((petir_evalmask::whiteOutpostMask[square] & position.blackPawns) == 0))) {
-            (score = pas::increment(score, petir_ueval::whiteBishopOutpostBonus[square]));
+            score += petir_ueval::whiteBishopOutpostBonus[square] * middlegameWeight / 256;
         }
         if (evaluateBlackKingSafety) {
             kingZoneHits = (attacks & blackKingZone);
@@ -1994,7 +2060,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         scratchBits = (attacks & (~position.blackPieces));
         (score = pas::decrement(score, petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)]));
         if (((((!endgame) && (petir_ueval::blackBishopOutpostBonus[square] > 0)) && ((petir_bitboard_mask::whitePawnAttacks[square] & position.blackPawns) != 0)) && ((petir_evalmask::blackOutpostMask[square] & position.whitePawns) == 0))) {
-            (score = pas::decrement(score, petir_ueval::blackBishopOutpostBonus[square]));
+            score -= petir_ueval::blackBishopOutpostBonus[square] * middlegameWeight / 256;
         }
         if (evaluateWhiteKingSafety) {
             kingZoneHits = (attacks & whiteKingZone);
@@ -2008,9 +2074,10 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     if ((weightedTerm == 2)) {
         (score = pas::decrement(score, petir_ueval::twoBishopsKingAttackBonus));
     }
-    // White queens: piece-square value; outside endgames mobility and attacks on
-    // Black's king zone (always counted, unlike the other pieces); before the
-    // endgame, closeness to Black's king. A rook lined up with the queen on a
+    // White queens: piece-square value; outside endgames mobility (faded by
+    // middlegameWeight) and attacks on Black's king zone (always counted, unlike
+    // the other pieces); closeness to Black's king, faded by queenNearKingWeight.
+    // A rook lined up with the queen on a
     // rank (scratchBits) or file (kingZoneHits) that reaches Black's king zone
     // adds that line to the rook attack map.
     pieces = position.whiteQueens;
@@ -2024,7 +2091,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
             attacks = ((attacks | kingZoneHits) | scratchBits);
             queenMobilitySquares = (attacks & (~position.whitePieces));
-            (score = pas::increment(score, petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)]));
+            score += petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)] * middlegameWeight / 256;
             if (((scratchBits & position.whiteRooks) != 0)) {
                 if (((scratchBits & blackKingZone) != 0)) {
                     whiteRookAttackMap = (whiteRookAttackMap | scratchBits);
@@ -2041,8 +2108,8 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 (blackAttackerCount = pas::increment(blackAttackerCount, 1));
             }
         }
-        if ((!earlyEndgame)) {
-            (score = pas::increment(score, pas::mul(petir_evalmask::closenessHalfTable[square][blackKingSquare], petir_ueval::queenTropismBonus)));
+        if (queenNearKingWeight > 0) {
+            score += petir_evalmask::closenessHalfTable[square][blackKingSquare] * petir_ueval::queenTropismBonus * queenNearKingWeight / 256;
         }
     }
     // Black queens, the same mirrored.
@@ -2057,7 +2124,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
             attacks = ((attacks | kingZoneHits) | scratchBits);
             queenMobilitySquares = (attacks & (~position.blackPieces));
-            (score = pas::decrement(score, petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)]));
+            score -= petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)] * middlegameWeight / 256;
             blackQueenAttackMap = (blackQueenAttackMap | attacks);
             if (((scratchBits & position.blackRooks) != 0)) {
                 if (((scratchBits & whiteKingZone) != 0)) {
@@ -2074,14 +2141,27 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 (whiteAttackerCount = pas::increment(whiteAttackerCount, 1));
             }
         }
-        if ((!earlyEndgame)) {
-            (score = pas::decrement(score, pas::mul(petir_evalmask::closenessHalfTable[square][whiteKingSquare], petir_ueval::queenTropismBonus)));
+        if (queenNearKingWeight > 0) {
+            score -= petir_evalmask::closenessHalfTable[square][whiteKingSquare] * petir_ueval::queenTropismBonus * queenNearKingWeight / 256;
+        }
+    }
+    // King placement: the middlegame and endgame tables mixed by
+    // endgameKingWeight. Integer division truncates towards zero, so mirrored
+    // positions still score exactly opposite.
+    {
+        const int endgameWeight = endgameKingWeight(position);
+        const int middlegameKingScore = petir_ueval::blackKingSquarePenalty[blackKingSquare] - petir_ueval::whiteKingSquarePenalty[whiteKingSquare];
+        if (endgameWeight == 0) {
+            score += middlegameKingScore;
+        } else if (endgameWeight == 256) {
+            score += endgameKingPlacement(position, whiteKingSquare, blackKingSquare);
+        } else {
+            score += ((256 - endgameWeight) * middlegameKingScore
+                      + endgameWeight * endgameKingPlacement(position, whiteKingSquare, blackKingSquare)) / 256;
         }
     }
     if ((!endgame)) {
-        // Middlegame king placement.
-        (score = pas::decrement(score, petir_ueval::whiteKingSquarePenalty[whiteKingSquare]));
-        (score = pas::increment(score, petir_ueval::blackKingSquarePenalty[blackKingSquare]));
+        // King danger.
         // scratchValue: the side actually to move (the same as realSideToMove).
         if (opponentPerspective) {
             scratchValue = pas::sub(3, sideToMove);
@@ -2096,7 +2176,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             // attacked by a black pawn adds 2, and each zone square hit by both a black
             // rook and a black bishop adds 1. The total indexes kingPressurePenalty, which
             // is then scaled by the number of attacking pieces: 1 attacker /5, 3 x1.25,
-            // 4 x1.5, 5 x2.
+            // 4 x1.5, 5 x2, and faded by middlegameWeight.
             kingZoneHits = (((((whiteQueenAttackMap | whiteRookAttackMap) | whiteBishopAttackMap) | whiteKnightAttackMap) | whitePawnAttackMap) & whiteKingZone);
             scratchBits = ((whiteKingZone & blackQueenAttackMap) & (~kingZoneHits));
             attacks = (scratchBits & blackBishopAttackMap);
@@ -2132,7 +2212,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             else if (((whiteAttackerCase == 5))) {
                 weightedTerm = (pas::mul(weightedTerm, 200) / 100);
             }
-            (score = pas::decrement(score, weightedTerm));
+            (score = pas::decrement(score, weightedTerm * middlegameWeight / 256));
         }
         if ((position.whiteQueens != 0)) {
             // The same for Black's king while White has a queen.
@@ -2171,29 +2251,9 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             else if (((blackAttackerCase == 5))) {
                 weightedTerm = (pas::mul(weightedTerm, 200) / 100);
             }
-            (score = pas::increment(score, weightedTerm));
+            (score = pas::increment(score, weightedTerm * middlegameWeight / 256));
         }
     } else {
-        scratchBits = (position.blackPawns | position.whitePawns);
-        // Endgame king placement: piece-square tables chosen by where the pawns are
-        // (both wings or no pawns, queenside only, kingside only).
-        if (((petir_evalmask::filesABCDMask & scratchBits) != 0)) {
-            if (((petir_evalmask::filesEFGHMask & scratchBits) != 0)) {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
-            } else {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameQueensideBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameQueensideBonus[blackKingSquare]));
-            }
-        } else {
-            if (((petir_evalmask::filesEFGHMask & scratchBits) != 0)) {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameKingsideBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameKingsideBonus[blackKingSquare]));
-            } else {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
-            }
-        }
         // Only in pawn endings: kings and pawns, no pieces.
         if ((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0)) {
             score += pawnPotentialScoreForEval(position);
