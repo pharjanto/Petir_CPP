@@ -264,20 +264,14 @@ them one at a time. A fix changes the search, so judge it with the bench and a
 match, not a parity check. On 2026-10-12 items 2, 3, 4, 5, 7 and 9 of the sweep,
 the stale `mateThreatExtended` in check, and a wrap bug in the bishop x-ray
 step past an edge pawn were fixed and committed (4ac267e..e6fc329), after a
-cutechess non-regression match (+5.3 Elo [-6.1, +16.7] at 1,902 games). Items 6
-and 8 are still open; the numbers below are the original sweep numbers.
+cutechess non-regression match (+5.3 Elo [-6.1, +16.7] at 1,902 games). Item 6
+(generator scan order) was done on 2026-10-13 by b13b386: every generator now
+scans forward-first (White rank 8 down to 1, Black the exact mirror, files a to
+h), +10.7 Elo [-3.5, +25.0] at 1,203 games.
 
-6. **Generator scan order**: Black piece loops mostly use `move_bits<true>`
-   (legacy 16-bit-word order), White `move_bits<false>` (ascending). Move sets
-   and scores match, but `selectBestMove` takes the first maximum, so ties come
-   out in a different order (783 quiet, 1,382 capture, 1,814 capture+push and
-   8,500 capture+check lists out of 45,647). This is the main structural reason
-   mirrored searches differ. It touches move ordering, so do it in the
-   `build/searches` worktree.
-8. **Book-learning weights differ by colour** (`src/opening_book.cpp`
-   ~443-490): upset wins add +3/+1 (White) vs +4/+2/+1 (Black); loss penalties
-   trigger at 200/100 vs 250/150 Elo. Only `--learn-pgn` uses it. It may be
-   deliberate, so ask the user before changing it.
+Dropped by the user on 2026-10-12, no action: book-learning weights differ by
+colour (`src/opening_book.cpp` ~443-490). Only `--learn-pgn` uses it.
+
 Harmless, no action needed: `lastCaptureType` is 10 after a White promotion
 and 11 after a Black one (`src/makemove.cpp` ~110, ~279); every reader treats
 them the same.
@@ -321,3 +315,49 @@ Don't retry RFP without that foundation, and only on a new request.
     6-8 plies (where it replaces a real null-move search, not a quiescence
     call), margins with an improving term, and a full eval instead of the lazy
     exit so king safety counts. Judge each step with the bench and a match.
+
+### Butterfly history decay (queued 2026-10-13)
+
+11. **Try a milder decay of butterfly history between moves.** `prepareSearch`
+    (`src/engine.cpp` ~170) divides `whiteHistory`/`blackHistory` by 256 at the
+    start of every search, so an entry at the 16384 limit drops to 64 and each
+    move's search starts with almost no butterfly history. Continuation history
+    is never decayed (cleared only by `newGame`). Candidates: /2, /4, /8. The
+    only earlier test (2026-10-10, `build/order-stats/malus/RESULTS.md`) ran /2
+    on the game-like bench with `--warmup 2`: one earlier search 2 plies back,
+    depth 12, -1.3% nodes (-3.5% to +1.0%), judged no difference. No match was
+    played, and one short warm-up search builds little history to carry over.
+    Judge it with a match.
+
+### King activity against weak pawns: parked (queued 2026-10-13)
+
+12. **Retest the king-target term after a candidate-passer term exists.**
+    Eval suggestion 2, limited by the user to endings with only kings, pawns
+    and knights. Worktree `build/kingtarget` (branch `kingtarget` from b13b386,
+    uncommitted; patch `build/kingtarget-endings/kingtarget2.patch`). It gives
+    the king that gets next to an enemy pawn that no pawn defends and that is
+    not passed, before the enemy king does, 40/30/20/10 for 0-3 steps in pawn
+    endings and 24/18/12/6 with knights; half at a one-step lead, half again if
+    an enemy knight defends the pawn. Results: normal openings (kingtarget2.pgn)
+    -7.4 Elo [-18.6, +3.8] at 1,553 games, H0 for [0,10]; pawn-ending start
+    positions (kingtarget_pawn.pgn, 352 positions x 2 colours) 49.6%, with 24
+    pairs base win + draw against 19 the other way. Lost game r55 shows the
+    flaw: the term pulled Black's king to a weak c6 pawn while White's g4+h4
+    against h6 became a passer on the other wing. Petir has no general
+    candidate-passer term (`potentialPasserBonus` covers only a7/b7/g7/h7
+    patterns while pieces remain), so the user parked this to add a
+    candidate-passer term first. Start positions, pair and divergence scripts:
+    `build/kingtarget-endings`.
+
+### Candidate-passer term: kept in pawn endings (2026-10-14)
+
+13. **Revisit the candidate-passer (pawn-potential) term in other endings.**
+    Committed 08c0f11 for pawn endings only (kings and pawns, no pieces);
+    independent checker in `tools/candidate_pawns`. Applied in all endgames
+    (both sides <= 12 piece material, uncommitted worktree `build/candpasser`)
+    it lost the 10+0.1 match `candpotential.pgn`: H0 after 1,965 games, -5.1
+    Elo [-16.6, +6.3], although fixed-depth ending start positions leaned
+    positive (pawn d14 +3.0, d12 +11.8; knight d14 +10.2, d12 -0.7, all within
+    the error bars). The pawn-only match `candpawnonly.pgn` was +3.0 Elo
+    [-5.3, +11.3] at 3,536 games when the user kept it; only ~7% of games reach
+    a pawn ending. Item 12 can now be retested on top of it.
