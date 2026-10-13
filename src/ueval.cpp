@@ -329,6 +329,206 @@ const PawnEntry& probePawnTable(std::size_t index, std::uint64_t whitePawns, std
     return entry;
 }
 
+// Potential passers are needed only in endgames. Keep their richer support
+// information in a separate, lazily probed table: middlegame pawn-cache misses
+// do not pay for this work, and the existing pawn entry remains one cache line.
+struct PawnPotentialTerms {
+    std::uint8_t bonus[8]{}, helpers[8]{};
+    std::uint8_t files = 0, breakthroughs = 0;
+};
+struct alignas(64) PawnPotentialEntry {
+    std::uint64_t whitePawns = 0, blackPawns = 0;
+    PawnPotentialTerms white, black;
+};
+static_assert(sizeof(PawnPotentialEntry) == 64);
+PawnPotentialEntry pawnPotentialTable[1 << pawnTableBits];
+constexpr int candidateRankBonus[] = {0, 4, 5, 8, 16, 30, 0, 0};
+constexpr int candidateFileQuarters[] = {6, 5, 4, 4, 4, 4, 5, 6};
+
+std::uint64_t potentialPawnAttacks(std::uint64_t pawns, bool isWhite) {
+    using namespace petir_bitboard_mask;
+    return isWhite ? ((pawns & notFileAMask) << 7) | ((pawns & notFileHMask) << 9)
+                   : ((pawns & notFileAMask) >> 9) | ((pawns & notFileHMask) >> 7);
+}
+
+// A current defender can recapture an immediate stopper without advancing.
+// A helper one rank ahead stands beside the candidate's push square, so it
+// supports the push after that once the push square is safe. Otherwise a
+// helper must reach the candidate's rank, where it supports the next push.
+// Helpers two or more ranks ahead cannot move backwards into position.
+bool usablePawnHelper(std::uint64_t own, std::uint64_t enemy, int square,
+                      int helper, int stopper, bool isWhite) {
+    const auto current = UINT64_C(1) << square;
+    if ((potentialPawnAttacks(UINT64_C(1) << helper, isWhite) & current)
+        && (potentialPawnAttacks(UINT64_C(1) << stopper, !isWhite) & current)) return true;
+    const int direction = isWhite ? 8 : -8;
+    const int ranksAhead = isWhite ? helper / 8 - square / 8 : square / 8 - helper / 8;
+    if (ranksAhead > 1) return false;
+    const auto unsafe = potentialPawnAttacks(enemy, !isWhite) & ~potentialPawnAttacks(own, isWhite);
+    if (ranksAhead == 1) return (unsafe & (UINT64_C(1) << (square + direction))) == 0;
+    for (int step = helper; step / 8 != square / 8;) {
+        step += direction;
+        if ((own | enemy | unsafe) & (UINT64_C(1) << step)) return false;
+    }
+    return true;
+}
+
+PawnPotentialTerms buildPawnPotential(std::uint64_t own, std::uint64_t enemy, bool isWhite) {
+    using namespace petir_bitboard_mask;
+    struct Option { int file, helpers, value; bool breakthrough; };
+    // At most two helper-file choices per candidate, plus six breakthrough
+    // centers, even for malformed boards containing more than eight pawns.
+    std::array<Option, 22> options{};
+    int optionCount = 0;
+    const auto passed = isWhite ? whitePassedPawns(own, enemy) : blackPassedPawns(enemy, own);
+    const unsigned passedFiles = pawnFiles(passed);
+    for (auto pawns = own; pawns; pawns &= pawns - 1) {
+        const int square = std::countr_zero(pawns), file = square & 7;
+        const int rank = isWhite ? square / 8 : 7 - square / 8;
+        if (rank < 1 || rank > 5) continue;
+        const auto front = isWhite ? rookRayUpMask[square] : rookRayDownMask[square];
+        if (front & (own | enemy)) continue;
+        auto stoppers = enemy & withNeighbourFiles(front) & ~front;
+        const int stopperCount = std::popcount(stoppers);
+        if (stopperCount < 1 || stopperCount > 2) continue;
+        unsigned eligible[2]{};
+        for (int index = 0; stoppers; ++index, stoppers &= stoppers - 1) {
+            const int stopper = std::countr_zero(stoppers);
+            for (auto helpers = own & withNeighbourFiles(fileMask[file]) & ~fileMask[file];
+                 helpers; helpers &= helpers - 1) {
+                const int helper = std::countr_zero(helpers);
+                if (usablePawnHelper(own, enemy, square, helper, stopper, isWhite))
+                    eligible[index] |= 1U << (helper & 7);
+            }
+        }
+        const int base = candidateRankBonus[rank] * candidateFileQuarters[file] / 4;
+        if (stopperCount == 1) {
+            for (auto choices = eligible[0]; choices; choices &= choices - 1) {
+                const int helper = choices & -static_cast<int>(choices);
+                options[optionCount++] = {file, helper, (helper & passedFiles) ? base / 2 : base, false};
+            }
+        } else {
+            const unsigned neighbours = ((1U << file) << 1 | (1U << file) >> 1) & 0xff;
+            // Two stoppers need distinct helper files. Doubled helpers do not
+            // count as two independent exchange plans.
+            if (std::popcount(neighbours) == 2 && (eligible[0] | eligible[1]) == neighbours
+                && eligible[0] && eligible[1])
+                options[optionCount++] = {file, static_cast<int>(neighbours),
+                    (neighbours & passedFiles) ? base / 2 : base, false};
+        }
+    }
+    // Narrow three-against-three breakthrough: fifth-rank pawns, opposing
+    // seventh-rank pawns, and a clear intervening rank. Verify both capture
+    // branches leave an outer passer, including any additional enemy pawns.
+    const int rank = isWhite ? 4 : 3, direction = isWhite ? 8 : -8;
+    for (int file = 1; file < 7; ++file) {
+        const int center = rank * 8 + file;
+        const auto trio = (UINT64_C(7) << (center - 1));
+        const auto targets = isWhite ? trio << 16 : trio >> 16;
+        const auto gap = isWhite ? trio << 8 : trio >> 8;
+        if ((own & trio) != trio || (enemy & targets) != targets || ((own | enemy) & gap)) continue;
+        bool createsPasser = true;
+        for (int flank : {-1, 1}) {
+            auto remaining = enemy & ~(UINT64_C(1) << (center + 2 * direction + flank))
+                                   & ~(UINT64_C(1) << (center + 2 * direction));
+            remaining |= (UINT64_C(1) << (center + direction))
+                       | (UINT64_C(1) << (center + direction - flank));
+            const int result = center + direction + flank;
+            const auto front = isWhite ? rookRayUpMask[result] : rookRayDownMask[result];
+            if (withNeighbourFiles(front) & remaining) createsPasser = false;
+        }
+        if (createsPasser) options[optionCount++] = {file, (7 << (file - 1)) & ~(1 << file), 16, true};
+    }
+    std::sort(options.begin(), options.begin() + optionCount, [](const Option& a, const Option& b) {
+        if (a.value != b.value) return a.value > b.value;
+        if (a.file != b.file) return a.file < b.file;
+        return a.helpers < b.helpers;
+    });
+    PawnPotentialTerms result;
+    unsigned used = 0;
+    for (int index = 0; index < optionCount; ++index) {
+        const auto& option = options[index];
+        const unsigned resources = option.helpers | (1U << option.file);
+        if (used & resources) continue;
+        used |= resources;
+        result.files |= 1U << option.file;
+        result.bonus[option.file] = static_cast<std::uint8_t>(option.value);
+        result.helpers[option.file] = static_cast<std::uint8_t>(option.helpers);
+        if (option.breakthrough) result.breakthroughs |= 1U << option.file;
+    }
+    return result;
+}
+
+const PawnPotentialEntry& probePawnPotential(std::uint64_t white, std::uint64_t black) {
+    auto& entry = pawnPotentialTable[pawnTableIndex(white, black)];
+    if (entry.whitePawns != white || entry.blackPawns != black) {
+        entry.whitePawns = white;
+        entry.blackPawns = black;
+        entry.white = buildPawnPotential(white, black, true);
+        entry.black = buildPawnPotential(black, white, false);
+    }
+    return entry;
+}
+
+int scorePawnPotential(const petir_header::tdata& position, const PawnPotentialTerms& terms, bool isWhite) {
+    using namespace petir_bitboard_mask;
+    const auto own = isWhite ? position.whitePawns : position.blackPawns;
+    const auto enemy = isWhite ? position.blackPawns : position.whitePawns;
+    const auto enemyKing = isWhite ? position.blackKingBoard : position.whiteKingBoard;
+    const int direction = isWhite ? 8 : -8;
+    int result = 0;
+    for (unsigned files = terms.files; files; files &= files - 1) {
+        const int file = std::countr_zero(files);
+        const auto onFile = own & fileMask[file];
+        if (!onFile) continue;
+        const int square = isWhite ? 63 - std::countl_zero(onFile) : std::countr_zero(onFile);
+        const int next = square + direction;
+        if (next < 0 || next >= 64) continue;
+        int value = terms.bonus[file];
+        bool blocked = position.board[next] != 0;
+        if (terms.breakthroughs & (1U << file)) {
+            // A king can take the sacrifice without displacing a stopper.
+            if (kingAttacks[next] & enemyKing) continue;
+            if (blocked || position.board[next - 1] != 0 || position.board[next + 1] != 0) continue;
+        } else {
+            for (unsigned helpers = terms.helpers[file]; helpers; helpers &= helpers - 1) {
+                const int helperFile = std::countr_zero(helpers);
+                bool freeHelper = false;
+                for (auto pawns = own & fileMask[helperFile]; pawns; pawns &= pawns - 1) {
+                    const int helper = std::countr_zero(pawns);
+                    const auto current = UINT64_C(1) << square;
+                    if ((potentialPawnAttacks(UINT64_C(1) << helper, isWhite) & current)
+                        && (potentialPawnAttacks(enemy, !isWhite) & current)) { freeHelper = true; break; }
+                    const int ranksAhead = isWhite ? helper / 8 - square / 8 : square / 8 - helper / 8;
+                    // A piece on the push square already halves the bonus.
+                    if (ranksAhead == 1) { freeHelper = true; break; }
+                    if (ranksAhead > 1) continue;
+                    bool clear = true;
+                    for (int step = helper; step / 8 != square / 8;) {
+                        step += direction;
+                        if (position.board[step] != 0) { clear = false; break; }
+                    }
+                    if (clear) { freeHelper = true; break; }
+                }
+                if (!freeHelper) blocked = true;
+            }
+        }
+        result += blocked ? value / 2 : value;
+    }
+    return result;
+}
+
+#ifdef PETIR_PAWN_POTENTIAL_TEST
+int pawnPotentialOverrideForTest = INT32_MIN;
+#endif
+int pawnPotentialScoreForEval(const petir_header::tdata& position) {
+#ifdef PETIR_PAWN_POTENTIAL_TEST
+    if (pawnPotentialOverrideForTest != INT32_MIN) return pawnPotentialOverrideForTest;
+#endif
+    const auto& entry = probePawnPotential(position.whitePawns, position.blackPawns);
+    return scorePawnPotential(position, entry.white, true) - scorePawnPotential(position, entry.black, false);
+}
+
 // Bit i is set when board[first + i] holds `piece`, for the 16 squares from `first`.
 std::uint32_t boardSquaresHolding(const petir_header::tdata& position, int first, int piece) {
 #ifdef PETIR_EVAL_SSE2
@@ -340,6 +540,18 @@ std::uint32_t boardSquaresHolding(const petir_header::tdata& position, int first
     return holding;
 #endif
 }
+}
+
+// Owner's perspective before the endgame gate and final draw scaling. The
+// uncached path is also used by regression tests to check cache collisions.
+int candidatePawnPotential(const petir_header::tdata& position, bool isWhite, bool useCache) {
+    if (useCache) {
+        const auto& entry = probePawnPotential(position.whitePawns, position.blackPawns);
+        return scorePawnPotential(position, isWhite ? entry.white : entry.black, isWhite);
+    }
+    const auto own = isWhite ? position.whitePawns : position.blackPawns;
+    const auto enemy = isWhite ? position.blackPawns : position.whitePawns;
+    return scorePawnPotential(position, buildPawnPotential(own, enemy, isWhite), isWhite);
 }
 
 // Endgame refinement for a passed pawn, from the pawn owner's point of view.
@@ -1981,6 +2193,10 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
                 (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
             }
+        }
+        // Only in pawn endings: kings and pawns, no pieces.
+        if ((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0)) {
+            score += pawnPotentialScoreForEval(position);
         }
     }
     // A side without pawns finds it harder to win.

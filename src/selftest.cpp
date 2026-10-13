@@ -447,6 +447,75 @@ int selfTest() {
         auto position=fromFen(fixture.fen,sideToMove);
         check(petir_ueval::evaluate(position,sideToMove,-20500,20500)==fixture.expected,fixture.name);
     }
+    // Expected chess classifications, independently specified rather than
+    // obtained by copying the detector. Reuse pawn keys with different pieces
+    // to ensure blockades are applied after probing the pawn-only cache.
+    struct PotentialFixture {const char* name;const char* fen;int expected;};
+    for (const auto& fixture : {
+        PotentialFixture{"locked helper", "k7/6p1/8/6pP/6P1/8/8/K7 w - - 0 1",0},
+        PotentialFixture{"current recapture defender", "k7/8/8/7p/6P1/7P/8/K7 w - - 0 1",10},
+        PotentialFixture{"phalanx already supports push", "k7/8/8/7p/6PP/8/8/K7 w - - 0 1",10},
+        PotentialFixture{"unsafe helper route", "k7/6p1/8/5p1P/8/6P1/8/K7 w - - 0 1",0},
+        PotentialFixture{"doubled helpers are one resource", "k7/6p1/6p1/7P/6P1/6P1/8/K7 w - - 0 1",0},
+        PotentialFixture{"shared passed helper discounted once", "7k/1p3p2/8/2P1P3/3P4/8/8/K7 w - - 0 1",8},
+        PotentialFixture{"helper one rank ahead", "k7/7p/8/7P/6P1/8/8/K7 w - - 0 1",10},
+        PotentialFixture{"helper ahead, push square attacked", "k7/8/7p/7P/6P1/8/8/K7 w - - 0 1",0},
+        PotentialFixture{"clear candidate", "k7/6p1/8/7P/6P1/8/8/K7 w - - 0 1",24},
+        PotentialFixture{"enemy knight blockade", "k7/6p1/7n/7P/6P1/8/8/K7 w - - 0 1",12},
+        PotentialFixture{"friendly bishop blockade", "k7/6p1/7B/7P/6P1/8/8/K7 w - - 0 1",12},
+        PotentialFixture{"clear candidate after cached blockade", "k7/6p1/8/7P/6P1/8/8/K7 w - - 0 1",24},
+        PotentialFixture{"three-pawn breakthrough", "7k/ppp5/8/PPP5/8/8/8/7K w - - 0 1",16},
+        PotentialFixture{"breakthrough stopped by extra pawn", "7k/pppp4/8/PPP5/8/8/8/7K w - - 0 1",0},
+        PotentialFixture{"breakthrough gap occupied", "7k/ppp5/1n6/PPP5/8/8/8/7K w - - 0 1",0},
+        PotentialFixture{"small candidate for rounding checks", "7k/8/8/8/3p4/8/2PP4/K7 w - - 98 1",4},
+        PotentialFixture{"existing passer not counted again", "7k/8/8/4P3/8/8/8/K7 w - - 0 1",0}}) {
+        auto position=fromFen(fixture.fen,sideToMove);
+        const auto saved=position;
+        const int cached=petir_ueval::candidatePawnPotential(position,true);
+        check(cached==fixture.expected,std::string("pawn potential: ")+fixture.name);
+        check(cached==petir_ueval::candidatePawnPotential(position,true,false),"pawn potential cache agrees with fresh calculation");
+        Position reversed{};
+        for(int square=0;square<64;++square)
+            reversed.board[square^56]=static_cast<std::int8_t>(-position.board[square]);
+        petir_customboard::rebuildBitboards(reversed);
+        reversed.fiftyMoveCounter=position.fiftyMoveCounter;
+        check(cached==petir_ueval::candidatePawnPotential(reversed,false),"pawn potential agrees after color reversal");
+        check(petir_ueval::evaluate(position,sideToMove,-20500,20500)
+            ==petir_ueval::evaluate(reversed,3-sideToMove,-20500,20500),"candidate full evaluation agrees after color reversal");
+        check(std::memcmp(&position,&saved,sizeof(position))==0,"pawn potential leaves its input unchanged");
+    }
+    // More distinct pawn keys than table slots exercise eviction. Compare both
+    // colors immediately and again after subsequent keys have replaced entries.
+    std::uint64_t potentialRandom=UINT64_C(0x91b745ca6d2308ef);
+    std::vector<Position> potentialBoards;
+    bool potentialCacheMatches=true,potentialSymmetryMatches=true;
+    for(int sample=0;sample<5000;++sample) {
+        auto position=fromFen("7k/8/8/8/8/8/8/K7 w - - 0 1",sideToMove);
+        for(int pawn=0;pawn<12;++pawn) {
+            potentialRandom^=potentialRandom<<13;potentialRandom^=potentialRandom>>7;potentialRandom^=potentialRandom<<17;
+            const int square=8+static_cast<int>(potentialRandom%48);
+            position.board[square]=static_cast<std::int8_t>((potentialRandom>>8)&1?whitePawn:blackPawn);
+        }
+        petir_customboard::rebuildBitboards(position);
+        Position reversed{};
+        for(int square=0;square<64;++square)
+            reversed.board[square^56]=static_cast<std::int8_t>(-position.board[square]);
+        petir_customboard::rebuildBitboards(reversed);
+        for(bool white:{false,true}) {
+            const int fresh=petir_ueval::candidatePawnPotential(position,white,false);
+            if(fresh!=petir_ueval::candidatePawnPotential(position,white))potentialCacheMatches=false;
+            if(fresh!=petir_ueval::candidatePawnPotential(reversed,!white))potentialSymmetryMatches=false;
+        }
+        potentialBoards.push_back(position);
+    }
+    for(const auto& position:potentialBoards)for(bool white:{false,true})
+        if(petir_ueval::candidatePawnPotential(position,white)!=petir_ueval::candidatePawnPotential(position,white,false))potentialCacheMatches=false;
+    check(potentialCacheMatches,"pawn potential cache agrees across 5000 keys and revisits");
+    check(potentialSymmetryMatches,"pawn potential agrees across 5000 color mirrors");
+    auto potentialIntegration=fromFen("7k/8/8/8/3p4/8/2PP4/K7 w - - 0 1",sideToMove);
+    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==121,"candidate raw bonus enters full evaluation");
+    potentialIntegration.fiftyMoveCounter=98;
+    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==18,"candidate bonus is scaled and rounded with the whole evaluation");
     struct ConnectedFixture {const char* name;const char* fen;int expected;};
     for(const auto& fixture:{
         ConnectedFixture{"single pawn", "7k/8/5P2/8/8/8/8/R3K3 w - - 0 1",0},

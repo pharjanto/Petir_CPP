@@ -843,6 +843,8 @@ std::int32_t evaluate(const petir_header::tdata& position, std::int32_t sideToMo
 int passedPawnActivity(const petir_header::tdata& position, int pawnSquare, bool isWhite);
 // Unscaled owner-perspective bonus for neighboring foremost passed pawns.
 int connectedPassedPawns(const petir_header::tdata& position, bool isWhite);
+// Candidate/breakthrough potential, owner perspective before phase/draw scaling.
+int candidatePawnPotential(const petir_header::tdata& position, bool isWhite, bool useCache = true);
 // Piece-owner perspective; caller supplies its rook or knight square.
 int endgamePieceActivity(const petir_header::tdata& position, int pieceSquare, bool isWhite);
 // Soft KRP-KR percentage; pass the actual side to move (also for opponentPerspective).
