@@ -56,9 +56,47 @@ Weight scalar(const std::string& name, int& value, int minimum = -1000) {
     return weight;
 }
 
+// The middlegame and the endgame value of tapered stored values (see taper in
+// petir.hpp) that must stay equal: two weights, name.mg and name.eg.
+std::vector<Weight> taperedPair(const std::string& name, std::vector<std::int32_t*> values) {
+    for (const std::int32_t* value : values)
+        if (*value != *values.front()) fail(name + ": the values it ties together differ");
+    std::vector<Weight> pair;
+    for (const bool middlegame : {true, false}) {
+        Weight weight;
+        weight.name = name + (middlegame ? ".mg" : ".eg");
+        // The evaluation sums its tapered terms in 16 bits each.
+        weight.minimum = -500;
+        weight.maximum = 500;
+        weight.get = [first = values.front(), middlegame] {
+            return middlegame ? petir_ueval::middlegamePart(*first) : petir_ueval::endgamePart(*first);
+        };
+        weight.set = [values, middlegame](int value) {
+            for (std::int32_t* stored : values)
+                *stored = middlegame ? petir_ueval::taper(value, petir_ueval::endgamePart(*stored))
+                                     : petir_ueval::taper(petir_ueval::middlegamePart(*stored), value);
+        };
+        pair.push_back(std::move(weight));
+    }
+    return pair;
+}
+
 // Entries first..last of a table used for both colours alike.
 template<class Table> void addTable(std::vector<Weight>& weights, const std::string& name, Table& table, int first, int last) {
     for (int index = first; index <= last; ++index) weights.push_back(tied(indexed(name, index), {&table[index]}));
+}
+
+// The same for a tapered table: a middlegame and an endgame weight per entry.
+template<class Table> void addTaperedTable(std::vector<Weight>& weights, const std::string& name, Table& table, int first, int last) {
+    for (int index = first; index <= last; ++index)
+        for (auto& weight : taperedPair(indexed(name, index), {&table[index]})) weights.push_back(std::move(weight));
+}
+
+// Whether a White piece stands on the square or a Black one on its mirror.
+std::function<bool(const Position&)> pieceOnSquare(int square, int piece) {
+    return [square, piece](const Position& position) {
+        return position.board[square] == piece || position.board[square ^ 56] == -piece;
+    };
 }
 
 // A White piece-square table and its Black mirror (square ^ 56), one weight
@@ -69,10 +107,19 @@ template<class Table> void addSquareTable(std::vector<Weight>& weights, const st
     for (int square = first; square <= last; ++square) {
         if (onlyNonZero && white[square] == 0) continue;
         auto weight = tied(name + "[" + squareName(square) + "]", {&white[square], &black[square ^ 56]});
-        weight.mayCount = [square, piece](const Position& position) {
-            return position.board[square] == piece || position.board[square ^ 56] == -piece;
-        };
+        weight.mayCount = pieceOnSquare(square, piece);
         weights.push_back(std::move(weight));
+    }
+}
+
+// The same for a tapered table: a middlegame and an endgame weight per square.
+template<class Table> void addTaperedSquareTable(std::vector<Weight>& weights, const std::string& name, Table& white,
+                                                 Table& black, int piece, int first = 0, int last = 63) {
+    for (int square = first; square <= last; ++square) {
+        for (auto& weight : taperedPair(name + "[" + squareName(square) + "]", {&white[square], &black[square ^ 56]})) {
+            weight.mayCount = pieceOnSquare(square, piece);
+            weights.push_back(std::move(weight));
+        }
     }
 }
 
@@ -120,10 +167,10 @@ std::vector<Weight> evalWeights() {
     // Piece-square tables. Pawns stand on ranks 2-7 only. The endgame king
     // tables for one wing are mirrored (queenside = kingside ^ 7), so one
     // weight covers four stored entries.
-    addSquareTable(weights, "pawnSquareBonus", whitePawnSquareBonus, blackPawnSquareBonus, petir_header::whitePawn, 8, 55);
-    addSquareTable(weights, "knightSquareBonus", whiteKnightSquareBonus, blackKnightSquareBonus, petir_header::whiteKnight);
-    addSquareTable(weights, "bishopSquareBonus", whiteBishopSquareBonus, blackBishopSquareBonus, petir_header::whiteBishop);
-    addSquareTable(weights, "queenSquareBonus", whiteQueenSquareBonus, blackQueenSquareBonus, petir_header::whiteQueen);
+    addTaperedSquareTable(weights, "pawnSquareBonus", whitePawnSquareBonus, blackPawnSquareBonus, petir_header::whitePawn, 8, 55);
+    addTaperedSquareTable(weights, "knightSquareBonus", whiteKnightSquareBonus, blackKnightSquareBonus, petir_header::whiteKnight);
+    addTaperedSquareTable(weights, "bishopSquareBonus", whiteBishopSquareBonus, blackBishopSquareBonus, petir_header::whiteBishop);
+    addTaperedSquareTable(weights, "queenSquareBonus", whiteQueenSquareBonus, blackQueenSquareBonus, petir_header::whiteQueen);
     addSquareTable(weights, "kingSquarePenalty", whiteKingSquarePenalty, blackKingSquarePenalty, petir_header::whiteKing);
     addSquareTable(weights, "kingEndgameBothWingsBonus", whiteKingEndgameBothWingsBonus, blackKingEndgameBothWingsBonus,
                    petir_header::whiteKing);
@@ -138,15 +185,16 @@ std::vector<Weight> evalWeights() {
         weights.push_back(std::move(weight));
     }
     // The rook table is the same on every rank and for both colours: one
-    // weight per file.
+    // middlegame and one endgame weight per file.
     for (int file = 0; file < 8; ++file) {
-        std::vector<std::int8_t*> squares;
+        std::vector<std::int32_t*> squares;
         for (int rank = 0; rank < 8; ++rank) squares.push_back(&rookSquareBonus[rank * 8 + file]);
-        auto weight = tied(std::string("rookFileBonus[") + static_cast<char>('a' + file) + "]", squares);
-        weight.mayCount = [file](const Position& position) {
-            return ((position.whiteRooks | position.blackRooks) & petir_bitboard_mask::fileMask[file]) != 0;
-        };
-        weights.push_back(std::move(weight));
+        for (auto& weight : taperedPair(std::string("rookFileBonus[") + static_cast<char>('a' + file) + "]", squares)) {
+            weight.mayCount = [file](const Position& position) {
+                return ((position.whiteRooks | position.blackRooks) & petir_bitboard_mask::fileMask[file]) != 0;
+            };
+            weights.push_back(std::move(weight));
+        }
     }
     addSquareTable(weights, "knightOutpostBonus", whiteKnightOutpostBonus, blackKnightOutpostBonus,
                    petir_header::whiteKnight, 0, 63, true);
@@ -154,10 +202,10 @@ std::vector<Weight> evalWeights() {
                    petir_header::whiteBishop, 0, 63, true);
 
     // Mobility, by the number of squares reached.
-    addTable(weights, "knightMobilityBonus", knightMobilityBonus, 0, 8);
-    addTable(weights, "bishopMobilityBonus", bishopMobilityBonus, 0, 15);
-    addTable(weights, "rookMobilityBonus", rookMobilityBonus, 0, 15);
-    addTable(weights, "queenMobilityBonus", queenMobilityBonus, 0, 31);
+    addTaperedTable(weights, "knightMobilityBonus", knightMobilityBonus, 0, 8);
+    addTaperedTable(weights, "bishopMobilityBonus", bishopMobilityBonus, 0, 15);
+    addTaperedTable(weights, "rookMobilityBonus", rookMobilityBonus, 0, 15);
+    addTaperedTable(weights, "queenMobilityBonus", queenMobilityBonus, 0, 31);
 
     // Pawn structure.
     addTable(weights, "doubledPawnPenalty", doubledPawnPenalty, 0, 6);

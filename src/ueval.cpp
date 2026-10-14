@@ -230,9 +230,9 @@ struct alignas(64) PawnEntry {
     std::uint64_t whitePawns, blackPawns;
     // The foremost passed pawn of each file.
     std::uint64_t whitePassers, blackPassers;
-    // Sum of the pawns' square bonuses, in total and for each squareWing value.
-    std::int16_t whiteSquareBonus, blackSquareBonus;
-    std::int16_t whiteWingSquareBonus[3], blackWingSquareBonus[3];
+    // Sum of the pawns' square bonuses (tapered), in total and, at the end
+    // of the entry, for each squareWing value.
+    std::int32_t whiteSquareBonus, blackSquareBonus;
     // Isolated-pawn penalties (without the potential-passer bonus), how many
     // isolated pawns there are, and on which files.
     std::int16_t whiteIsolatedPenalty, blackIsolatedPenalty;
@@ -242,8 +242,11 @@ struct alignas(64) PawnEntry {
     std::uint8_t whiteDoubled, blackDoubled;
     // connectedPasserBonus of the passers above, before scaling.
     std::int16_t whiteConnectedBonus, blackConnectedBonus;
+    // In the second cache line: read only when the kings are on opposite wings.
+    alignas(64) std::int32_t whiteWingSquareBonus[3];
+    std::int32_t blackWingSquareBonus[3];
 };
-static_assert(sizeof(PawnEntry) == 64);
+static_assert(sizeof(PawnEntry) == 128);
 
 constexpr int pawnTableBits = 12;
 PawnEntry pawnTable[1 << pawnTableBits];
@@ -292,11 +295,11 @@ PETIR_EVAL_NOINLINE void fillPawnEntry(PawnEntry& entry, std::uint64_t whitePawn
     entry.blackPawns = blackPawns;
     entry.whitePassers = white.passers;
     entry.blackPassers = black.passers;
-    entry.whiteSquareBonus = static_cast<std::int16_t>(white.squareBonus);
-    entry.blackSquareBonus = static_cast<std::int16_t>(black.squareBonus);
+    entry.whiteSquareBonus = white.squareBonus;
+    entry.blackSquareBonus = black.squareBonus;
     for (int wing = 0; wing < 3; ++wing) {
-        entry.whiteWingSquareBonus[wing] = static_cast<std::int16_t>(white.wingSquareBonus[wing]);
-        entry.blackWingSquareBonus[wing] = static_cast<std::int16_t>(black.wingSquareBonus[wing]);
+        entry.whiteWingSquareBonus[wing] = white.wingSquareBonus[wing];
+        entry.blackWingSquareBonus[wing] = black.wingSquareBonus[wing];
     }
     entry.whiteIsolatedPenalty = static_cast<std::int16_t>(white.isolatedPenalty);
     entry.blackIsolatedPenalty = static_cast<std::int16_t>(black.isolatedPenalty);
@@ -750,6 +753,25 @@ std::uint8_t countBits(std::uint64_t bits) {
 #endif
 }
 
+// The game phase for the tapered weights: maximumPhase with all pieces on
+// the board, 0 without pieces. Knights and bishops count 1, rooks 2, queens 4.
+constexpr int maximumPhase = 24;
+
+template<bool NativePopcount>
+int gamePhase(const petir_header::tdata& position) {
+    const int phase = countBits<NativePopcount>(position.whiteKnights | position.blackKnights | position.whiteBishops | position.blackBishops)
+        + 2 * countBits<NativePopcount>(position.whiteRooks | position.blackRooks)
+        + 4 * countBits<NativePopcount>(position.whiteQueens | position.blackQueens);
+    return std::min(phase, maximumPhase);
+}
+
+// A tapered sum blended by the phase: its middlegame value at maximumPhase,
+// its endgame value at 0, linear in between (rounded toward zero).
+int taperedValue(std::int32_t tapered, int phase) {
+    const int endgame = endgamePart(tapered);
+    return endgame + (middlegamePart(tapered) - endgame) * phase / maximumPhase;
+}
+
 // The main evaluation. Returns the score from sideToMove's point of view.
 // opponentPerspective: the caller wants sideToMove's score although the other
 // side is to move in `position`; realSideToMove below is the side actually to
@@ -799,6 +821,9 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     bool earlyEndgame{};
     bool endgame{};
     std::int32_t score{};
+    // The tapered terms (see taper in petir.hpp), blended into score at the
+    // end of the full evaluation.
+    std::int32_t taperedScore{};
     std::uint64_t attacks{};
     std::uint64_t pieces{};
     std::int32_t square{};
@@ -1335,9 +1360,9 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     pawnTally = pawnStructure.blackDoubled;
     // Piece-square value, counted twice when the kings are on opposite wings
     // and the pawn is on White's king's wing.
-    (score = pas::decrement(score, pawnStructure.blackSquareBonus));
+    taperedScore -= pawnStructure.blackSquareBonus;
     if (kingsOnOppositeWings) {
-        (score = pas::decrement(score, pawnStructure.blackWingSquareBonus[petir_evalmask::squareWing[whiteKingSquare]]));
+        taperedScore -= pawnStructure.blackWingSquareBonus[petir_evalmask::squareWing[whiteKingSquare]];
     }
     // Pawns on their start rank (squares a7 and up) blocked by a white pawn: the
     // board squares eight below hold a white pawn.
@@ -1533,9 +1558,9 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     pawnTally = pawnStructure.whiteDoubled;
     // Piece-square value, counted twice when the kings are on opposite wings
     // and the pawn is on Black's king's wing.
-    (score = pas::increment(score, pawnStructure.whiteSquareBonus));
+    taperedScore += pawnStructure.whiteSquareBonus;
     if (kingsOnOppositeWings) {
-        (score = pas::increment(score, pawnStructure.whiteWingSquareBonus[petir_evalmask::squareWing[blackKingSquare]]));
+        taperedScore += pawnStructure.whiteWingSquareBonus[petir_evalmask::squareWing[blackKingSquare]];
     }
     // Pawns on their start rank (squares h2 and below) blocked by a black pawn:
     // the board squares eight above hold a black pawn.
@@ -1695,7 +1720,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         fileAttacks = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
         attacks = (rankAttacks | fileAttacks);
         scratchBits = (attacks & (~position.whitePieces));
-        (score = pas::increment(score, petir_ueval::rookMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        taperedScore += petir_ueval::rookMobilityBonus[countBits<NativePopcount>(scratchBits)];
         whiteRookAttackMap = (whiteRookAttackMap | attacks);
         if (evaluateBlackKingSafety) {
             kingZoneHits = (attacks & blackKingZone);
@@ -1704,7 +1729,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 (blackAttackerCount = pas::increment(blackAttackerCount, 1));
             }
         }
-        (score = pas::increment(score, petir_ueval::rookSquareBonus[square]));
+        taperedScore += petir_ueval::rookSquareBonus[square];
         // Half-open file: no white pawn in front of the rook. nearEnemyKingWing: the
         // rook is on the same wing as Black's king (not in an endgame).
         // stackedOnFile: another rook in front of it, or a queen on the file.
@@ -1794,7 +1819,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         fileAttacks = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
         attacks = (rankAttacks | fileAttacks);
         scratchBits = (attacks & (~position.blackPieces));
-        (score = pas::decrement(score, petir_ueval::rookMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        taperedScore -= petir_ueval::rookMobilityBonus[countBits<NativePopcount>(scratchBits)];
         blackRookAttackMap = (blackRookAttackMap | attacks);
         if (evaluateWhiteKingSafety) {
             kingZoneHits = (attacks & whiteKingZone);
@@ -1803,7 +1828,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
                 (whiteAttackerCount = pas::increment(whiteAttackerCount, 1));
             }
         }
-        (score = pas::decrement(score, petir_ueval::rookSquareBonus[square]));
+        taperedScore -= petir_ueval::rookSquareBonus[square];
         if (((petir_bitboard_mask::rookRayDownMask[square] & position.blackPawns) == 0)) {
             (termScore = pas::increment(termScore, petir_ueval::semiOpenFileBonus[(square & 7)]));
             nearEnemyKingWing = ((petir_evalmask::squareWing[square] == petir_evalmask::squareWing[whiteKingSquare]) && (!endgame));
@@ -1883,14 +1908,14 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
         if (pieceActivity) score += endgamePieceActivityAgainst(position, square, true, blackAttackSquares);
-        (score = pas::increment(score, petir_ueval::whiteKnightSquareBonus[square]));
+        taperedScore += petir_ueval::whiteKnightSquareBonus[square];
         if ((!earlyEndgame)) {
             (score = pas::increment(score, pas::mul(petir_evalmask::closenessHalfTable[square][blackKingSquare], petir_ueval::knightTropismBonus)));
         }
         attacks = petir_bitboard_mask::knightAttacks[square];
         whiteKnightAttackMap = (whiteKnightAttackMap | attacks);
         scratchBits = (attacks & (~position.whitePieces));
-        (score = pas::increment(score, petir_ueval::knightMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        taperedScore += petir_ueval::knightMobilityBonus[countBits<NativePopcount>(scratchBits)];
         if (evaluateBlackKingSafety) {
             kingZoneHits = (attacks & blackKingZone);
             (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(kingZoneHits)));
@@ -1920,14 +1945,14 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
         if (pieceActivity) score -= endgamePieceActivityAgainst(position, square, false, whiteAttackSquares);
-        (score = pas::decrement(score, petir_ueval::blackKnightSquareBonus[square]));
+        taperedScore -= petir_ueval::blackKnightSquareBonus[square];
         if ((!earlyEndgame)) {
             (score = pas::decrement(score, pas::mul(petir_evalmask::closenessHalfTable[square][whiteKingSquare], petir_ueval::knightTropismBonus)));
         }
         attacks = petir_bitboard_mask::knightAttacks[square];
         blackKnightAttackMap = (blackKnightAttackMap | attacks);
         scratchBits = (attacks & (~position.blackPieces));
-        (score = pas::decrement(score, petir_ueval::knightMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        taperedScore -= petir_ueval::knightMobilityBonus[countBits<NativePopcount>(scratchBits)];
         if (evaluateWhiteKingSafety) {
             kingZoneHits = (attacks & whiteKingZone);
             (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(kingZoneHits)));
@@ -1962,7 +1987,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
         attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
         scratchBits = (attacks & (~position.whitePieces));
-        (score = pas::increment(score, petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        taperedScore += petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)];
         if (((((!endgame) && (petir_ueval::whiteBishopOutpostBonus[square] > 0)) && ((petir_bitboard_mask::blackPawnAttacks[square] & position.whitePawns) != 0)) && ((petir_evalmask::whiteOutpostMask[square] & position.blackPawns) == 0))) {
             (score = pas::increment(score, petir_ueval::whiteBishopOutpostBonus[square]));
         }
@@ -1974,7 +1999,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             }
         }
         whiteBishopAttackMap = (whiteBishopAttackMap | attacks);
-        (score = pas::increment(score, petir_ueval::whiteBishopSquareBonus[square]));
+        taperedScore += petir_ueval::whiteBishopSquareBonus[square];
         if ((!earlyEndgame)) {
             if ((petir_evalmask::bishopProximityTable[square][blackKingSquare] > 0)) {
                 (weightedTerm = pas::increment(weightedTerm, 1));
@@ -1990,7 +2015,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     weightedTerm = 0;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
-        (score = pas::decrement(score, petir_ueval::blackBishopSquareBonus[square]));
+        taperedScore -= petir_ueval::blackBishopSquareBonus[square];
         if ((!earlyEndgame)) {
             (score = pas::decrement(score, pas::mul(petir_evalmask::bishopProximityTable[square][whiteKingSquare], petir_ueval::bishopTropismBonus)));
             if ((petir_evalmask::bishopProximityTable[square][whiteKingSquare] > 0)) {
@@ -2000,7 +2025,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
         attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
         scratchBits = (attacks & (~position.blackPieces));
-        (score = pas::decrement(score, petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)]));
+        taperedScore -= petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)];
         if (((((!endgame) && (petir_ueval::blackBishopOutpostBonus[square] > 0)) && ((petir_bitboard_mask::whitePawnAttacks[square] & position.blackPawns) != 0)) && ((petir_evalmask::blackOutpostMask[square] & position.whitePawns) == 0))) {
             (score = pas::decrement(score, petir_ueval::blackBishopOutpostBonus[square]));
         }
@@ -2024,7 +2049,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     pieces = position.whiteQueens;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
-        (score = pas::increment(score, petir_ueval::whiteQueenSquareBonus[square]));
+        taperedScore += petir_ueval::whiteQueenSquareBonus[square];
         if ((!endgame)) {
             attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
             attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
@@ -2032,7 +2057,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
             attacks = ((attacks | kingZoneHits) | scratchBits);
             queenMobilitySquares = (attacks & (~position.whitePieces));
-            (score = pas::increment(score, petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)]));
+            taperedScore += petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)];
             if (((scratchBits & position.whiteRooks) != 0)) {
                 if (((scratchBits & blackKingZone) != 0)) {
                     whiteRookAttackMap = (whiteRookAttackMap | scratchBits);
@@ -2057,7 +2082,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     pieces = position.blackQueens;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
-        (score = pas::decrement(score, petir_ueval::blackQueenSquareBonus[square]));
+        taperedScore -= petir_ueval::blackQueenSquareBonus[square];
         if ((!endgame)) {
             attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
             attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
@@ -2065,7 +2090,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
             attacks = ((attacks | kingZoneHits) | scratchBits);
             queenMobilitySquares = (attacks & (~position.blackPieces));
-            (score = pas::decrement(score, petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)]));
+            taperedScore -= petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)];
             blackQueenAttackMap = (blackQueenAttackMap | attacks);
             if (((scratchBits & position.blackRooks) != 0)) {
                 if (((scratchBits & whiteKingZone) != 0)) {
@@ -2236,6 +2261,8 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             (score = pas::increment(score, petir_ueval::blockedCenterPawnPenalty));
         }
     }
+    // The tapered terms, blended by the game phase.
+    score += taperedValue(taperedScore, gamePhase<NativePopcount>(position));
     // 5. Scaling towards a draw. Bishops of opposite colours and no other pieces:
     // halve the score; a lone pawn whose path the defending bishop covers makes
     // it zero.

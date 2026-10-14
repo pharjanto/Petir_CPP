@@ -13,6 +13,8 @@ namespace texel {
 // One tunable number. It can stand for several stored values that must stay
 // equal: a White table entry and the mirrored Black one, the kingside and
 // queenside endgame king tables, or every square of a file in the rook table.
+// For a tapered table (see taper in petir.hpp) it is the middlegame (name.mg)
+// or the endgame (name.eg) value of those stored values.
 struct Weight {
     std::string name;
     // The range the stored values can hold. A weight that the evaluation
