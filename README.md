@@ -1,6 +1,8 @@
 # Petir 1 — faithful C++20 engine port
 
-This project ports the **active chess engine core** from your Delphi source to native 64-bit C++. It retains Petir's classical search, evaluation constants, move ordering, rotated bitboards, repetition logic, and binary opening books. The console adapter adds modern time management and the compatibility fixes described in `PORTING_NOTES.md`. Playing strength requires match testing. The VCL chessboard and desktop dialogs are outside this engine-only port.
+Petir was first written using Delphi/pascal programming language in around 2022-2003 for my university final project. First public release was in September 2004. Petir has competed in several CCT tournaments between 2004-2007, with best result came in 2006 CCT8 5/9 and beat Deep Junior in round 2.
+
+This project is to port legacy codes from delphi/pascal to C++ and to bring improvements using modern chess programming techniques. Majority of legacy Pascal code is still retained. Old Delphi code has windows GUI on it, this port does not have. Instead, now it support UCI and xBoard protocol whereby previously only xBoard was supported.
 
 The source is editable C++, with no Pascal compiler or Python dependency at runtime. Python is optional for protocol tests and translation provenance tooling.
 
