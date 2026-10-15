@@ -1900,7 +1900,8 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         (score = pas::decrement(score, (pas::mul(termScore, petir_ueval::rookScale[std::min<int>(position.blackNonPawnMaterial, 41)]) / 100)));
     }
     // White knights: endgame activity, piece-square value, closeness to Black's
-    // king (not in an early endgame), mobility, attacks on Black's king zone, and
+    // king (not in an early endgame), mobility (squares that neither a white piece
+    // occupies nor a black pawn attacks), attacks on Black's king zone, and
     // outposts: a square no black pawn can ever attack, supported by one (half
     // bonus) or two (full bonus) white pawns, plus half the bonus when Black has
     // no knight and no bishop that can attack the square.
@@ -1914,7 +1915,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         }
         attacks = petir_bitboard_mask::knightAttacks[square];
         whiteKnightAttackMap = (whiteKnightAttackMap | attacks);
-        scratchBits = (attacks & (~position.whitePieces));
+        scratchBits = (attacks & (~position.whitePieces) & (~blackPawnAttackMap));
         taperedScore += petir_ueval::knightMobilityBonus[countBits<NativePopcount>(scratchBits)];
         if (evaluateBlackKingSafety) {
             kingZoneHits = (attacks & blackKingZone);
@@ -1951,7 +1952,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         }
         attacks = petir_bitboard_mask::knightAttacks[square];
         blackKnightAttackMap = (blackKnightAttackMap | attacks);
-        scratchBits = (attacks & (~position.blackPieces));
+        scratchBits = (attacks & (~position.blackPieces) & (~whitePawnAttackMap));
         taperedScore -= petir_ueval::knightMobilityBonus[countBits<NativePopcount>(scratchBits)];
         if (evaluateWhiteKingSafety) {
             kingZoneHits = (attacks & whiteKingZone);
@@ -1977,16 +1978,16 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             }
         }
     }
-    // White bishops: mobility, outposts, attacks on Black's king zone,
-    // piece-square value and closeness to Black's king; a bonus when both bishops
-    // aim at the king (weightedTerm counts them).
+    // White bishops: mobility (counted like the knights'), outposts, attacks on
+    // Black's king zone, piece-square value and closeness to Black's king; a
+    // bonus when both bishops aim at the king (weightedTerm counts them).
     pieces = position.whiteBishops;
     weightedTerm = 0;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
         attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
         attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
-        scratchBits = (attacks & (~position.whitePieces));
+        scratchBits = (attacks & (~position.whitePieces) & (~blackPawnAttackMap));
         taperedScore += petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)];
         if (((((!endgame) && (petir_ueval::whiteBishopOutpostBonus[square] > 0)) && ((petir_bitboard_mask::blackPawnAttacks[square] & position.whitePawns) != 0)) && ((petir_evalmask::whiteOutpostMask[square] & position.blackPawns) == 0))) {
             (score = pas::increment(score, petir_ueval::whiteBishopOutpostBonus[square]));
@@ -2024,7 +2025,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         }
         attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
         attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
-        scratchBits = (attacks & (~position.blackPieces));
+        scratchBits = (attacks & (~position.blackPieces) & (~whitePawnAttackMap));
         taperedScore -= petir_ueval::bishopMobilityBonus[countBits<NativePopcount>(scratchBits)];
         if (((((!endgame) && (petir_ueval::blackBishopOutpostBonus[square] > 0)) && ((petir_bitboard_mask::whitePawnAttacks[square] & position.blackPawns) != 0)) && ((petir_evalmask::blackOutpostMask[square] & position.whitePawns) == 0))) {
             (score = pas::decrement(score, petir_ueval::blackBishopOutpostBonus[square]));

@@ -82,22 +82,22 @@ int selfTest() {
     for(const auto& fixture:{
         EvalOptimizationFixture{"multiple rooks",
             "6k1/2r2rr1/1b4n1/3p4/r2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {-155,-159,159,155},{-155,-159,159,155}},
+            {-133,-137,137,133},{-133,-137,137,133}},
         EvalOptimizationFixture{"multiple knights",
             "6k1/2n2n2/1b3b2/3p4/n2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {773,769,-769,-773},{829,825,-825,-829}},
+            {785,781,-781,-785},{829,825,-825,-829}},
         EvalOptimizationFixture{"multiple bishops",
             "6k1/2b5/1b3b2/3p4/b2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {1060,1056,-1056,-1060},{1101,1097,-1097,-1101}},
+            {1063,1059,-1059,-1063},{1101,1097,-1097,-1101}},
         EvalOptimizationFixture{"multiple queens",
             "6k1/2q5/1q3q2/3p4/q2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {-1914,-1918,1918,1914},{-1739,-1743,1743,1739}},
+            {-1889,-1893,1893,1889},{-1739,-1743,1743,1739}},
         EvalOptimizationFixture{"white pawn files",
             "7k/8/8/P1PP1P1P/P2P1P2/8/8/KB5r w - - 0 1",
-            {721,717,-717,-721},{721,717,-717,-721}},
+            {728,724,-724,-728},{728,724,-724,-728}},
         EvalOptimizationFixture{"black pawn files",
             "kb5R/8/8/p2p1p2/p1pp1p1p/8/8/7K b - - 0 1",
-            {-717,-721,721,717},{-717,-721,721,717}}}) {
+            {-724,-728,728,724},{-724,-728,728,724}}}) {
         int side=1;const auto position=fromFen(fixture.fen,side);const auto saved=position;
         const auto tag=std::string("evaluation optimization: ")+fixture.name;
         check(isConsistent(position),tag+" fixture is consistent");
@@ -441,9 +441,9 @@ int selfTest() {
     }
     struct SymmetryScoreFixture {const char* name;const char* fen;int expected;};
     for(const auto& fixture:{
-        SymmetryScoreFixture{"material scaling reference", "7k/8/8/3N4/4P3/8/8/4K3 w - - 0 1",514},
-        SymmetryScoreFixture{"king distance reference", "8/1k1P4/8/8/8/7N/7K/8 b - - 0 1",-575},
-        SymmetryScoreFixture{"connected shortcut reference", "8/3b4/3k1p2/p4P2/P7/6pp/1b2K3/8 b - - 9 99",1509}}) {
+        SymmetryScoreFixture{"material scaling reference", "7k/8/8/3N4/4P3/8/8/4K3 w - - 0 1",503},
+        SymmetryScoreFixture{"king distance reference", "8/1k1P4/8/8/8/7N/7K/8 b - - 0 1",-578},
+        SymmetryScoreFixture{"connected shortcut reference", "8/3b4/3k1p2/p4P2/P7/6pp/1b2K3/8 b - - 9 99",1515}}) {
         auto position=fromFen(fixture.fen,sideToMove);
         check(petir_ueval::evaluate(position,sideToMove,-20500,20500)==fixture.expected,fixture.name);
     }
@@ -750,7 +750,7 @@ int selfTest() {
     struct LazyEvalFixture {const char* name;const char* fen;int alpha,beta,score;};
     for(const auto& fixture:{
         LazyEvalFixture{"king danger after former stage 2",
-            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-246},
+            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-261},
         LazyEvalFixture{"rule-50 scaling after former stage 3",
             "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,105}}) {
         auto position=fromFen(fixture.fen,sideToMove);
