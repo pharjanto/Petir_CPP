@@ -11,9 +11,13 @@ The source is editable C++, with no Pascal compiler or Python dependency at runt
 # Methodologies and AI Policies
 
 ChatGpt is used to port the entire code. 
+
 Both ChatGPT and Claude is used to find bugs in old pascal code that carried to ported C++. 
+
 Claude build tools to automatically collect statistics in various area to find weak spot, inefficiencies and area to improve.
+
 Every changes is directed and supervised by me.
+
 Every single change is being made one at a time, tested using CuteChess SPRT statistic or as long as I confident it at least does not regress.
 
 ## Open and build in VS Code on Windows
