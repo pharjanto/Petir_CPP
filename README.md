@@ -2,9 +2,19 @@
 
 Petir was first written using Delphi/pascal programming language in around 2022-2003 for my university final project. First public release was in September 2004. Petir has competed in several CCT tournaments between 2004-2007, with best result came in 2006 CCT8 5/9 and beat Deep Junior in round 2. Last work/release on Petir was in 2007.
 
-This project is to port legacy codes from delphi/pascal to C++ and to bring improvements using modern chess programming techniques. Majority of legacy Pascal code is still retained. Old Delphi code has windows GUI on it, this port does not have. Instead, now it support UCI and xBoard protocol whereby previously only xBoard was supported.
+This project is to port legacy codes from delphi/pascal to C++ and to bring improvements using modern chess programming techniques. 
+
+Majority of legacy Pascal code and structure is still retained. Old Delphi code has windows GUI on it, this port does not have. Instead, now it support UCI and xBoard protocol whereby previously only xBoard was supported.
 
 The source is editable C++, with no Pascal compiler or Python dependency at runtime. Python is optional for protocol tests and translation provenance tooling.
+
+# Methodologies
+
+ChatGpt is used to port the entire code. 
+Both ChatGPT and Claude is used to find bugs in old pascal code that carried to ported C++. 
+Claude build tools to automatically collect statistics in various area to find weak spot, inefficiencies and area to improve.
+Every changes is directed and supervised by me.
+Every single change is being made one at a time, tested using CuteChess SPRT statistic or as long as I confident it at least does not regress.
 
 ## Open and build in VS Code on Windows
 
