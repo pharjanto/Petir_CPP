@@ -90,13 +90,17 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         const bool tryNullMove = (plies >= 2) && isNullWindow && !betaIsMateScore && !farBehind
             && !afterNullMove && !avoidNullMove && hasPieces;
         if (tryNullMove) {
-            // Search 4 plies shallower; only 3 plies shallower with exactly 4
-            // plies left in a PV-type node where our material balance is less
-            // than 500 above alpha.
-            std::int32_t nullMoveDepth = searchDepth - 32;
+            // Reduce 4 plies, and more from 6 plies left while more than 24 of
+            // non-pawn material remains (not an endgame, where zugzwang and slow
+            // threats are common): 3 + plies / 3 (6: 5, 9: 6, 12: 7, 15: 8).
+            // Only 3 plies with exactly 4 plies left in a PV-type node where our
+            // material balance is less than 500 above alpha.
+            const bool notEndgame = (position.whiteNonPawnMaterial + position.blackNonPawnMaterial > 24);
+            std::int32_t nullReduction = ((plies >= 6) && notEndgame) ? 3 + plies / 3 : 4;
             if ((plies == 4) && (ownMaterial < alpha + 500) && (nodeType == pvNode)) {
-                nullMoveDepth = searchDepth - 24;
+                nullReduction = 3;
             }
+            std::int32_t nullMoveDepth = searchDepth - petir_header::plyUnits * nullReduction;
             // Passing the move cancels any en passant right.
             const std::int32_t savedEnPassantFile = position.enPassantFile;
             if (position.enPassantFile != petir_header::noEnPassant) {
