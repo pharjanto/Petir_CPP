@@ -8,7 +8,7 @@ Majority of legacy Pascal code and structure is still retained. Old Delphi code 
 
 The source is editable C++, with no Pascal compiler or Python dependency at runtime. Python is optional for protocol tests and translation provenance tooling.
 
-# Methodologies
+# Methodologies and AI Policies
 
 ChatGpt is used to port the entire code. 
 Both ChatGPT and Claude is used to find bugs in old pascal code that carried to ported C++. 
