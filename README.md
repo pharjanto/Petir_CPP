@@ -1,6 +1,6 @@
 # Petir 1 — faithful C++20 engine port
 
-Petir was first written using Delphi/pascal programming language in around 2022-2003 for my university final project. First public release was in September 2004. Petir has competed in several CCT tournaments between 2004-2007, with best result came in 2006 CCT8 5/9 and beat Deep Junior in round 2.
+Petir was first written using Delphi/pascal programming language in around 2022-2003 for my university final project. First public release was in September 2004. Petir has competed in several CCT tournaments between 2004-2007, with best result came in 2006 CCT8 5/9 and beat Deep Junior in round 2. Last work/release on Petir was in 2007.
 
 This project is to port legacy codes from delphi/pascal to C++ and to bring improvements using modern chess programming techniques. Majority of legacy Pascal code is still retained. Old Delphi code has windows GUI on it, this port does not have. Instead, now it support UCI and xBoard protocol whereby previously only xBoard was supported.
 
