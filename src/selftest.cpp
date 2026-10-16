@@ -94,10 +94,10 @@ int selfTest() {
             {-1889,-1893,1893,1889},{-1739,-1743,1743,1739}},
         EvalOptimizationFixture{"white pawn files",
             "7k/8/8/P1PP1P1P/P2P1P2/8/8/KB5r w - - 0 1",
-            {728,724,-724,-728},{728,724,-724,-728}},
+            {743,739,-739,-743},{743,739,-739,-743}},
         EvalOptimizationFixture{"black pawn files",
             "kb5R/8/8/p2p1p2/p1pp1p1p/8/8/7K b - - 0 1",
-            {-724,-728,728,724},{-724,-728,728,724}}}) {
+            {-739,-743,743,739},{-739,-743,743,739}}}) {
         int side=1;const auto position=fromFen(fixture.fen,side);const auto saved=position;
         const auto tag=std::string("evaluation optimization: ")+fixture.name;
         check(isConsistent(position),tag+" fixture is consistent");
@@ -441,9 +441,9 @@ int selfTest() {
     }
     struct SymmetryScoreFixture {const char* name;const char* fen;int expected;};
     for(const auto& fixture:{
-        SymmetryScoreFixture{"material scaling reference", "7k/8/8/3N4/4P3/8/8/4K3 w - - 0 1",503},
-        SymmetryScoreFixture{"king distance reference", "8/1k1P4/8/8/8/7N/7K/8 b - - 0 1",-578},
-        SymmetryScoreFixture{"connected shortcut reference", "8/3b4/3k1p2/p4P2/P7/6pp/1b2K3/8 b - - 9 99",1515}}) {
+        SymmetryScoreFixture{"material scaling reference", "7k/8/8/3N4/4P3/8/8/4K3 w - - 0 1",512},
+        SymmetryScoreFixture{"king distance reference", "8/1k1P4/8/8/8/7N/7K/8 b - - 0 1",-550},
+        SymmetryScoreFixture{"connected shortcut reference", "8/3b4/3k1p2/p4P2/P7/6pp/1b2K3/8 b - - 9 99",1513}}) {
         auto position=fromFen(fixture.fen,sideToMove);
         check(petir_ueval::evaluate(position,sideToMove,-20500,20500)==fixture.expected,fixture.name);
     }
@@ -513,9 +513,9 @@ int selfTest() {
     check(potentialCacheMatches,"pawn potential cache agrees across 5000 keys and revisits");
     check(potentialSymmetryMatches,"pawn potential agrees across 5000 color mirrors");
     auto potentialIntegration=fromFen("7k/8/8/8/3p4/8/2PP4/K7 w - - 0 1",sideToMove);
-    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==281,"candidate raw bonus enters full evaluation");
+    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==303,"candidate raw bonus enters full evaluation");
     potentialIntegration.fiftyMoveCounter=98;
-    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==42,"candidate bonus is scaled and rounded with the whole evaluation");
+    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==45,"candidate bonus is scaled and rounded with the whole evaluation");
     struct ConnectedFixture {const char* name;const char* fen;int expected;};
     for(const auto& fixture:{
         ConnectedFixture{"single pawn", "7k/8/5P2/8/8/8/8/R3K3 w - - 0 1",0},
@@ -679,7 +679,7 @@ int selfTest() {
         int side=1;auto philidor=fromFen("8/4k3/r7/4K3/4P3/8/8/1R6 w - - 0 1",side);
         auto seventh=fromFen("2K5/k1P5/8/8/8/8/7r/3R4 w - - 0 1",side);
         check(petir_ueval::evaluate(philidor,side,-20500,20500)==38,"Philidor full score uses 25 percent scaling");
-        check(petir_ueval::evaluate(seventh,side,-20500,20500)==336,"seventh-rank full score retains full advantage");
+        check(petir_ueval::evaluate(seventh,side,-20500,20500)==331,"seventh-rank full score retains full advantage");
     }
     // A king one file from the black passer must get the same evaluation
     // adjustment as in the color-reversed position (d3/e1 becomes d6/e8).
@@ -750,9 +750,9 @@ int selfTest() {
     struct LazyEvalFixture {const char* name;const char* fen;int alpha,beta,score;};
     for(const auto& fixture:{
         LazyEvalFixture{"king danger after former stage 2",
-            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-261},
+            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-255},
         LazyEvalFixture{"rule-50 scaling after former stage 3",
-            "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,105}}) {
+            "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,106}}) {
         auto position=fromFen(fixture.fen,sideToMove);
         check(isConsistent(position),std::string("lazy evaluation fixture is consistent: ")+fixture.name);
         const int full=petir_ueval::evaluate(position,sideToMove,-20500,20500);

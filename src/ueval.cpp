@@ -785,8 +785,8 @@ int taperedValue(std::int32_t tapered, int phase) {
 //     blocked by their king;
 //  3. lazy exit;
 //  4. kings, castling, pawn shelter, bishops, pawn structure and passed pawns
-//     (Black first, then White), rooks, knights, bishops, queens, king safety
-//     or endgame king placement, small extra terms;
+//     (Black first, then White), rooks, knights, bishops, queens, king
+//     placement (tapered), king safety, small extra terms;
 //  5. scaling towards a draw: opposite bishops, the 50-move rule, drawish
 //     material, likely draws.
 // ueval.pas:850
@@ -2112,10 +2112,25 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             (score = pas::decrement(score, pas::mul(petir_evalmask::closenessHalfTable[square][whiteKingSquare], petir_ueval::queenTropismBonus)));
         }
     }
+    // King placement, a tapered term: the middlegame table, and the endgame
+    // table for where the pawns are (both wings or no pawns, queenside only,
+    // kingside only).
+    {
+        const std::int32_t kingMiddlegame = petir_ueval::blackKingSquarePenalty[blackKingSquare] - petir_ueval::whiteKingSquarePenalty[whiteKingSquare];
+        const auto pawns = position.blackPawns | position.whitePawns;
+        const bool queensidePawns = (petir_evalmask::filesABCDMask & pawns) != 0;
+        const bool kingsidePawns = (petir_evalmask::filesEFGHMask & pawns) != 0;
+        std::int32_t kingEndgame;
+        if (queensidePawns && !kingsidePawns) {
+            kingEndgame = petir_ueval::whiteKingEndgameQueensideBonus[whiteKingSquare] - petir_ueval::blackKingEndgameQueensideBonus[blackKingSquare];
+        } else if (kingsidePawns && !queensidePawns) {
+            kingEndgame = petir_ueval::whiteKingEndgameKingsideBonus[whiteKingSquare] - petir_ueval::blackKingEndgameKingsideBonus[blackKingSquare];
+        } else {
+            kingEndgame = petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare] - petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare];
+        }
+        taperedScore += taper(kingMiddlegame, kingEndgame);
+    }
     if ((!endgame)) {
-        // Middlegame king placement.
-        (score = pas::decrement(score, petir_ueval::whiteKingSquarePenalty[whiteKingSquare]));
-        (score = pas::increment(score, petir_ueval::blackKingSquarePenalty[blackKingSquare]));
         // scratchValue: the side actually to move (the same as realSideToMove).
         if (opponentPerspective) {
             scratchValue = pas::sub(3, sideToMove);
@@ -2208,26 +2223,6 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
             (score = pas::increment(score, weightedTerm));
         }
     } else {
-        scratchBits = (position.blackPawns | position.whitePawns);
-        // Endgame king placement: piece-square tables chosen by where the pawns are
-        // (both wings or no pawns, queenside only, kingside only).
-        if (((petir_evalmask::filesABCDMask & scratchBits) != 0)) {
-            if (((petir_evalmask::filesEFGHMask & scratchBits) != 0)) {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
-            } else {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameQueensideBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameQueensideBonus[blackKingSquare]));
-            }
-        } else {
-            if (((petir_evalmask::filesEFGHMask & scratchBits) != 0)) {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameKingsideBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameKingsideBonus[blackKingSquare]));
-            } else {
-                (score = pas::increment(score, petir_ueval::whiteKingEndgameBothWingsBonus[whiteKingSquare]));
-                (score = pas::decrement(score, petir_ueval::blackKingEndgameBothWingsBonus[blackKingSquare]));
-            }
-        }
         // Only in pawn endings: kings and pawns, no pieces.
         if ((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0)) {
             score += pawnPotentialScoreForEval(position);
