@@ -16,6 +16,10 @@ std::int32_t researchCount{};
 // the plies left: 0 up to 2 plies (any loss), -1 at 3, -2 at 4, -3 at 5, -4 at 6.
 static constexpr std::int32_t seeQuietMaxPlies = 6;
 static std::int32_t seeQuietMargin(std::int32_t plies) {return -(plies * plies / 8);}
+// Late-move pruning: up to this many plies left, a late quiet move is skipped
+// once lateMovePruningCount(plies) moves have been tried: 4, 7, 12, 19, ...
+static constexpr std::int32_t lateMovePruningMaxPlies = 4;
+static std::int32_t lateMovePruningCount(std::int32_t plies) {return 3 + plies * plies;}
 // Late-move reduction in eighths of a ply, by plies left and move number (both
 // up to 63): ln(plies) * ln(moveNumber) / 2.5 plies, at least one ply.
 static const auto lateMoveReductions = [] {
@@ -231,6 +235,28 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         const std::int32_t see = petir_usee::staticExchange(sideToMove, position, moveFromSquare(move), toSquare);
         if (see >= seeQuietMargin(remainingPlies)) return false;
         return !petir_tools::moveGivesCheck(position, sideToMove, move);
+    };
+
+    // Late-move pruning: at a null-window non-PV node with few plies left, skip
+    // a late quiet move (past the hash move, captures and killers) once enough
+    // moves have been tried, without searching it. Never a checking move,
+    // castling, a passed-pawn or seventh-rank move, with a pawn on the seventh,
+    // after a mate threat, before any move has a non-mated score, or when the
+    // side to move has no piece. Called after the move is made.
+    auto canPruneLateMove = [&]() -> bool {
+        if (phase != petir_header::otherMovesPhase) return false;
+        if ((remainingPlies < 1) || (remainingPlies > lateMovePruningMaxPlies)) return false;
+        if ((nodeType == pvNode) || (beta - alpha != 1)) return false;
+        if (legalMoveCount < lateMovePruningCount(remainingPlies)) return false;
+        if (mateThreatExtended || doNotReduce) return false;
+        const bool hasNonMatedScore = (bestScore > -petir_header::kingValue + 100);
+        if (!hasNonMatedScore) return false;
+        // Castling (target square above 63) is never pruned.
+        if (toSquare > 63) return false;
+        if (petir_tools::nonPawnMaterial(savedPosition, sideToMove) < 3) return false;
+        if (petir_tools::hasPawnOnSeventh(sideToMove, position)) return false;
+        if (petir_tools::isGoodMove(position, toSquare, sideToMove)) return false;
+        return !petir_tools::moveGivesCheck(savedPosition, sideToMove, move);
     };
 
     // Shrinks newDepth by amount (in eighths of a ply) and records it as the reduction.
@@ -529,6 +555,11 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         }
         if ((toSquare == petir_header::enPassantTarget) && isInCheck(sideToMove, position)) {
             position = savedPosition;
+            continue;
+        }
+        if (canPruneLateMove()) {
+            position = savedPosition;
+            legalMoveCount++;
             continue;
         }
         movedPiece = savedPosition.board[moveFromSquare(move)];
