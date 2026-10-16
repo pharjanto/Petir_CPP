@@ -82,16 +82,16 @@ int selfTest() {
     for(const auto& fixture:{
         EvalOptimizationFixture{"multiple rooks",
             "6k1/2r2rr1/1b4n1/3p4/r2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {-133,-137,137,133},{-133,-137,137,133}},
+            {-128,-132,132,128},{-128,-132,132,128}},
         EvalOptimizationFixture{"multiple knights",
             "6k1/2n2n2/1b3b2/3p4/n2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {785,781,-781,-785},{829,825,-825,-829}},
+            {798,794,-794,-798},{829,825,-825,-829}},
         EvalOptimizationFixture{"multiple bishops",
             "6k1/2b5/1b3b2/3p4/b2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {1063,1059,-1059,-1063},{1101,1097,-1097,-1101}},
+            {1077,1073,-1073,-1077},{1101,1097,-1097,-1101}},
         EvalOptimizationFixture{"multiple queens",
             "6k1/2q5/1q3q2/3p4/q2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {-1889,-1893,1893,1889},{-1739,-1743,1743,1739}},
+            {-1886,-1890,1890,1886},{-1739,-1743,1743,1739}},
         EvalOptimizationFixture{"white pawn files",
             "7k/8/8/P1PP1P1P/P2P1P2/8/8/KB5r w - - 0 1",
             {743,739,-739,-743},{743,739,-739,-743}},
@@ -750,9 +750,9 @@ int selfTest() {
     struct LazyEvalFixture {const char* name;const char* fen;int alpha,beta,score;};
     for(const auto& fixture:{
         LazyEvalFixture{"king danger after former stage 2",
-            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-255},
+            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-256},
         LazyEvalFixture{"rule-50 scaling after former stage 3",
-            "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,106}}) {
+            "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,108}}) {
         auto position=fromFen(fixture.fen,sideToMove);
         check(isConsistent(position),std::string("lazy evaluation fixture is consistent: ")+fixture.name);
         const int full=petir_ueval::evaluate(position,sideToMove,-20500,20500);

@@ -772,6 +772,16 @@ int taperedValue(std::int32_t tapered, int phase) {
     return endgame + (middlegamePart(tapered) - endgame) * phase / maximumPhase;
 }
 
+// King danger scaled by the number of attacking pieces: 1 attacker /5,
+// 3 x1.25, 4 x1.5, 5 x2.
+int scaleByAttackers(int danger, int attackers) {
+    if (attackers == 1) return danger / 5;
+    if (attackers == 3) return danger * 125 / 100;
+    if (attackers == 4) return danger * 150 / 100;
+    if (attackers == 5) return danger * 200 / 100;
+    return danger;
+}
+
 // The main evaluation. Returns the score from sideToMove's point of view.
 // opponentPerspective: the caller wants sideToMove's score although the other
 // side is to move in `position`; realSideToMove below is the side actually to
@@ -799,7 +809,7 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     //                  exit; Black's scaled passer terms; White passer's rank;
     //                  the rooks' open-file bonus; 101 - fiftyMoveCounter.
     //   weightedTerm - White's scaled passer terms; bishops aiming at the enemy
-    //                  king; the king-danger penalty.
+    //                  king.
     //   scratchValue - number of isolated pawns; later the side actually to move.
     //   pawnTally    - number of doubled pawns; later the pawns supporting a
     //                  knight outpost.
@@ -872,8 +882,6 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     std::int32_t whiteBishopCase{};
     std::int32_t whiteSupporterCase{};
     std::int32_t blackSupporterCase{};
-    std::int32_t whiteAttackerCase{};
-    std::int32_t blackAttackerCase{};
     // 1. Dead draws by material or by known endgame rules. isMaterialDraw sets
     // likelyDraw for rook + minor against rook without pawns; such scores are
     // divided by 8 at the end. isMaterialDraw only acts without pawns, and
@@ -1031,22 +1039,11 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     // 4. Full evaluation. whiteKingPressure counts attacked squares in White's
     // king zone, whiteAttackerCount the black pieces attacking it (and the other
     // way round for Black). Piece attacks on a king are counted only while the
-    // enemy has a queen, and never in an endgame.
+    // enemy has a queen.
     whiteKingPressure = 0;
     blackKingPressure = 0;
-    evaluateWhiteKingSafety = true;
-    evaluateBlackKingSafety = true;
-    if (endgame) {
-        evaluateWhiteKingSafety = false;
-        evaluateBlackKingSafety = false;
-    } else {
-        if ((position.blackQueens == 0)) {
-            evaluateWhiteKingSafety = false;
-        }
-        if ((position.whiteQueens == 0)) {
-            evaluateBlackKingSafety = false;
-        }
-    }
+    evaluateWhiteKingSafety = (position.blackQueens != 0);
+    evaluateBlackKingSafety = (position.whiteQueens != 0);
     whitePawnAttackMap = 0;
     blackPawnAttackMap = 0;
     blackKingSquare = petir_bitboard_mask::kingSquare(position.blackKingBoard);
@@ -2042,38 +2039,36 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     if ((weightedTerm == 2)) {
         (score = pas::decrement(score, petir_ueval::twoBishopsKingAttackBonus));
     }
-    // White queens: piece-square value; outside endgames mobility and attacks on
-    // Black's king zone (always counted, unlike the other pieces); before the
-    // endgame, closeness to Black's king. A rook lined up with the queen on a
+    // White queens: piece-square value, mobility, attacks on Black's king zone
+    // (always counted, unlike the other pieces), and outside an early endgame
+    // closeness to Black's king. A rook lined up with the queen on a
     // rank (scratchBits) or file (kingZoneHits) that reaches Black's king zone
     // adds that line to the rook attack map.
     pieces = position.whiteQueens;
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
         taperedScore += petir_ueval::whiteQueenSquareBonus[square];
-        if ((!endgame)) {
-            attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
-            attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
-            scratchBits = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
-            kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
-            attacks = ((attacks | kingZoneHits) | scratchBits);
-            queenMobilitySquares = (attacks & (~position.whitePieces));
-            taperedScore += petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)];
-            if (((scratchBits & position.whiteRooks) != 0)) {
-                if (((scratchBits & blackKingZone) != 0)) {
-                    whiteRookAttackMap = (whiteRookAttackMap | scratchBits);
-                }
+        attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+        attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+        scratchBits = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+        kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
+        attacks = ((attacks | kingZoneHits) | scratchBits);
+        queenMobilitySquares = (attacks & (~position.whitePieces));
+        taperedScore += petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)];
+        if (((scratchBits & position.whiteRooks) != 0)) {
+            if (((scratchBits & blackKingZone) != 0)) {
+                whiteRookAttackMap = (whiteRookAttackMap | scratchBits);
             }
-            if (((kingZoneHits & position.whiteRooks) != 0)) {
-                if (((kingZoneHits & blackKingZone) != 0)) {
-                    whiteRookAttackMap = (whiteRookAttackMap | kingZoneHits);
-                }
+        }
+        if (((kingZoneHits & position.whiteRooks) != 0)) {
+            if (((kingZoneHits & blackKingZone) != 0)) {
+                whiteRookAttackMap = (whiteRookAttackMap | kingZoneHits);
             }
-            whiteQueenAttackMap = (whiteQueenAttackMap | attacks);
-            (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>((attacks & blackKingZone))));
-            if ((attacks & blackKingZone) != 0) {
-                (blackAttackerCount = pas::increment(blackAttackerCount, 1));
-            }
+        }
+        whiteQueenAttackMap = (whiteQueenAttackMap | attacks);
+        (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>((attacks & blackKingZone))));
+        if ((attacks & blackKingZone) != 0) {
+            (blackAttackerCount = pas::increment(blackAttackerCount, 1));
         }
         if ((!earlyEndgame)) {
             (score = pas::increment(score, pas::mul(petir_evalmask::closenessHalfTable[square][blackKingSquare], petir_ueval::queenTropismBonus)));
@@ -2084,29 +2079,27 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     while ((pieces != 0)) {
         square = popLowestBit(pieces);
         taperedScore -= petir_ueval::blackQueenSquareBonus[square];
-        if ((!endgame)) {
-            attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
-            attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
-            scratchBits = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
-            kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
-            attacks = ((attacks | kingZoneHits) | scratchBits);
-            queenMobilitySquares = (attacks & (~position.blackPieces));
-            taperedScore -= petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)];
-            blackQueenAttackMap = (blackQueenAttackMap | attacks);
-            if (((scratchBits & position.blackRooks) != 0)) {
-                if (((scratchBits & whiteKingZone) != 0)) {
-                    blackRookAttackMap = (blackRookAttackMap | scratchBits);
-                }
+        attacks = petir_bitboard_mask::diagonalA8H1Attacks[square][(pas::shiftRight(position.allPiecesA8H1, petir_bitboard_mask::diagonalA8H1Shift[square]) & 255)];
+        attacks = (attacks | petir_bitboard_mask::diagonalH8A1Attacks[square][(pas::shiftRight(position.allPiecesH8A1, petir_bitboard_mask::diagonalH8A1Shift[square]) & 255)]);
+        scratchBits = petir_bitboard_mask::horizontalAttacks[square][(pas::shiftRight(position.allPieces, pas::add((square & 56), 1)) & 63)];
+        kingZoneHits = petir_bitboard_mask::verticalAttacks[square][(pas::shiftRight(position.allPiecesRotated90, petir_bitboard_mask::verticalShift[square]) & 63)];
+        attacks = ((attacks | kingZoneHits) | scratchBits);
+        queenMobilitySquares = (attacks & (~position.blackPieces));
+        taperedScore -= petir_ueval::queenMobilityBonus[countBits<NativePopcount>(queenMobilitySquares)];
+        blackQueenAttackMap = (blackQueenAttackMap | attacks);
+        if (((scratchBits & position.blackRooks) != 0)) {
+            if (((scratchBits & whiteKingZone) != 0)) {
+                blackRookAttackMap = (blackRookAttackMap | scratchBits);
             }
-            if (((kingZoneHits & position.blackRooks) != 0)) {
-                if (((kingZoneHits & whiteKingZone) != 0)) {
-                    blackRookAttackMap = (blackRookAttackMap | kingZoneHits);
-                }
+        }
+        if (((kingZoneHits & position.blackRooks) != 0)) {
+            if (((kingZoneHits & whiteKingZone) != 0)) {
+                blackRookAttackMap = (blackRookAttackMap | kingZoneHits);
             }
-            (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>((attacks & whiteKingZone))));
-            if ((attacks & whiteKingZone) != 0) {
-                (whiteAttackerCount = pas::increment(whiteAttackerCount, 1));
-            }
+        }
+        (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>((attacks & whiteKingZone))));
+        if ((attacks & whiteKingZone) != 0) {
+            (whiteAttackerCount = pas::increment(whiteAttackerCount, 1));
         }
         if ((!earlyEndgame)) {
             (score = pas::decrement(score, pas::mul(petir_evalmask::closenessHalfTable[square][whiteKingSquare], petir_ueval::queenTropismBonus)));
@@ -2130,103 +2123,77 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         }
         taperedScore += taper(kingMiddlegame, kingEndgame);
     }
-    if ((!endgame)) {
-        // scratchValue: the side actually to move (the same as realSideToMove).
-        if (opponentPerspective) {
-            scratchValue = pas::sub(3, sideToMove);
-        } else {
-            scratchValue = sideToMove;
-        }
-        if ((position.blackQueens != 0)) {
-            // Danger to White's king while Black has a queen. kingZoneHits: zone squares
-            // White defends; scratchBits: zone squares Black's queen attacks that White
-            // does not defend. Each of those also attacked by a black bishop, knight or
-            // rook adds 2 (plus 2 once per piece type when Black is to move), each also
-            // attacked by a black pawn adds 2, and each zone square hit by both a black
-            // rook and a black bishop adds 1. The total indexes kingPressurePenalty, which
-            // is then scaled by the number of attacking pieces: 1 attacker /5, 3 x1.25,
-            // 4 x1.5, 5 x2.
-            kingZoneHits = (((((whiteQueenAttackMap | whiteRookAttackMap) | whiteBishopAttackMap) | whiteKnightAttackMap) | whitePawnAttackMap) & whiteKingZone);
-            scratchBits = ((whiteKingZone & blackQueenAttackMap) & (~kingZoneHits));
-            attacks = (scratchBits & blackBishopAttackMap);
-            if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
-                (whiteKingPressure = pas::increment(whiteKingPressure, 2));
-            }
-            (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
-            attacks = ((scratchBits & blackKnightAttackMap) & (~kingZoneHits));
-            if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
-                (whiteKingPressure = pas::increment(whiteKingPressure, 2));
-            }
-            (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
-            attacks = ((scratchBits & blackRookAttackMap) & (~kingZoneHits));
-            if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
-                (whiteKingPressure = pas::increment(whiteKingPressure, 2));
-            }
-            (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
-            attacks = ((scratchBits & blackPawnAttackMap) & (~kingZoneHits));
-            (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
-            attacks = ((whiteKingZone & blackRookAttackMap) & blackBishopAttackMap);
-            (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(attacks)));
-            weightedTerm = petir_ueval::kingPressurePenalty[std::clamp(whiteKingPressure, 0, 63)];
-            whiteAttackerCase = whiteAttackerCount;
-            if (((whiteAttackerCase == 1))) {
-                weightedTerm = (weightedTerm / 5);
-            }
-            else if (((whiteAttackerCase == 3))) {
-                weightedTerm = (pas::mul(weightedTerm, 125) / 100);
-            }
-            else if (((whiteAttackerCase == 4))) {
-                weightedTerm = (pas::mul(weightedTerm, 150) / 100);
-            }
-            else if (((whiteAttackerCase == 5))) {
-                weightedTerm = (pas::mul(weightedTerm, 200) / 100);
-            }
-            (score = pas::decrement(score, weightedTerm));
-        }
-        if ((position.whiteQueens != 0)) {
-            // The same for Black's king while White has a queen.
-            kingZoneHits = (((((blackQueenAttackMap | blackRookAttackMap) | blackBishopAttackMap) | blackKnightAttackMap) | blackPawnAttackMap) & blackKingZone);
-            scratchBits = ((blackKingZone & whiteQueenAttackMap) & (~kingZoneHits));
-            attacks = (scratchBits & whiteBishopAttackMap);
-            (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
-            if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
-                (blackKingPressure = pas::increment(blackKingPressure, 2));
-            }
-            attacks = ((scratchBits & whiteKnightAttackMap) & (~kingZoneHits));
-            if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
-                (blackKingPressure = pas::increment(blackKingPressure, 2));
-            }
-            (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
-            attacks = ((scratchBits & whiteRookAttackMap) & (~kingZoneHits));
-            if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
-                (blackKingPressure = pas::increment(blackKingPressure, 2));
-            }
-            (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
-            attacks = ((scratchBits & whitePawnAttackMap) & (~kingZoneHits));
-            (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
-            attacks = ((blackKingZone & whiteRookAttackMap) & whiteBishopAttackMap);
-            (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(attacks)));
-            weightedTerm = petir_ueval::kingPressurePenalty[std::clamp(blackKingPressure, 0, 63)];
-            blackAttackerCase = blackAttackerCount;
-            if (((blackAttackerCase == 1))) {
-                weightedTerm = (weightedTerm / 5);
-            }
-            else if (((blackAttackerCase == 3))) {
-                weightedTerm = (pas::mul(weightedTerm, 125) / 100);
-            }
-            else if (((blackAttackerCase == 4))) {
-                weightedTerm = (pas::mul(weightedTerm, 150) / 100);
-            }
-            else if (((blackAttackerCase == 5))) {
-                weightedTerm = (pas::mul(weightedTerm, 200) / 100);
-            }
-            (score = pas::increment(score, weightedTerm));
-        }
+    // scratchValue: the side actually to move (the same as realSideToMove).
+    if (opponentPerspective) {
+        scratchValue = pas::sub(3, sideToMove);
     } else {
-        // Only in pawn endings: kings and pawns, no pieces.
-        if ((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0)) {
-            score += pawnPotentialScoreForEval(position);
+        scratchValue = sideToMove;
+    }
+    if ((position.blackQueens != 0)) {
+        // Danger to White's king while Black has a queen. kingZoneHits: zone squares
+        // White defends; scratchBits: zone squares Black's queen attacks that White
+        // does not defend. Each of those also attacked by a black bishop, knight or
+        // rook adds 2 (plus 2 once per piece type when Black is to move), each also
+        // attacked by a black pawn adds 2, and each zone square hit by both a black
+        // rook and a black bishop adds 1. The total indexes kingPressurePenalty, which
+        // is then scaled by the number of attacking pieces: 1 attacker /5, 3 x1.25,
+        // 4 x1.5, 5 x2. It is a tapered term with endgame value 0: full weight with
+        // all pieces on, fading out with the game phase.
+        kingZoneHits = (((((whiteQueenAttackMap | whiteRookAttackMap) | whiteBishopAttackMap) | whiteKnightAttackMap) | whitePawnAttackMap) & whiteKingZone);
+        scratchBits = ((whiteKingZone & blackQueenAttackMap) & (~kingZoneHits));
+        attacks = (scratchBits & blackBishopAttackMap);
+        if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
+            (whiteKingPressure = pas::increment(whiteKingPressure, 2));
         }
+        (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+        attacks = ((scratchBits & blackKnightAttackMap) & (~kingZoneHits));
+        if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
+            (whiteKingPressure = pas::increment(whiteKingPressure, 2));
+        }
+        (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+        attacks = ((scratchBits & blackRookAttackMap) & (~kingZoneHits));
+        if (((attacks != 0) && (scratchValue == petir_header::blackSide))) {
+            (whiteKingPressure = pas::increment(whiteKingPressure, 2));
+        }
+        (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+        attacks = ((scratchBits & blackPawnAttackMap) & (~kingZoneHits));
+        (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+        attacks = ((whiteKingZone & blackRookAttackMap) & blackBishopAttackMap);
+        (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(attacks)));
+        const int pressure = std::clamp(whiteKingPressure, 0, 63);
+        const int danger = scaleByAttackers(petir_ueval::kingPressurePenalty[pressure], whiteAttackerCount);
+        taperedScore -= taper(danger, 0);
+    }
+    if ((position.whiteQueens != 0)) {
+        // The same for Black's king while White has a queen.
+        kingZoneHits = (((((blackQueenAttackMap | blackRookAttackMap) | blackBishopAttackMap) | blackKnightAttackMap) | blackPawnAttackMap) & blackKingZone);
+        scratchBits = ((blackKingZone & whiteQueenAttackMap) & (~kingZoneHits));
+        attacks = (scratchBits & whiteBishopAttackMap);
+        (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+        if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
+            (blackKingPressure = pas::increment(blackKingPressure, 2));
+        }
+        attacks = ((scratchBits & whiteKnightAttackMap) & (~kingZoneHits));
+        if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
+            (blackKingPressure = pas::increment(blackKingPressure, 2));
+        }
+        (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+        attacks = ((scratchBits & whiteRookAttackMap) & (~kingZoneHits));
+        if (((attacks != 0) && (scratchValue == petir_header::whiteSide))) {
+            (blackKingPressure = pas::increment(blackKingPressure, 2));
+        }
+        (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+        attacks = ((scratchBits & whitePawnAttackMap) & (~kingZoneHits));
+        (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
+        attacks = ((blackKingZone & whiteRookAttackMap) & whiteBishopAttackMap);
+        (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(attacks)));
+        const int pressure = std::clamp(blackKingPressure, 0, 63);
+        const int danger = scaleByAttackers(petir_ueval::kingPressurePenalty[pressure], blackAttackerCount);
+        taperedScore += taper(danger, 0);
+    }
+    // Only in pawn endings: kings and pawns, no pieces.
+    if ((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0)) {
+        score += pawnPotentialScoreForEval(position);
     }
     // A side without pawns finds it harder to win.
     if ((position.whitePawns == 0)) {
