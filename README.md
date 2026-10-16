@@ -85,8 +85,6 @@ For **WinBoard**, send `xboard` and `protover 2`. Supported commands include `ne
 
 Clock updates, posting controls, and unsupported WinBoard commands leave the search running. A late `time` update can tighten the active clock deadline while retaining the overhead reserve. `?` returns a move; `force`, `new`, `setboard`, `result`, undo, and replacement moves discard an active search. WinBoard reports checkmate, stalemate, insufficient mating material, threefold repetition, and the 50-move rule. Period timing wraps the move count for each new period without losing the game's fullmove number. Hash resizing retains the previous usable table if allocation fails. The diagnostic `d` command prints all six FEN fields.
 
-Cached hash scores require the same halfmove counter as the current position. A matching board with a different counter can supply a move-ordering hint, but cannot supply a score cutoff or a score-dependent pruning flag. Hash entries remain 16 bytes, so the default table remains 64 MiB.
-
 
 
 The optional `windows-x64-stage1` preset builds the same evaluation under the separately named **Petir Stage1** executable:
