@@ -87,13 +87,7 @@ Clock updates, posting controls, and unsupported WinBoard commands leave the sea
 
 Cached hash scores require the same halfmove counter as the current position. A matching board with a different counter can supply a move-ordering hint, but cannot supply a score cutoff or a score-dependent pruning flag. Hash entries remain 16 bytes, so the default table remains 64 MiB.
 
-En passant check evasions must leave the king safe, including when the capture blocks a sliding-piece check. Quiescence recognizes stalemate before returning a static or cached evaluation.
 
-The positional quiescence restart has been removed from the C++ engine, along with its build option. Quiescence no longer restarts normal search for a positional bonus. Check evasions and the other quiescence search behavior remain active.
-
-The 4.39 history-based quiet-move reduction is always enabled in the C++ engine. The reduction build option and comparison presets have been removed. The standard Windows preset produces `build/windows-x64/Release/petir64.exe`.
-
-Stage-1-only lazy evaluation is the default for all C++ builds, including the standard `windows-x64` and Linux presets. The first lazy checkpoint and its margin are unchanged; stages 2 and 3 have been removed, so evaluation completes all remaining terms whenever stage 1 does not return. Rebuild the standard Windows preset to use this evaluation in `build/windows-x64/Release/petir64.exe`.
 
 The optional `windows-x64-stage1` preset builds the same evaluation under the separately named **Petir Stage1** executable:
 
