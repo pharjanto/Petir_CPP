@@ -5,6 +5,7 @@
 #include "order_stats.hpp"
 #include "search_tools.hpp"
 #include "search_history.hpp"
+#include <cmath>
 namespace petir_search {
 pas::Array<std::int32_t, 0, 63> currentMove{};
 pas::Array<std::int32_t, 0, 63> currentPiece{};
@@ -15,6 +16,18 @@ std::int32_t researchCount{};
 // the plies left: 0 up to 2 plies (any loss), -1 at 3, -2 at 4, -3 at 5, -4 at 6.
 static constexpr std::int32_t seeQuietMaxPlies = 6;
 static std::int32_t seeQuietMargin(std::int32_t plies) {return -(plies * plies / 8);}
+// Late-move reduction in eighths of a ply, by plies left and move number (both
+// up to 63): ln(plies) * ln(moveNumber) / 2.5 plies, at least one ply.
+static const auto lateMoveReductions = [] {
+    pas::Array<pas::Array<std::int32_t, 0, 63>, 0, 63> table{};
+    for (std::int32_t plies = 1; plies <= 63; plies++) {
+        for (std::int32_t moveNumber = 1; moveNumber <= 63; moveNumber++) {
+            const double reduction = 8.0 * std::log(double(plies)) * std::log(double(moveNumber)) / 2.5;
+            table[plies][moveNumber] = std::max<std::int32_t>(8, std::int32_t(reduction));
+        }
+    }
+    return table;
+}();
 
 // search.pas:72
 // Alpha-beta search of one node; scores are from the side to move's point of view.
@@ -354,14 +367,15 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
 
     // Reduction step 3, late-move reduction: with at least 4 plies left at a
     // non-PV node, a quiet move past the killers that doesn't check, after the
-    // fourth move at cut nodes and after the seventh at all nodes.
+    // fourth move at cut nodes and after the seventh at all nodes. It may
+    // follow a reduction from steps 1-2 (reduceMove keeps the larger one).
     auto isLateMove = [&]() -> bool {
         if (inCheck || (remainingPlies < 4) || (ply < 2) || (nodeType == pvNode)) return false;
         const bool lateInCutNode = (nodeType == cutNode) && (legalMoveCount > 3);
         const bool lateInAllNode = (nodeType == allNode) && (legalMoveCount > 6);
         if (!lateInCutNode && !lateInAllNode) return false;
         if (mateThreatExtended || (phase <= petir_header::killerMove3Phase)) return false;
-        if ((reduction != 0) || (position.lastCaptureType != 0)) return false;
+        if (position.lastCaptureType != 0) return false;
         if (petir_tools::moveGivesCheck(savedPosition, sideToMove, move)) return false;
         if (petir_tools::hasPawnOnSeventh(sideToMove, position)) return false;
         if (petir_tools::isGoodMove(position, toSquare, sideToMove)) return false;
@@ -369,7 +383,7 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     };
 
     // Reductions for quiet moves that look unpromising, in three steps.
-    auto reduceMove = [&]() {
+    auto reduceMoveBySteps = [&]() {
         std::int32_t threatenedValue = 0;
         if (isCalmLateQuietMove(threatenedValue)) {
             // 1a. History: one ply if the move rarely cuts off (at most 1 in 8
@@ -418,8 +432,25 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
             reduceBy(8);
             return;
         }
-        if (isLateMove()) {
-            reduceBy(8);
+    };
+
+    // Steps 1-2, then step 3 when it reduces more. The child keeps at least one
+    // ply. A move that step 1b sent straight to quiescence keeps the old
+    // one-ply step 3, which only makes a fail-high re-search it there.
+    auto reduceMove = [&]() {
+        const std::int32_t fullDepth = newDepth;
+        reduceMoveBySteps();
+        if (!isLateMove()) return;
+        if (newDepth != fullDepth - reduction) {
+            if (reduction == 0) reduceBy(8);
+            return;
+        }
+        const std::int32_t plies = std::min<std::int32_t>(remainingPlies, 63);
+        const std::int32_t moveNumber = std::min<std::int32_t>(legalMoveCount, 63);
+        const std::int32_t lateReduction = std::min(lateMoveReductions[plies][moveNumber], fullDepth - petir_header::plyUnits);
+        if (lateReduction > reduction) {
+            newDepth = fullDepth;
+            reduceBy(lateReduction);
         }
     };
 
