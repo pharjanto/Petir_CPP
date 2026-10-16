@@ -122,7 +122,9 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
             position.hashKey = savedHashKey;
             position.enPassantFile = savedEnPassantFile;
             if (petir::searchShouldStop()) return 0;
-            if (score >= beta) return score;
+            // A mate found after passing is not proven for this node, and its
+            // distance counts the null move, so a mate score only says beta.
+            if (score >= beta) return (score >= petir_header::kingValue - 100) ? beta : score;
             // Mated at ply + 2: the opponent mates at once after our null move.
             const bool mateThreat = (score == -petir_header::kingValue + ply + 2);
             if (mateThreat && (extensionCredit > 0)) {
