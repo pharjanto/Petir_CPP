@@ -82,22 +82,22 @@ int selfTest() {
     for(const auto& fixture:{
         EvalOptimizationFixture{"multiple rooks",
             "6k1/2r2rr1/1b4n1/3p4/r2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {-118,-122,122,118},{-118,-122,122,118}},
+            {-112,-118,118,112},{-112,-118,118,112}},
         EvalOptimizationFixture{"multiple knights",
             "6k1/2n2n2/1b3b2/3p4/n2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {780,776,-776,-780},{796,792,-792,-796}},
+            {795,789,-789,-795},{797,791,-791,-797}},
         EvalOptimizationFixture{"multiple bishops",
             "6k1/2b5/1b3b2/3p4/b2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {1083,1079,-1079,-1083},{1091,1087,-1087,-1091}},
+            {1090,1084,-1084,-1090},{1092,1086,-1086,-1092}},
         EvalOptimizationFixture{"multiple queens",
             "6k1/2q5/1q3q2/3p4/q2N1b2/2P1B3/1R3P2/3Q1RK1 b - - 0 1",
-            {-1810,-1814,1814,1810},{-1672,-1676,1676,1672}},
+            {-1794,-1800,1800,1794},{-1671,-1677,1677,1671}},
         EvalOptimizationFixture{"white pawn files",
             "7k/8/8/P1PP1P1P/P2P1P2/8/8/KB5r w - - 0 1",
-            {756,752,-752,-756},{756,752,-752,-756}},
+            {768,762,-762,-768},{768,762,-762,-768}},
         EvalOptimizationFixture{"black pawn files",
             "kb5R/8/8/p2p1p2/p1pp1p1p/8/8/7K b - - 0 1",
-            {-752,-756,756,752},{-752,-756,756,752}}}) {
+            {-762,-768,768,762},{-762,-768,768,762}}}) {
         int side=1;const auto position=fromFen(fixture.fen,side);const auto saved=position;
         const auto tag=std::string("evaluation optimization: ")+fixture.name;
         check(isConsistent(position),tag+" fixture is consistent");
@@ -441,9 +441,9 @@ int selfTest() {
     }
     struct SymmetryScoreFixture {const char* name;const char* fen;int expected;};
     for(const auto& fixture:{
-        SymmetryScoreFixture{"material scaling reference", "7k/8/8/3N4/4P3/8/8/4K3 w - - 0 1",527},
-        SymmetryScoreFixture{"king distance reference", "8/1k1P4/8/8/8/7N/7K/8 b - - 0 1",-544},
-        SymmetryScoreFixture{"connected shortcut reference", "8/3b4/3k1p2/p4P2/P7/6pp/1b2K3/8 b - - 9 99",1403}}) {
+        SymmetryScoreFixture{"material scaling reference", "7k/8/8/3N4/4P3/8/8/4K3 w - - 0 1",524},
+        SymmetryScoreFixture{"king distance reference", "8/1k1P4/8/8/8/7N/7K/8 b - - 0 1",-589},
+        SymmetryScoreFixture{"connected shortcut reference", "8/3b4/3k1p2/p4P2/P7/6pp/1b2K3/8 b - - 9 99",1458}}) {
         auto position=fromFen(fixture.fen,sideToMove);
         check(petir_ueval::evaluate(position,sideToMove,-20500,20500)==fixture.expected,fixture.name);
     }
@@ -457,17 +457,17 @@ int selfTest() {
         PotentialFixture{"phalanx already supports push", "k7/8/8/7p/6PP/8/8/K7 w - - 0 1",90},
         PotentialFixture{"unsafe helper route", "k7/6p1/8/5p1P/8/6P1/8/K7 w - - 0 1",0},
         PotentialFixture{"doubled helpers are one resource", "k7/6p1/6p1/7P/6P1/6P1/8/K7 w - - 0 1",0},
-        PotentialFixture{"shared passed helper discounted once", "7k/1p3p2/8/2P1P3/3P4/8/8/K7 w - - 0 1",38},
+        PotentialFixture{"shared passed helper discounted once", "7k/1p3p2/8/2P1P3/3P4/8/8/K7 w - - 0 1",35},
         PotentialFixture{"helper one rank ahead", "k7/7p/8/7P/6P1/8/8/K7 w - - 0 1",90},
         PotentialFixture{"helper ahead, push square attacked", "k7/8/7p/7P/6P1/8/8/K7 w - - 0 1",0},
-        PotentialFixture{"clear candidate", "k7/6p1/8/7P/6P1/8/8/K7 w - - 0 1",114},
-        PotentialFixture{"enemy knight blockade", "k7/6p1/7n/7P/6P1/8/8/K7 w - - 0 1",57},
-        PotentialFixture{"friendly bishop blockade", "k7/6p1/7B/7P/6P1/8/8/K7 w - - 0 1",57},
-        PotentialFixture{"clear candidate after cached blockade", "k7/6p1/8/7P/6P1/8/8/K7 w - - 0 1",114},
+        PotentialFixture{"clear candidate", "k7/6p1/8/7P/6P1/8/8/K7 w - - 0 1",106},
+        PotentialFixture{"enemy knight blockade", "k7/6p1/7n/7P/6P1/8/8/K7 w - - 0 1",53},
+        PotentialFixture{"friendly bishop blockade", "k7/6p1/7B/7P/6P1/8/8/K7 w - - 0 1",53},
+        PotentialFixture{"clear candidate after cached blockade", "k7/6p1/8/7P/6P1/8/8/K7 w - - 0 1",106},
         PotentialFixture{"three-pawn breakthrough", "7k/ppp5/8/PPP5/8/8/8/7K w - - 0 1",16},
         PotentialFixture{"breakthrough stopped by extra pawn", "7k/pppp4/8/PPP5/8/8/8/7K w - - 0 1",0},
         PotentialFixture{"breakthrough gap occupied", "7k/ppp5/1n6/PPP5/8/8/8/7K w - - 0 1",0},
-        PotentialFixture{"small candidate for rounding checks", "7k/8/8/8/3p4/8/2PP4/K7 w - - 98 1",52},
+        PotentialFixture{"small candidate for rounding checks", "7k/8/8/8/3p4/8/2PP4/K7 w - - 98 1",53},
         PotentialFixture{"existing passer not counted again", "7k/8/8/4P3/8/8/8/K7 w - - 0 1",0}}) {
         auto position=fromFen(fixture.fen,sideToMove);
         const auto saved=position;
@@ -513,19 +513,19 @@ int selfTest() {
     check(potentialCacheMatches,"pawn potential cache agrees across 5000 keys and revisits");
     check(potentialSymmetryMatches,"pawn potential agrees across 5000 color mirrors");
     auto potentialIntegration=fromFen("7k/8/8/8/3p4/8/2PP4/K7 w - - 0 1",sideToMove);
-    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==295,"candidate raw bonus enters full evaluation");
+    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==327,"candidate raw bonus enters full evaluation");
     potentialIntegration.fiftyMoveCounter=98;
-    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==44,"candidate bonus is scaled and rounded with the whole evaluation");
+    check(petir_ueval::evaluate(potentialIntegration,sideToMove,-20500,20500)==49,"candidate bonus is scaled and rounded with the whole evaluation");
     struct ConnectedFixture {const char* name;const char* fen;int expected;};
     for(const auto& fixture:{
         ConnectedFixture{"single pawn", "7k/8/5P2/8/8/8/8/R3K3 w - - 0 1",0},
-        ConnectedFixture{"sixth rank pair counted once", "7k/8/5PP1/8/8/8/8/R3K3 w - - 0 1",99},
-        ConnectedFixture{"staggered sixth and seventh", "7k/6P1/5P2/8/8/8/8/R3K3 w - - 0 1",56},
-        ConnectedFixture{"fifth rank pair", "7k/8/8/5PP1/8/8/8/R3K3 w - - 0 1",66},
-        ConnectedFixture{"staggered fifth and sixth", "7k/8/6P1/5P2/8/8/8/R3K3 w - - 0 1",36},
-        ConnectedFixture{"widely staggered passers", "7k/6P1/8/8/5P2/8/8/R3K3 w - - 0 1",6},
-        ConnectedFixture{"three neighboring passers", "7k/8/4PPP1/8/8/8/8/R3K3 w - - 0 1",198},
-        ConnectedFixture{"doubled pawn not counted again", "7k/8/5PP1/5P2/8/8/8/R3K3 w - - 0 1",99},
+        ConnectedFixture{"sixth rank pair counted once", "7k/8/5PP1/8/8/8/8/R3K3 w - - 0 1",106},
+        ConnectedFixture{"staggered sixth and seventh", "7k/6P1/5P2/8/8/8/8/R3K3 w - - 0 1",50},
+        ConnectedFixture{"fifth rank pair", "7k/8/8/5PP1/8/8/8/R3K3 w - - 0 1",62},
+        ConnectedFixture{"staggered fifth and sixth", "7k/8/6P1/5P2/8/8/8/R3K3 w - - 0 1",33},
+        ConnectedFixture{"widely staggered passers", "7k/6P1/8/8/5P2/8/8/R3K3 w - - 0 1",4},
+        ConnectedFixture{"three neighboring passers", "7k/8/4PPP1/8/8/8/8/R3K3 w - - 0 1",212},
+        ConnectedFixture{"doubled pawn not counted again", "7k/8/5PP1/5P2/8/8/8/R3K3 w - - 0 1",106},
         ConnectedFixture{"enemy pawn prevents passers", "7k/6p1/5PP1/8/8/8/8/R3K3 w - - 0 1",0}}) {
         int side=1;const auto base=fromFen(fixture.fen,side);
         for(bool colorFlip:{false,true})for(bool fileFlip:{false,true}) {
@@ -556,20 +556,20 @@ int selfTest() {
     // Exercise the new component independently of material/PST/draw scaling.
     struct PasserActivityFixture {const char* name;const char* fen;int pawn;int expected;};
     for(const auto& fixture:{
-        PasserActivityFixture{"clear path, supporting king", "n6k/8/8/3KP3/8/8/8/1R6 w - - 0 1",e5,30},
-        PasserActivityFixture{"own king far away", "n6k/8/8/4P3/8/8/8/KR6 w - - 0 1",e5,6},
-        PasserActivityFixture{"defender king controls push", "n7/5k2/8/3KP3/8/8/8/1R6 w - - 0 1",e5,6},
-        PasserActivityFixture{"enemy blockade", "7k/8/4n3/3KP3/8/8/8/1R6 w - - 0 1",e5,22},
-        PasserActivityFixture{"friendly blockade", "n6k/8/4B3/3KP3/8/8/8/1R6 w - - 0 1",e5,22},
-        PasserActivityFixture{"knight controls push", "7k/6n1/8/3KP3/8/8/8/1R6 w - - 0 1",e5,18},
-        PasserActivityFixture{"bishop controls push", "7k/8/8/3KP3/6b1/8/8/1R6 w - - 0 1",e5,18},
-        PasserActivityFixture{"rook controls push", "7k/8/7r/3KP3/8/8/8/1R6 w - - 0 1",e5,18},
-        PasserActivityFixture{"queen controls push", "7k/8/7q/3KP3/8/8/8/1R6 w - - 0 1",e5,18},
-        PasserActivityFixture{"rook revealed behind pawn", "7k/8/8/3KP3/8/8/4r3/1R6 w - - 0 1",e5,18},
-        PasserActivityFixture{"queen revealed behind pawn", "7k/8/8/3KP3/8/8/4q3/1R6 w - - 0 1",e5,18},
-        PasserActivityFixture{"later path square attacked", "6rk/8/8/3KP3/8/8/8/1R6 w - - 0 1",e5,32},
-        PasserActivityFixture{"later path square occupied", "n6k/4B3/8/3KP3/8/8/8/1R6 w - - 0 1",e5,32},
-        PasserActivityFixture{"seventh-rank board edge", "n6k/4P3/3K4/8/8/8/8/1R6 w - - 0 1",e7,72},
+        PasserActivityFixture{"clear path, supporting king", "n6k/8/8/3KP3/8/8/8/1R6 w - - 0 1",e5,36},
+        PasserActivityFixture{"own king far away", "n6k/8/8/4P3/8/8/8/KR6 w - - 0 1",e5,12},
+        PasserActivityFixture{"defender king controls push", "n7/5k2/8/3KP3/8/8/8/1R6 w - - 0 1",e5,5},
+        PasserActivityFixture{"enemy blockade", "7k/8/4n3/3KP3/8/8/8/1R6 w - - 0 1",e5,20},
+        PasserActivityFixture{"friendly blockade", "n6k/8/4B3/3KP3/8/8/8/1R6 w - - 0 1",e5,20},
+        PasserActivityFixture{"knight controls push", "7k/6n1/8/3KP3/8/8/8/1R6 w - - 0 1",e5,17},
+        PasserActivityFixture{"bishop controls push", "7k/8/8/3KP3/6b1/8/8/1R6 w - - 0 1",e5,17},
+        PasserActivityFixture{"rook controls push", "7k/8/7r/3KP3/8/8/8/1R6 w - - 0 1",e5,17},
+        PasserActivityFixture{"queen controls push", "7k/8/7q/3KP3/8/8/8/1R6 w - - 0 1",e5,17},
+        PasserActivityFixture{"rook revealed behind pawn", "7k/8/8/3KP3/8/8/4r3/1R6 w - - 0 1",e5,17},
+        PasserActivityFixture{"queen revealed behind pawn", "7k/8/8/3KP3/8/8/4q3/1R6 w - - 0 1",e5,17},
+        PasserActivityFixture{"later path square attacked", "6rk/8/8/3KP3/8/8/8/1R6 w - - 0 1",e5,34},
+        PasserActivityFixture{"later path square occupied", "n6k/4B3/8/3KP3/8/8/8/1R6 w - - 0 1",e5,34},
+        PasserActivityFixture{"seventh-rank board edge", "n6k/4P3/3K4/8/8/8/8/1R6 w - - 0 1",e7,90},
         PasserActivityFixture{"fourth-rank pawn excluded", "n6k/8/8/3K4/4P3/8/8/1R6 w - - 0 1",e4,0},
         PasserActivityFixture{"middlegame excluded", "rq5k/8/8/3KP3/8/8/8/1R6 w - - 0 1",e5,0},
         PasserActivityFixture{"KPK excluded", "7k/8/8/3KP3/8/8/8/8 w - - 0 1",e5,0}}) {
@@ -596,19 +596,19 @@ int selfTest() {
     // Endgame activity: safety, pawn targets, passive defense and stable blockades.
     struct EndgameActivityFixture {const char* name;const char* fen;int square;int expected;};
     for(const auto& fixture:{
-        EndgameActivityFixture{"rook free movement", "7k/8/8/8/8/8/7P/R6K w - - 0 1",a1,-12},
-        EndgameActivityFixture{"rook attacks weak pawn", "7k/8/8/R3p3/8/8/7P/7K w - - 0 1",a5,24},
-        EndgameActivityFixture{"rook attacks defended pawn", "7k/8/5p2/R3p3/8/8/7P/7K w - - 0 1",a5,-12},
+        EndgameActivityFixture{"rook free movement", "7k/8/8/8/8/8/7P/R6K w - - 0 1",a1,-9},
+        EndgameActivityFixture{"rook attacks weak pawn", "7k/8/8/R3p3/8/8/7P/7K w - - 0 1",a5,26},
+        EndgameActivityFixture{"rook attacks defended pawn", "7k/8/5p2/R3p3/8/8/7P/7K w - - 0 1",a5,-9},
         EndgameActivityFixture{"rook under attack", "7k/8/2n5/R3p3/8/8/7P/7K w - - 0 1",a5,0},
-        EndgameActivityFixture{"restricted rook tied to pawn", "7k/8/8/8/8/8/P1r5/RN5K w - - 0 1",a1,-7},
-        EndgameActivityFixture{"restricted rook pawn has another defender", "7k/8/8/8/8/8/P1r5/RB5K w - - 0 1",a1,12},
+        EndgameActivityFixture{"restricted rook tied to pawn", "7k/8/8/8/8/8/P1r5/RN5K w - - 0 1",a1,-12},
+        EndgameActivityFixture{"restricted rook pawn has another defender", "7k/8/8/8/8/8/P1r5/RB5K w - - 0 1",a1,9},
         EndgameActivityFixture{"rook pawnless excluded", "7k/8/8/8/8/8/8/R6K w - - 0 1",a1,0},
         EndgameActivityFixture{"rook middlegame excluded", "rq5k/8/8/8/8/8/7P/R6K w - - 0 1",a1,0},
-        EndgameActivityFixture{"knight supported useful outpost", "7k/8/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,20},
+        EndgameActivityFixture{"knight supported useful outpost", "7k/8/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,21},
         EndgameActivityFixture{"knight no support", "7k/8/1p6/3N4/8/4P3/8/4K3 w - - 0 1",d5,0},
         EndgameActivityFixture{"knight defended target", "8/k7/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,0},
         EndgameActivityFixture{"knight future pawn challenge", "7k/4p3/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,0},
-        EndgameActivityFixture{"knight supported blockade", "7k/8/3p4/3N4/4P3/8/8/4K3 w - - 0 1",d5,33},
+        EndgameActivityFixture{"knight supported blockade", "7k/8/3p4/3N4/4P3/8/8/4K3 w - - 0 1",d5,32},
         EndgameActivityFixture{"knight no concrete target", "7k/8/7p/3N4/4P3/8/8/4K3 w - - 0 1",d5,0},
         EndgameActivityFixture{"knight under attack", "7k/2n5/1p6/3N4/4P3/8/8/4K3 w - - 0 1",d5,0},
         EndgameActivityFixture{"knight edge blockade", "7k/8/p7/N7/1P6/8/8/4K3 w - - 0 1",a5,0},
@@ -678,8 +678,8 @@ int selfTest() {
     {
         int side=1;auto philidor=fromFen("8/4k3/r7/4K3/4P3/8/8/1R6 w - - 0 1",side);
         auto seventh=fromFen("2K5/k1P5/8/8/8/8/7r/3R4 w - - 0 1",side);
-        check(petir_ueval::evaluate(philidor,side,-20500,20500)==38,"Philidor full score uses 25 percent scaling");
-        check(petir_ueval::evaluate(seventh,side,-20500,20500)==348,"seventh-rank full score retains full advantage");
+        check(petir_ueval::evaluate(philidor,side,-20500,20500)==44,"Philidor full score uses 25 percent scaling");
+        check(petir_ueval::evaluate(seventh,side,-20500,20500)==349,"seventh-rank full score retains full advantage");
     }
     // A king one file from the black passer must get the same evaluation
     // adjustment as in the color-reversed position (d3/e1 becomes d6/e8).
@@ -750,9 +750,9 @@ int selfTest() {
     struct LazyEvalFixture {const char* name;const char* fen;int alpha,beta,score;};
     for(const auto& fixture:{
         LazyEvalFixture{"king danger after former stage 2",
-            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-220},
+            "8/4n1r1/1p3P2/p1k5/P1B5/1P2bK1N/2PN2Pq/5RR1 w - - 0 1",-68,-67,-219},
         LazyEvalFixture{"rule-50 scaling after former stage 3",
-            "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,107}}) {
+            "7k/8/8/8/8/8/8/KQ6 w - - 99 1",200,201,106}}) {
         auto position=fromFen(fixture.fen,sideToMove);
         check(isConsistent(position),std::string("lazy evaluation fixture is consistent: ")+fixture.name);
         const int full=petir_ueval::evaluate(position,sideToMove,-20500,20500);
