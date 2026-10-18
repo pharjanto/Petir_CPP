@@ -23,6 +23,9 @@ class Console {
     petir::Position position=gamePosition;
     int sideToMove=1,fullMoveNumber=1,depthLimit=49,computerSide=2;
     bool forceMode=false;
+    // WinBoard "analyze": search the current position without a clock and without
+    // playing a move, restarting whenever the GUI changes the position.
+    bool analyzeMode=false;
     std::atomic_bool postThinking=true,publishResult=true;
     std::mutex resultMutex;
     std::vector<std::pair<petir::Position,int>> history;
@@ -144,7 +147,7 @@ class Console {
         petir::searchTime.reset();
         petir::searchTime.start(ponder || infinite?petir::TimeBudget{}:budget,receivedAt);
         auto legalMoveList=petir::legalMoves(rootPosition,rootSide);
-        if(mode==Mode::WinBoard && reportResult(legalMoveList))return;
+        if(mode==Mode::WinBoard && !infinite && reportResult(legalMoveList))return;
         publishResult=true;
         const int fallback=fallbackMove(rootPosition,rootSide,legalMoveList);
         if(!ponder && !infinite && (budget.emergency || petir::searchTime.expired(true))) {
@@ -243,9 +246,11 @@ class Console {
     }
     void winboardCommand(const std::string& line,const std::vector<std::string>& tokens,std::int64_t receivedAt) {
         const auto& command=tokens[0];
-        if(command=="protover") {emit(std::string("feature myname=\"")+engineName+"\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=0 option=\"Move Overhead -spin 50 0 5000\" done=1");return;}
+        if(command=="protover") {emit(std::string("feature myname=\"")+engineName+"\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=1 option=\"Move Overhead -spin 50 0 5000\" done=1");return;}
         if(command=="ping" && tokens.size()>1) {emit("pong "+tokens[1]);return;}
-        if(command=="?") {finish(true);return;}
+        if(command=="?") {if(!analyzeMode)finish(true);return;}
+        if(command=="analyze") {finish();forceMode=true;analyzeMode=true;beginSearch(49,petir::ClockLimits{},receivedAt,false,true);return;}
+        if(command=="exit") {finish();analyzeMode=false;return;}
         // "time" is the engine's clock and "otim" the opponent's, whichever colour
         // the engine plays (the colour may not be known yet, before "go").
         // Only the engine's clock is used.
@@ -253,7 +258,7 @@ class Console {
             if(command=="time" && tokens.size()>1) {
                 const auto milliseconds=std::clamp<std::int64_t>(std::stoll(tokens[1]),0,INT32_MAX/10)*10;
                 winboardEngineMs=milliseconds;
-                if(useTimer && timeMode!=secondsPerMove) {
+                if(useTimer && timeMode!=secondsPerMove && !analyzeMode) {
                     petir::searchTime.tighten(receivedAt,milliseconds,moveOverheadMs);
                 }
             }
@@ -272,6 +277,7 @@ class Console {
         const bool isMoveCommand=command=="usermove" || (command.size()>=4 && command[0]>='a' && command[0]<='h' && command[1]>='1' && command[1]<='8');
         if(command!="new" && command!="force" && command!="go" && command!="setboard" && command!="sd" && command!="st" && command!="level" && command!="result" && command!="undo" && command!="remove" && !isMoveCommand)return;
         finish();
+        if(command=="new" || command=="go" || command=="force" || command=="result")analyzeMode=false;
         if(command=="new") {
             petir::newGame();position=gamePosition;sideToMove=1;fullMoveNumber=1;computerSide=2;forceMode=false;resetHistory();
             if(useTimer)winboardEngineMs=winboardBaseMs;
@@ -303,6 +309,8 @@ class Console {
             if(!applyMove(moveText))emit("Illegal move: "+moveText);
             else if(!forceMode && sideToMove==computerSide)beginSearch(depthLimit,winboardLimits(),receivedAt);
         }
+        // Every command that reaches here stopped the search; analysis resumes on the new position.
+        if(analyzeMode)beginSearch(49,petir::ClockLimits{},receivedAt,false,true);
     }
 public:
     ~Console() {finish();pas::output={};}
