@@ -2,6 +2,9 @@
 #pragma once
 #include "pascal_runtime.hpp"
 #include "time_manager.hpp"
+#ifdef PETIR_HASH_STATS
+namespace petir_hash_stats { struct Probe; }
+#endif
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
 #include <intrin.h>
 #include <xmmintrin.h>
@@ -864,7 +867,11 @@ void coba();
 }
 namespace petir_hashing {
 void storeHash(std::uint64_t key, std::int32_t sideToMove, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter);
-bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t depth, std::int32_t sideToMove, std::int32_t& score, std::int32_t& move, bool& avoidNullMove, std::uint8_t fiftyMoveCounter);
+bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t depth, std::int32_t sideToMove, std::int32_t& score, std::int32_t& move, bool& avoidNullMove, std::uint8_t fiftyMoveCounter
+#ifdef PETIR_HASH_STATS
+    , petir_hash_stats::Probe* diagnostic = nullptr
+#endif
+);
 // Cache hint only: starts loading the entry probeHash will read for this key.
 inline void prefetchHash(std::uint64_t key, std::int32_t sideToMove) {
     if (sideToMove == petir_header::blackSide) key = ~key;

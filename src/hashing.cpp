@@ -1,5 +1,6 @@
 // Faithful translation of hashing.pas; Delphi source is in original/.
 #include "petir.hpp"
+#include "hash_stats.hpp"
 namespace petir_hashing {
 static void storeEntry(petir_hashing_header::thashrecord& entry, std::uint64_t key, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter) {
     entry.move = move;
@@ -35,7 +36,9 @@ void storeHash(std::uint64_t key, std::int32_t sideToMove, std::int32_t depth, s
 }
 
 // hashing.pas:52
-bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t depth, std::int32_t sideToMove, std::int32_t& score, std::int32_t& move, bool& avoidNullMove, std::uint8_t fiftyMoveCounter) {
+bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::int32_t depth, std::int32_t sideToMove, std::int32_t& score, std::int32_t& move, bool& avoidNullMove, std::uint8_t fiftyMoveCounter
+    PETIR_HASH_STAT(, petir_hash_stats::Probe* diagnostic)) {
+    PETIR_HASH_STAT(if (diagnostic) *diagnostic = {};)
     bool result{};
     petir_hashing_header::thashrecord* entry{};
     std::int32_t boundType{};
@@ -47,6 +50,7 @@ bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::
     avoidNullMove = false;
     if ((((*entry).flags & petir_hashing_header::usedFlag) != 0)) {
         if (((*entry).key == key)) {
+            PETIR_HASH_STAT(if (diagnostic) { diagnostic->keyHit = true; diagnostic->entry = *entry; })
             move = (*entry).move;
             // The board still supplies a move-ordering hint, but scores and
             // score-dependent pruning require the same halfmove counter.

@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "kpk.hpp"
+#include "hash_stats.hpp"
 #include <algorithm>
 #include <sstream>
 namespace petir {
@@ -142,6 +143,54 @@ int selfTest() {
     }
     auto sameBoard=start;sameBoard.fiftyMoveCounter=99;
     check(petir_hashing_header::computeHashKey(sameBoard,1)==start.hashKey,"halfmove counter does not alter book/repetition hash keys");
+#ifdef PETIR_HASH_STATS
+    // Exercise the classifier against real probes: bounds and depth can reject
+    // an entry independently of the counter, and PV hits never save a cutoff.
+    for(int color:{1,2})for(int type:{exactBound,upperBound,lowerBound}) {
+        petir_hashing_header::clearHashTable();
+        const int cachedMove=parseMove(color==1?"e2e4":"e7e5",start,color);
+        const int value=type==upperBound?-101:type==lowerBound?101:17;
+        petir_hashing::storeHash(start.hashKey,color,48,cachedMove,value,type,0);
+        // Push the fixture into the second bucket slot as well.
+        const auto otherKey=start.hashKey^static_cast<std::uint64_t>(hashTableSize);
+        petir_hashing::storeHash(otherKey,color,64,cachedMove,value,type,0);
+        auto countedProbe=[&](std::uint64_t key,int depth,int count,int nodeType,int alpha=-100,int beta=100) {
+            petir_hash_stats::reset();
+            const auto encodedKey=color==2?~key:key;
+            auto* bucket=petir_hashing_header::bucket(encodedKey);
+            const std::array<petir_hashing_header::thashrecord,2> saved={bucket[0],bucket[1]};
+            petir_hash_stats::Probe diagnostic;
+            int score=777,move=0;bool avoidNull=false;
+            const bool hit=petir_hashing::probeHash(key,alpha,beta,depth,color,score,move,avoidNull,static_cast<std::uint8_t>(count),&diagnostic);
+            petir_hash_stats::record(diagnostic,depth,alpha,beta,static_cast<std::uint8_t>(count),nodeType,hit);
+            check(std::memcmp(saved.data(),bucket,sizeof(saved))==0,"hash diagnostics preserve both bucket entries");
+            check(petir_hash_stats::counters.decisionMismatches==0,"hash classifier agrees with actual probe");
+            return hit;
+        };
+        check(countedProbe(start.hashKey,8,0,petir_search::cutNode)
+            && petir_hash_stats::counters.acceptedCutoffs==1,"hash diagnostics count an accepted second-slot cutoff");
+        check(!countedProbe(start.hashKey,8,2,petir_search::allNode)
+            && petir_hash_stats::counters.counterBlockedCutoffs==1
+            && petir_hash_stats::counters.blockedBandsByDifference[0][1]==1
+            && petir_hash_stats::counters.blockedBounds[type]==1,"hash diagnostics count a cutoff blocked only by counter");
+        check(!countedProbe(start.hashKey,64,2,petir_search::cutNode)
+            && petir_hash_stats::counters.counterBlockedCutoffs==0
+            && petir_hash_stats::counters.depthRejectedMismatches==1,"shallow mismatched entries are not lost cutoffs");
+        const bool wideHit=countedProbe(start.hashKey,8,2,petir_search::cutNode,-200,200);
+        check(!wideHit && (type==exactBound?petir_hash_stats::counters.counterBlockedCutoffs==1
+            :petir_hash_stats::counters.boundRejectedMismatches==1),"noncutting bounds are not lost cutoffs");
+        check(countedProbe(start.hashKey,8,0,petir_search::pvNode)
+            && petir_hash_stats::counters.probes==0
+            && petir_hash_stats::counters.pvProbesExcluded==1,"PV probes are excluded from lost cutoff counts");
+        check(!countedProbe(start.hashKey,8,80,petir_search::cutNode)
+            && petir_hash_stats::counters.blockedBands[1]==1,"hash diagnostics distinguish evaluation fade counters");
+        check(!countedProbe(start.hashKey,8,100,petir_search::cutNode)
+            && petir_hash_stats::counters.blockedBands[2]==1,"hash diagnostics distinguish draw-limit counters");
+        check(!countedProbe(start.hashKey^UINT64_C(0x10000000000),8,0,petir_search::cutNode)
+            && petir_hash_stats::counters.keyHits==0,"key misses cannot count as counter rejections");
+    }
+    petir_hash_stats::reset();
+#endif
     petir_hashing_header::clearHashTable();
     std::uint64_t counts[]={1,20,400,8902,197281,4865609};
     for(int depth=0;depth<=5;++depth)check(perft(start,1,depth)==counts[depth],"start position perft "+std::to_string(depth));

@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "kpk.hpp"
+#include "hash_stats.hpp"
 #include <algorithm>
 #include <sstream>
 
@@ -158,6 +159,7 @@ std::uint64_t perft(Position position,int sideToMove,int depth) {
     return nodes;
 }
 void prepareSearch(int sideToMove,bool timed,int timeLimitTicks) {
+    PETIR_HASH_STAT(petir_hash_stats::reset();)
     searchTime.reset();
     evalTimeMs=hashStoreCount=hashCollisionCount=lazyMarginNodeStamp=maxDepthReached=seeTimeMs=moveGenTimeMs=etcCutoffCount=futilityFailCount=futilityTryCount=nodeCount=maxSearchPly=hashHitCount=0;
     stalemateFound=false;engineSide=sideToMove;timeElapsed=0;stopSearch=false;

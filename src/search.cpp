@@ -3,6 +3,7 @@
 // sides, legality) and search_history.cpp (history heuristics).
 #include "petir.hpp"
 #include "order_stats.hpp"
+#include "hash_stats.hpp"
 #include "search_tools.hpp"
 #include "search_history.hpp"
 #include <cmath>
@@ -70,7 +71,10 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     std::int32_t score{};
     std::int32_t hashMove = petir_header::noMove;
     bool avoidNullMove = false;
-    const bool hashHit = petir_hashing::probeHash(position.hashKey, alpha, beta, searchDepth, sideToMove, score, hashMove, avoidNullMove, position.fiftyMoveCounter);
+    PETIR_HASH_STAT(petir_hash_stats::Probe hashDiagnostic;)
+    const bool hashHit = petir_hashing::probeHash(position.hashKey, alpha, beta, searchDepth, sideToMove, score, hashMove, avoidNullMove, position.fiftyMoveCounter
+        PETIR_HASH_STAT(, &hashDiagnostic));
+    PETIR_HASH_STAT(petir_hash_stats::record(hashDiagnostic, searchDepth, alpha, beta, position.fiftyMoveCounter, nodeType, hashHit);)
     if (hashHit && (nodeType != pvNode)) return score;
     const std::uint64_t savedHashKey = position.hashKey;
     const bool isNullWindow = (alpha == beta - 1);

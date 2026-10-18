@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "order_stats.hpp"
+#include "hash_stats.hpp"
 #include <algorithm>
 #include <condition_variable>
 #include <mutex>
@@ -337,6 +338,7 @@ public:
                 }
                 else if(command=="d") {finish();emit(petir::toFen(position,sideToMove,fullMoveNumber));}
                 PETIR_ORDER_STAT(else if(command=="orderstats") {finish();emit(petir_order_stats::report());})
+                PETIR_HASH_STAT(else if(command=="hashstats") {finish();emit(petir_hash_stats::report());})
             } catch(const std::exception& error) {emit(mode==Mode::UCI?"info string "+std::string(error.what()):"Error: "+std::string(error.what()));}
         }
         finish();
