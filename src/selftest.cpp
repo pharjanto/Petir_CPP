@@ -125,7 +125,8 @@ int selfTest() {
         score=777;move=0;avoidNull=true;
         const auto otherCount=static_cast<std::uint8_t>(counter==255?0:counter+1);
         const bool otherHit=petir_hashing::probeHash(start.hashKey,alpha,beta,8,color,score,move,avoidNull,otherCount);
-        check(!otherHit && score==777 && move==cachedMove && !avoidNull,"different halfmove counter reuses only the ordering move "+tag);
+        const bool relaxed=counter==0;
+        check(otherHit==relaxed && score==(relaxed?expectedScore:777) && move==cachedMove && !avoidNull,"counter compatibility respects the fade margin "+tag);
     }
     for(int color=1;color<=2;++color) {
         const int cachedMove=parseMove(color==1?"e2e4":"e7e5",start,color);
@@ -143,6 +144,37 @@ int selfTest() {
     }
     auto sameBoard=start;sameBoard.fiftyMoveCounter=99;
     check(petir_hashing_header::computeHashKey(sameBoard,1)==start.hashKey,"halfmove counter does not alter book/repetition hash keys");
+    // Boundary uses rounded-up STORED depth, including deeper cached results.
+    for(int color:{1,2})for(int type:{exactBound,upperBound,lowerBound})
+    for(int depth:{8,10,48,504})for(bool reverse:{false,true}) {
+        const int plies=((depth/2)+3)/4;
+        for(int high:{79-16-plies,80-16-plies}) {
+            if(high<1) continue;
+            petir_hashing_header::clearHashTable();
+            const int stored=reverse?high:high-1, current=reverse?high-1:high;
+            const int value=type==upperBound?-101:type==lowerBound?101:17;
+            petir_hashing::storeHash(start.hashKey,color,depth,123,value,type,static_cast<std::uint8_t>(stored));
+            int alpha=-100,beta=100,score=777,move=0;bool avoidNull=true;
+            const bool hit=petir_hashing::probeHash(start.hashKey,alpha,beta,8,color,score,move,avoidNull,static_cast<std::uint8_t>(current));
+            const bool expected=high+plies+16<80;
+            check(hit==expected && score==(expected?value:777) && move==123 && !avoidNull,"relaxed counter boundary uses rounded stored depth in both directions");
+        }
+    }
+    for(int color:{1,2})for(int value:{-20000,-19900,-19899,19899,19900,20000}) {
+        petir_hashing_header::clearHashTable();
+        petir_hashing::storeHash(start.hashKey,color,48,123,value,exactBound,0);
+        int alpha=-20500,beta=20500,score=777,move=0;bool avoidNull=false;
+        const bool hit=petir_hashing::probeHash(start.hashKey,alpha,beta,8,color,score,move,avoidNull,1);
+        check(hit==(value>-19900 && value<19900),"mate-range scores require exact counters");
+        check(petir_hashing::probeHash(start.hashKey,alpha,beta,8,color,score,move,avoidNull,0) && score==value,"matching counters retain mate-range scores");
+    }
+    for(int color:{1,2}) {
+        petir_hashing_header::clearHashTable();
+        petir_hashing::storeHash(start.hashKey,color,48,123,200,upperBound,0);
+        int alpha=-100,beta=100,score=777,move=0;bool avoidNull=true;
+        check(!petir_hashing::probeHash(start.hashKey,alpha,beta,8,color,score,move,avoidNull,1) && !avoidNull,"relaxed low counters do not enable avoidNullMove");
+        check(!petir_hashing::probeHash(start.hashKey,alpha,beta,8,color,score,move,avoidNull,0) && avoidNull,"exact low counters retain avoidNullMove");
+    }
 #ifdef PETIR_HASH_STATS
     // Exercise the classifier against real probes: bounds and depth can reject
     // an entry independently of the counter, and PV hits never save a cutoff.
@@ -169,14 +201,17 @@ int selfTest() {
         };
         check(countedProbe(start.hashKey,8,0,petir_search::cutNode)
             && petir_hash_stats::counters.acceptedCutoffs==1,"hash diagnostics count an accepted second-slot cutoff");
-        check(!countedProbe(start.hashKey,8,2,petir_search::allNode)
+        check(countedProbe(start.hashKey,8,2,petir_search::cutNode)
+            && petir_hash_stats::counters.relaxedCutoffs==1
+            && petir_hash_stats::counters.counterBlockedCutoffs==0,"hash diagnostics count a relaxed second-slot cutoff");
+        check(!countedProbe(start.hashKey,8,62,petir_search::allNode)
             && petir_hash_stats::counters.counterBlockedCutoffs==1
-            && petir_hash_stats::counters.blockedBandsByDifference[0][1]==1
+            && petir_hash_stats::counters.blockedBandsByDifference[0][2]==1
             && petir_hash_stats::counters.blockedBounds[type]==1,"hash diagnostics count a cutoff blocked only by counter");
         check(!countedProbe(start.hashKey,64,2,petir_search::cutNode)
             && petir_hash_stats::counters.counterBlockedCutoffs==0
             && petir_hash_stats::counters.depthRejectedMismatches==1,"shallow mismatched entries are not lost cutoffs");
-        const bool wideHit=countedProbe(start.hashKey,8,2,petir_search::cutNode,-200,200);
+        const bool wideHit=countedProbe(start.hashKey,8,62,petir_search::cutNode,-200,200);
         check(!wideHit && (type==exactBound?petir_hash_stats::counters.counterBlockedCutoffs==1
             :petir_hash_stats::counters.boundRejectedMismatches==1),"noncutting bounds are not lost cutoffs");
         check(countedProbe(start.hashKey,8,0,petir_search::pvNode)

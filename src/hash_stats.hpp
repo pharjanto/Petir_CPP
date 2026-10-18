@@ -17,7 +17,7 @@ struct Probe {
 struct Counters {
     u64 probes{}, pvProbesExcluded{}, keyHits{}, counterMatches{}, counterMismatches{};
     u64 depthEligible{}, depthRejectedMismatches{}, boundRejectedMismatches{};
-    u64 acceptedCutoffs{}, counterBlockedCutoffs{}, decisionMismatches{};
+    u64 acceptedCutoffs{}, counterBlockedCutoffs{}, relaxedCutoffs{}, decisionMismatches{};
     // Both counters <80; either >=80 but neither >=100; either >=100.
     u64 mismatchBands[3]{}, blockedBands[3]{};
     // Absolute difference 1, 2, 3+; bound exact, upper, lower.
@@ -41,7 +41,10 @@ inline void record(const Probe& probe, int depth, int alpha, int beta,
     const bool boundCuts = entry.boundType == petir_header::exactBound
         || (entry.boundType == petir_header::upperBound && entry.score <= alpha)
         || (entry.boundType == petir_header::lowerBound && entry.score >= beta);
-    counters.decisionMismatches += actualHit != (sameCounter && enoughDepth && boundCuts);
+    const bool compatible = sameCounter ||
+        (entry.score > -petir_header::kingValue + 100 && entry.score < petir_header::kingValue - 100
+         && std::max<int>(entry.fiftyMoveCounter, counter) + (int(entry.depth) + 3) / 4 + 16 < 80);
+    counters.decisionMismatches += actualHit != (compatible && enoughDepth && boundCuts);
     counters.counterMatches += sameCounter;
     counters.counterMismatches += !sameCounter;
     counters.depthEligible += enoughDepth;
@@ -52,6 +55,7 @@ inline void record(const Probe& probe, int depth, int alpha, int beta,
     ++counters.mismatchBands[band];
     if (!enoughDepth) { ++counters.depthRejectedMismatches; return; }
     if (!boundCuts) { ++counters.boundRejectedMismatches; return; }
+    if (compatible) { ++counters.relaxedCutoffs; return; }
     ++counters.counterBlockedCutoffs;
     ++counters.blockedBands[band];
     const int difference = std::abs(int(entry.fiftyMoveCounter) - int(counter));
@@ -84,6 +88,7 @@ inline std::string report() {
     field("depth_rejected_mismatches", counters.depthRejectedMismatches);
     field("bound_rejected_mismatches", counters.boundRejectedMismatches);
     field("accepted_cutoffs", counters.acceptedCutoffs); field("counter_blocked_cutoffs", counters.counterBlockedCutoffs);
+    field("relaxed_cutoffs", counters.relaxedCutoffs);
     field("decision_mismatches", counters.decisionMismatches); field("mismatch_bands", counters.mismatchBands);
     field("blocked_bands", counters.blockedBands); field("blocked_differences", counters.blockedDifferences);
     field("blocked_bounds", counters.blockedBounds); field("blocked_bands_by_difference", counters.blockedBandsByDifference);

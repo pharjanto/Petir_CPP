@@ -105,8 +105,8 @@ def validate(c):
     assert c['key_hits'] == c['counter_matches'] + c['counter_mismatches'] <= c['probes'], c
     assert c['counter_mismatches'] == (c['depth_rejected_mismatches']
                                       + c['bound_rejected_mismatches']
-                                      + c['counter_blocked_cutoffs']), c
-    assert c['accepted_cutoffs'] <= c['counter_matches'], c
+                                      + c['counter_blocked_cutoffs'] + c.get('relaxed_cutoffs', 0)), c
+    assert c['accepted_cutoffs'] <= c['counter_matches'] + c.get('relaxed_cutoffs', 0), c
     for field in ('blocked_bands', 'blocked_differences', 'blocked_bounds', 'blocked_depths', 'blocked_ages'):
         assert sum(c[field]) == c['counter_blocked_cutoffs'], (field, c)
     assert c['blocked_bands'] == [sum(row) for row in c['blocked_bands_by_difference']], c
@@ -149,6 +149,13 @@ def report(rows, metadata):
            'or alpha/beta-compatible bound. The counter is its only failed eligibility condition.', '',
            'Blocked share = blocked / (accepted + blocked). These are observed opportunities along '
            'the unchanged search tree, rather than a prediction of nodes, time, or Elo saved.', '']
+    relaxed = 'relaxed_cutoffs' in rows[0]['stats']
+    if relaxed:
+        out = ['# Halfmove-counter relaxation measurement', '',
+               'Non-mate scores allow differing counters when max(counter) + ceil(stored depth in plies) + 16 < 80. '
+               'Exact counters are still required for mate-range scores and avoidNullMove. '
+               'Only non-PV main-search probes contribute to the counts. Search changes are expected.', '',
+               f'Base: `{metadata["base_commit"]}`. Hash: {metadata["hash_mb"]} MiB. Workers: {metadata["jobs"]}.', '']
     summary = []
     sets = list(dict.fromkeys((r['dataset'], r['mode']) for r in rows))
     for dataset, mode in sets:
@@ -198,13 +205,28 @@ def report(rows, metadata):
                             r['stats']['accepted_cutoffs'] + r['stats']['counter_blocked_cutoffs'])]
                        for r in sorted(group, key=lambda r: r['stats']['counter_blocked_cutoffs'], reverse=True)[:5]]), '']
     compared = [r for r in rows if 'baseline_identical' in r]
+    if relaxed:
+        out += ['', '## Relaxed cutoffs and search cost', '',
+                table(['Dataset', 'Mode', 'Relaxed cutoffs', 'Base nodes', 'Candidate nodes', 'Node change', 'Base ms', 'Candidate ms', 'Time change', 'Different best moves'],
+                      [[dataset, mode, f'{total(group)["relaxed_cutoffs"]:,}',
+                        sum(r.get('baseline_nodes', 0) for r in group), sum(r['nodes'] for r in group),
+                        f'{100*(sum(r["nodes"] for r in group)/sum(r["baseline_nodes"] for r in group)-1):+.2f}%' if all('baseline_nodes' in r for r in group) else '-',
+                        sum(r.get('baseline_ms', 0) for r in group), sum(r['engine_ms'] for r in group),
+                        f'{100*(sum(r["engine_ms"] for r in group)/sum(r["baseline_ms"] for r in group)-1):+.2f}%' if sum(r.get('baseline_ms', 0) for r in group) else '-',
+                        sum(r['bestmove'] != r.get('baseline_bestmove', r['bestmove']) for r in group)]
+                       for dataset, mode in sets
+                       for group in [[r for r in rows if (r['dataset'], r['mode']) == (dataset, mode)]]]), '',
+                ('Timing uses a separate diagnostics-disabled candidate; diagnostics parity is required on every search.'
+                 if metadata.get('timing_engine') else 'Timing here includes diagnostic overhead in the candidate.')
+                + ' Fixed-depth differences do not establish playing strength.']
     out += ['## Validation and interpretation', '',
             f'- Identical baseline/instrumented searches: {sum(r["baseline_identical"] for r in compared):,}'
             f' / {len(compared):,}. Every ordinary UCI info/bestmove line is compared except timing fields.',
             '- Counts include all iterative-deepening iterations and aspiration/PVS re-searches.',
             '- Counter bands describe the stored/current node counters. Both below 80 does not '
             'guarantee descendants stay below the evaluation fade: extensions and quiescence can continue.',
-            '- The diagnostic build adds counting overhead. Its timings are not a speed comparison.', '']
+            ('- Timings use diagnostics-disabled engines, with alternating run order; concurrency and a single pass still limit precision.'
+             if metadata.get('timing_engine') else '- The diagnostic build adds counting overhead. Its timings are not a speed comparison.'), '']
     if 'games' in metadata:
         g = metadata['games']
         out += [f'- Game sample: first {g["games"]} games from `{g["pgn"]}`, '
@@ -265,17 +287,31 @@ def run_task(args, dataset, mode, shard, positions):
         baseline = Engine(args.baseline, args.hash, core) if args.baseline else None
         if baseline:
             engines.append(baseline)
+        timing = Engine(args.timing_engine, args.hash, core) if args.timing_engine else None
+        if timing:
+            engines.append(timing)
         previous_game = None
-        for position in positions:
+        for index, position in enumerate(positions):
             reset = mode == 'fresh' or position.get('game') != previous_game
-            base = baseline.search(position, reset, False) if baseline else None
+            # Alternate the order of timed baseline/candidate runs.
+            base = baseline.search(position, reset, False) if baseline and (not timing or index % 2 == 0) else None
+            timed = timing.search(position, reset, False) if timing else None
+            if baseline and base is None:
+                base = baseline.search(position, reset, False)
             row = engine.search(position, reset, True)
+            if timed:
+                if row['uci'] != timed['uci']:
+                    raise AssertionError(f'diagnostic/non-diagnostic search differs: {position["name"]}')
+                row['diagnostic_ms'] = row['engine_ms']
+                row['engine_ms'] = timed['engine_ms']
             if base:
                 row['baseline_identical'] = row['uci'] == base['uci']
-                if not row['baseline_identical']:
+                if not row['baseline_identical'] and not args.allow_search_changes:
                     raise AssertionError(f'{dataset}/{mode}/{position["name"]}: UCI differs\n'
                                          f'base={base["uci"]}\nstats={row["uci"]}')
                 row['baseline_ms'] = base['engine_ms']
+                row['baseline_nodes'] = base['nodes']
+                row['baseline_bestmove'] = base['bestmove']
             row.update(position, dataset=dataset, mode=mode, shard=shard + 1)
             rows.append(row)
             previous_game = position.get('game')
@@ -285,10 +321,12 @@ def run_task(args, dataset, mode, shard, positions):
     output = args.out / f'{dataset}-{mode}-{shard + 1}.json'
     output.write_text(json.dumps(rows, indent=1) + '\n', encoding='utf-8')
     c = total(rows)
+    comparison = (f'baseline identical {sum(r["baseline_identical"] for r in rows)}/{len(rows)}'
+                  if baseline else 'baseline not checked')
     print(f'{dataset} {mode} shard {shard + 1}/{args.jobs}: {len(rows)} searches, '
           f'{c["counter_blocked_cutoffs"]:,} blocked, '
           f'{pct(c["counter_blocked_cutoffs"], c["accepted_cutoffs"] + c["counter_blocked_cutoffs"])} share, '
-          f'parity {"PASS" if baseline else "not checked"}', flush=True)
+          f'{comparison}', flush=True)
     return rows
 
 
@@ -296,6 +334,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('engine', type=Path)
     parser.add_argument('--baseline', type=Path)
+    parser.add_argument('--allow-search-changes', action='store_true', help='record baseline differences instead of requiring parity')
+    parser.add_argument('--timing-engine', type=Path, help='diagnostics-disabled candidate, required to match instrumented searches')
     parser.add_argument('--base-commit', default='unknown')
     parser.add_argument('--positions', type=Path, default=DEFAULT_SUITE)
     parser.add_argument('--depth-offset', type=int, default=2)
@@ -319,11 +359,14 @@ def main():
     args.engine = args.engine.resolve()
     if args.baseline:
         args.baseline = args.baseline.resolve()
+    if args.timing_engine:
+        args.timing_engine = args.timing_engine.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
     suite = [{'name': name, 'group': group, 'position': position, 'depth': depth + args.depth_offset}
              for name, group, position, depth in json.loads(args.positions.read_text(encoding='utf-8'))]
     metadata = {'base_commit': args.base_commit, 'engine': str(args.engine),
                 'baseline': str(args.baseline) if args.baseline else None,
+                'timing_engine': str(args.timing_engine) if args.timing_engine else None,
                 'hash_mb': args.hash, 'jobs': args.jobs, 'first_core': args.first_core,
                 'bench_positions': str(args.positions.resolve()), 'bench_depth_offset': args.depth_offset,
                 'bench_depth_range': [min(p['depth'] for p in suite), max(p['depth'] for p in suite)],

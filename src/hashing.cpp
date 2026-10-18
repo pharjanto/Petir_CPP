@@ -1,6 +1,7 @@
 // Faithful translation of hashing.pas; Delphi source is in original/.
 #include "petir.hpp"
 #include "hash_stats.hpp"
+#include "hash_counter.hpp"
 namespace petir_hashing {
 static void storeEntry(petir_hashing_header::thashrecord& entry, std::uint64_t key, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter) {
     entry.move = move;
@@ -52,9 +53,9 @@ bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::
         if (((*entry).key == key)) {
             PETIR_HASH_STAT(if (diagnostic) { diagnostic->keyHit = true; diagnostic->entry = *entry; })
             move = (*entry).move;
-            // The board still supplies a move-ordering hint, but scores and
-            // score-dependent pruning require the same halfmove counter.
-            if (((*entry).fiftyMoveCounter == fiftyMoveCounter) && ((*entry).depth >= pas::shiftRight(depth, 1))) {
+            // Reuse non-mate scores across counters only well below the fade.
+            // Null-move restrictions still require exact counter agreement.
+            if (counterCompatible(*entry, fiftyMoveCounter) && ((*entry).depth >= pas::shiftRight(depth, 1))) {
                 boundType = (*entry).boundType;
                 if (((boundType == petir_header::exactBound))) {
                     score = (*entry).score;
@@ -68,7 +69,7 @@ bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::
                         return result;
                     } else {
                         if (((*entry).score >= beta)) {
-                            if ((pas::mul((*entry).depth, 2) >= 16)) {
+                            if (entry->fiftyMoveCounter == fiftyMoveCounter && (pas::mul((*entry).depth, 2) >= 16)) {
                                 avoidNullMove = true;
                             }
                         }

@@ -2,8 +2,12 @@
 
 Build with `-DPETIR_HASH_STATS=ON` to enable read-only observations of the
 entry selected by `probeHash`. The normal build compiles out the hooks and the
-extra probe output parameter. The exact halfmove-counter eligibility check,
-replacement policy, scores, moves and 16-byte table entries are unchanged.
+extra probe output parameter. Diagnostics do not change eligibility, replacement
+policy, scores, moves or the 16-byte table entries. On the relaxation branch,
+eligibility permits different counters for non-mate scores when
+`max(storedCounter, currentCounter) + ceil(storedDepthInPlies) + 16 < 80`.
+Mate-range scores (absolute value >=19900) and `avoidNullMove` still require
+exact counter matching. The margin is experimental, not a proven horizon bound.
 
 After a search finishes, send `hashstats`. It prints one JSON line and clears
 the counters. Starting a search also resets them. `hashstats` joins the worker
@@ -21,6 +25,9 @@ those searches. Quiescence currently has no TT probes.
 - `counter_blocked_cutoffs`: remaining mismatches. Depth and bound would permit
   a cutoff if the counters matched.
 - `accepted_cutoffs`: real successful probes at non-PV main-search nodes.
+- `relaxed_cutoffs`: accepted cutoffs with different counters. This is a subset
+  of `accepted_cutoffs`, and completes the counter-mismatch partition alongside
+  depth rejections, bound rejections and counter-blocked cutoffs.
 - `decision_mismatches`: disagreements between the diagnostic classifier and
   the real probe. This must be zero.
 
@@ -40,6 +47,10 @@ the report; eligibility uses exactly the existing compressed-depth comparison.
 The driver compares all ordinary UCI info/bestmove lines with `--baseline`,
 ignoring only time/nps/hashfull. It validates counter partitions on every
 search and writes per-shard JSON, combined raw results and a Markdown report.
+Use `--allow-search-changes` when measuring a changed hash policy: differences
+are recorded rather than rejected. Add `--timing-engine <normal-candidate.exe>`
+to time the candidate without diagnostics; its UCI results must exactly match
+the instrumented candidate. Timed baseline/candidate order alternates by search.
 Each worker runs one active engine at a time, pinned to a physical core on
 Windows. Check machine load and leave at least two physical cores idle before
 starting it.
