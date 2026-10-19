@@ -2,8 +2,17 @@
 #include "petir.hpp"
 #include "hash_stats.hpp"
 #include "hash_counter.hpp"
+#include "hash_update.hpp"
 namespace petir_hashing {
-static void storeEntry(petir_hashing_header::thashrecord& entry, std::uint64_t key, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter) {
+static void storeEntry(petir_hashing_header::thashrecord& entry, std::uint64_t key, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter, int slot) {
+    PETIR_HASH_STAT(petir_hash_stats::recordStore(entry,key,depth,boundType,fiftyMoveCounter,slot);)
+#ifdef PETIR_PRESERVE_EXACT
+    if (preserveExact(entry,key,depth,boundType,fiftyMoveCounter)) {
+        PETIR_HASH_STAT(++petir_hash_stats::counters.storeProtected;)
+        return;
+    }
+#endif
+    PETIR_HASH_STAT(++petir_hash_stats::counters.storeWrites;)
     entry.move = move;
     entry.fiftyMoveCounter = fiftyMoveCounter;
     entry.key = key;
@@ -19,6 +28,7 @@ static void storeEntry(petir_hashing_header::thashrecord& entry, std::uint64_t k
 // A first entry from the previous search that is deeper than the new result
 // stays, and the new result goes to the second; older entries give way.
 void storeHash(std::uint64_t key, std::int32_t sideToMove, std::int32_t depth, std::int32_t move, std::int32_t score, std::int32_t boundType, std::uint8_t fiftyMoveCounter) {
+    PETIR_HASH_STAT(++petir_hash_stats::counters.storeCalls;)
     if ((sideToMove == petir_header::blackSide)) {
         key = (~key);
     }
@@ -30,9 +40,9 @@ void storeHash(std::uint64_t key, std::int32_t sideToMove, std::int32_t depth, s
         if (((depthEntry.flags & petir_hashing_header::usedFlag) != 0) && !petir_hashing_header::isOld(depthEntry) && (depthEntry.key != key)) {
             bucketEntries[1] = depthEntry;
         }
-        storeEntry(depthEntry, key, depth, move, score, boundType, fiftyMoveCounter);
+        storeEntry(depthEntry, key, depth, move, score, boundType, fiftyMoveCounter, 0);
     } else if (depthEntry.key != key) {
-        storeEntry(bucketEntries[1], key, depth, move, score, boundType, fiftyMoveCounter);
+        storeEntry(bucketEntries[1], key, depth, move, score, boundType, fiftyMoveCounter, 1);
     }
 }
 

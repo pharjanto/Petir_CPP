@@ -15,6 +15,9 @@ struct Probe {
     petir_hashing_header::thashrecord entry{};
 };
 struct Counters {
+    u64 storeCalls{}, storeAttempts{}, storeWrites{}, storeProtected{};
+    u64 storeSameKey{}, storeSameKeyEqualDepth{}, storeExactToBoundEqual{}, storeProtectEligible{};
+    u64 storeDowngradeSlots[2]{}, storeDowngradeBounds[2]{}, storeDowngradeAges[3]{}, storeDowngradeCounters[2]{};
     u64 probes{}, pvProbesExcluded{}, keyHits{}, counterMatches{}, counterMismatches{};
     u64 depthEligible{}, depthRejectedMismatches{}, boundRejectedMismatches{};
     u64 acceptedCutoffs{}, counterBlockedCutoffs{}, relaxedCutoffs{}, decisionMismatches{};
@@ -29,6 +32,25 @@ struct Counters {
 };
 inline Counters counters;
 inline void reset() { counters = {}; }
+// Called only for the slot the unchanged replacement policy would write.
+// Bucket demotion copies are excluded: they preserve a different key.
+inline void recordStore(const petir_hashing_header::thashrecord& entry, std::uint64_t key,
+                        int depth, int bound, std::uint8_t counter, int slot) {
+    ++counters.storeAttempts;
+    if (!(entry.flags & petir_hashing_header::usedFlag) || entry.key != key) return;
+    ++counters.storeSameKey;
+    if (entry.depth != depth) return;
+    ++counters.storeSameKeyEqualDepth;
+    if (entry.boundType != petir_header::exactBound
+        || (bound != petir_header::upperBound && bound != petir_header::lowerBound)) return;
+    ++counters.storeExactToBoundEqual;
+    ++counters.storeDowngradeSlots[slot];
+    ++counters.storeDowngradeBounds[bound == petir_header::upperBound ? 0 : 1];
+    const int age = !petir_hashing_header::isOld(entry) ? 0 : petir_hashing_header::isPreviousGeneration(entry) ? 1 : 2;
+    ++counters.storeDowngradeAges[age];
+    ++counters.storeDowngradeCounters[entry.fiftyMoveCounter == counter ? 0 : 1];
+    counters.storeProtectEligible += age == 0 && entry.fiftyMoveCounter == counter;
+}
 inline void record(const Probe& probe, int depth, int alpha, int beta,
                    std::uint8_t counter, int nodeType, bool actualHit) {
     if (nodeType == petir_search::pvNode) { ++counters.pvProbesExcluded; return; }
@@ -83,6 +105,12 @@ inline std::string report() {
         first = false; text += '"'; text += name; text += "\":"; put(text, value);
     };
     field("probes", counters.probes); field("pv_probes_excluded", counters.pvProbesExcluded);
+    field("store_calls",counters.storeCalls);field("store_attempts",counters.storeAttempts);
+    field("store_writes",counters.storeWrites);field("store_protected",counters.storeProtected);
+    field("store_same_key",counters.storeSameKey);field("store_same_key_equal_depth",counters.storeSameKeyEqualDepth);
+    field("store_exact_to_bound_equal",counters.storeExactToBoundEqual);field("store_protect_eligible",counters.storeProtectEligible);
+    field("store_downgrade_slots",counters.storeDowngradeSlots);field("store_downgrade_bounds",counters.storeDowngradeBounds);
+    field("store_downgrade_ages",counters.storeDowngradeAges);field("store_downgrade_counters",counters.storeDowngradeCounters);
     field("key_hits", counters.keyHits); field("counter_matches", counters.counterMatches);
     field("counter_mismatches", counters.counterMismatches); field("depth_eligible", counters.depthEligible);
     field("depth_rejected_mismatches", counters.depthRejectedMismatches);

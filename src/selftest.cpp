@@ -128,6 +128,33 @@ int selfTest() {
         check(std::memcmp(&position,&saved,sizeof(position))==0,tag+" leaves the input unchanged");
     }
     check(sizeof(petir_hashing_header::thashrecord)==16,"halfmove-aware hash entries retain the 16-byte layout");
+    // Same-position exact bounds are protected only in the same generation
+    // and counter context. Exercise both destination slots and both colors.
+    for(int color:{1,2})for(int slot:{0,1})for(int stored:{exactBound,upperBound,lowerBound})
+        for(int incoming:{exactBound,upperBound,lowerBound})for(int old:{0,1})for(int differentCounter:{0,1}) {
+        petir_hashing_header::clearHashTable();
+        const auto key=color==2?~start.hashKey:start.hashKey;
+        auto* entries=petir_hashing_header::bucket(key);
+        const auto flags=static_cast<std::uint8_t>(petir_hashing_header::usedFlag
+            | ((petir_hashing_header::generation-old)&petir_hashing_header::generationMask));
+        if(slot==1) {
+            entries[0].key=key^static_cast<std::uint64_t>(hashTableSize);
+            entries[0].depth=200;entries[0].flags=petir_hashing_header::usedFlag|petir_hashing_header::generation;
+        }
+        auto& entry=entries[slot];
+        entry.key=key;entry.depth=16;entry.boundType=stored;entry.flags=flags;
+        entry.score=17;entry.move=123;entry.fiftyMoveCounter=0;
+        const auto before=entry;
+        petir_hashing::storeHash(start.hashKey,color,32,321,33,incoming,static_cast<std::uint8_t>(differentCounter));
+        bool protect=false;
+#ifdef PETIR_PRESERVE_EXACT
+        protect=stored==exactBound && incoming!=exactBound && !old && !differentCounter;
+#endif
+        check(protect ? std::memcmp(&entry,&before,sizeof(entry))==0
+            : entry.score==33 && entry.move==321 && entry.boundType==incoming && entry.fiftyMoveCounter==differentCounter,
+            "equal-depth update respects exactness, age and counter in both slots and colors");
+    }
+    petir_hashing_header::clearHashTable();
     // Scores depend on the rule-50 counter even when the board key is identical.
     for(int color=1;color<=2;++color)for(int type:{exactBound,upperBound,lowerBound})for(int counter:{0,79,99,255}) {
         const int cachedMove=parseMove(color==1?"e2e4":"e7e5",start,color);
