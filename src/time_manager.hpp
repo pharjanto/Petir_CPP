@@ -8,7 +8,7 @@ namespace petir {
 struct ClockLimits {
     bool timed=false;
     std::int64_t remainingMs=0,incrementMs=0,moveTimeMs=-1;
-    int movesToGo=0,overheadMs=50;
+    int movesToGo=0,overheadMs=15;
 };
 struct TimeBudget {
     bool timed=false,emergency=false;

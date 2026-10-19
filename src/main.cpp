@@ -35,7 +35,7 @@ class Console {
     std::mutex holdMutex;
     std::condition_variable holdCondition;
     petir::TimeBudget ponderBudget;
-    int moveOverheadMs=50;
+    int moveOverheadMs=15;
     // winboardEngineMs is the engine's own clock: the search only runs for the
     // engine's side, and WinBoard's "time" command always gives that clock.
     std::int64_t winboardEngineMs=0,winboardBaseMs=0,winboardIncrementMs=0,winboardMoveMs=0;
@@ -247,7 +247,7 @@ class Console {
     }
     void winboardCommand(const std::string& line,const std::vector<std::string>& tokens,std::int64_t receivedAt) {
         const auto& command=tokens[0];
-        if(command=="protover") {emit(std::string("feature myname=\"")+engineName+"\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=1 option=\"Move Overhead -spin 50 0 5000\" done=1");return;}
+        if(command=="protover") {emit(std::string("feature myname=\"")+engineName+"\" setboard=1 usermove=1 san=0 ping=1 colors=0 time=1 sigint=0 sigterm=0 reuse=1 analyze=1 option=\"Move Overhead -spin 15 0 5000\" done=1");return;}
         if(command=="ping" && tokens.size()>1) {emit("pong "+tokens[1]);return;}
         if(command=="?") {if(!analyzeMode)finish(true);return;}
         if(command=="analyze") {finish();forceMode=true;analyzeMode=true;beginSearch(49,petir::ClockLimits{},receivedAt,false,true);return;}
@@ -324,7 +324,7 @@ public:
                 const auto& command=tokens[0];
                 if(command=="quit") {finish();break;}
                 if(command=="xboard") {finish();mode=Mode::WinBoard;continue;}
-                if(command=="uci") {finish();mode=Mode::UCI;emit(std::string("id name ")+engineName);emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Move Overhead type spin default 50 min 0 max 5000");emit("option name Clear Hash type button");emit("uciok");}
+                if(command=="uci") {finish();mode=Mode::UCI;emit(std::string("id name ")+engineName);emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Move Overhead type spin default 15 min 0 max 5000");emit("option name Clear Hash type button");emit("uciok");}
                 else if(mode==Mode::WinBoard)winboardCommand(line,tokens,receivedAt);
                 else if(command=="isready")emit("readyok");
                 else if(command=="setoption")setOption(tokens);

@@ -1,3 +1,17 @@
+# Current base promotion: timeReserve + 15 ms overhead (2026-10-19)
+
+The user approved publishing the existing timeReserve policy and reducing the
+Move Overhead default to 15 ms in UCI and WinBoard. This supersedes older
+current-base entries below. New base executable:
+`C:/chess/arena_3.5.1/Engines/PetirCPP/petir64_20261019_base_timeReserve15.exe`.
+Source and Release validation: `build/time-reserve15-base-20261019/`.
+All three CTest suites passed. The sudden-death horizon stays at 30 moves;
+the existing timeReserve hard-limit formula is retained as tested, including
+its application to sudden-death allocation. The stable-move reduction issue
+was investigated but its correction is deferred; do not implement without a
+new request. Future experiments should use this promoted build as the base.
+No match was started as part of this promotion.
+
 # Petir evaluation follow-up
 
 Saved on 2026-10-10 at the user's request for recall in later sessions.

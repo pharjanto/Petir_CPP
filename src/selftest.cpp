@@ -8,7 +8,17 @@ int selfTest() {
     int failures=0,checks=0;
     auto check=[&](bool passed,const std::string& message) {++checks;if(!passed) {++failures;std::cerr<<"FAIL: "<<message<<'\n';}};
     using namespace petir_header;
-    ClockLimits tmLimits;tmLimits.timed=true;tmLimits.remainingMs=1000;
+    ClockLimits defaultLimits;defaultLimits.timed=true;defaultLimits.remainingMs=10000;
+    auto defaultBudget=TimeManager::allocate(defaultLimits);
+    check(defaultLimits.overheadMs==15 && defaultBudget.softMs==317 && defaultBudget.hardMs==951,
+        "default 15 ms overhead retains the 30-move sudden-death horizon");
+    defaultLimits.incrementMs=100;defaultBudget=TimeManager::allocate(defaultLimits);
+    check(defaultBudget.softMs==397 && defaultBudget.hardMs==1191,
+        "default overhead keeps the 80 percent increment contribution");
+    defaultLimits.moveTimeMs=80;defaultBudget=TimeManager::allocate(defaultLimits);
+    check(defaultBudget.softMs==65 && defaultBudget.hardMs==65,
+        "fixed movetime reserves the default 15 ms overhead");
+    ClockLimits tmLimits;tmLimits.timed=true;tmLimits.remainingMs=1000;tmLimits.overheadMs=50;
     auto tmBudget=TimeManager::allocate(tmLimits);
     check(tmBudget.softMs>0 && tmBudget.softMs<250 && tmBudget.hardMs<=950,"low-clock allocation has no 250 ms floor and reserves overhead");
     tmLimits.incrementMs=2000;const auto withIncrement=TimeManager::allocate(tmLimits);
@@ -17,6 +27,12 @@ int selfTest() {
     check(TimeManager::allocate(tmLimits).emergency && TimeManager::allocate(tmLimits).hardMs==0,"clock below overhead selects the emergency path even with increment");
     tmLimits.remainingMs=60000;tmLimits.incrementMs=0;tmLimits.movesToGo=1;
     check(TimeManager::allocate(tmLimits).hardMs<=59950,"last move of a control still retains move overhead");
+    check(TimeManager::allocate(tmLimits).softMs>=59800,"last move of a control may use the whole clock");
+    tmLimits.movesToGo=3;tmBudget=TimeManager::allocate(tmLimits);
+    check(tmBudget.softMs<=12000 && tmBudget.hardMs<=28000,"moves before a control keep a reserve and cannot spend the whole clock");
+    tmLimits.movesToGo=0;tmBudget=TimeManager::allocate(tmLimits);
+    check(tmBudget.hardMs==tmBudget.softMs*3,"sudden death keeps the 3x soft overrun");
+    tmLimits.movesToGo=1;
     tmLimits.moveTimeMs=80;tmBudget=TimeManager::allocate(tmLimits);
     check(tmBudget.softMs==30 && tmBudget.hardMs==30,"fixed movetime includes response overhead");
     TimeManager timeManager;const auto received=TimeManager::nowMs();

@@ -9,7 +9,8 @@ class Engine:
         def read():
             for line in self.p.stdout:self.lines.put((time.perf_counter(),line.rstrip()))
         threading.Thread(target=read,daemon=True).start()
-        self.send('uci');self.until('uciok')
+        self.send('uci');_,_,options=self.until('uciok')
+        assert 'option name Move Overhead type spin default 15 min 0 max 5000' in options
         self.send('setoption name OwnBook value false')
     def send(self,line):self.p.stdin.write(line+'\n');self.p.stdin.flush()
     def until(self,prefix,timeout=5):
@@ -78,9 +79,8 @@ with contextlib.ExitStack() as stack:
     timed_reply(e,'go movetime 500 wtime 100 btime 100','bestmove ',100,'movetime capped by clock')
 
     e.send('xboard');e.send('protover 2')
-    assert 'Move Overhead -spin 50' in e.until('feature ')[1]
+    assert 'Move Overhead -spin 15' in e.until('feature ')[1]
     e.send('new');e.send('force');e.send('level 0 1 0')
-    e.send('option Move Overhead=50')
     for side in ('w','b'):
         for remaining in (20,50,100,200,500,1000):
             e.send('force');e.send(f'setboard {boards[1]} {side} KQkq - 0 120')

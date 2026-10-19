@@ -11,13 +11,20 @@ TimeBudget TimeManager::allocate(const ClockLimits& limits) {
     }
     const auto remainingMs=std::max<std::int64_t>(0,limits.remainingMs);
     const auto availableMs=std::max<std::int64_t>(0,remainingMs-overheadMs);
-    const auto horizonMoves=std::int64_t(limits.movesToGo>0?std::clamp(limits.movesToGo,1,100):30);
+    const auto movesLeft=std::int64_t(limits.movesToGo>0?std::clamp(limits.movesToGo,1,100):30);
+    // With a move-count control, plan for up to two extra moves so overruns
+    // come out of a reserve instead of starving the moves just before the
+    // control; the reserve tapers away so the last move gets the whole clock.
+    const auto horizonMoves=limits.movesToGo>0?movesLeft+std::min<std::int64_t>(2,movesLeft-1):movesLeft;
     // Bank future response overhead, especially in long games without increment.
-    const auto bankMs=std::min(remainingMs/2,overheadMs*(horizonMoves+1));
+    const auto bankMs=std::min(remainingMs/2,overheadMs*(movesLeft+1));
     const auto distributableMs=std::max<std::int64_t>(0,remainingMs-bankMs);
     const auto incrementMs=std::max<std::int64_t>(0,limits.incrementMs);
     const auto softMs=std::min(availableMs,std::max<std::int64_t>(1,distributableMs/horizonMoves+incrementMs*4/5));
-    const auto hardMs=std::min(availableMs,softMs*3);
+    // One search may overrun to 3x soft, but never past a third of the time
+    // left after its soft share, so a few moves before the control cannot
+    // spend the whole clock.
+    const auto hardMs=std::min({availableMs,softMs*3,softMs+std::max<std::int64_t>(0,distributableMs-softMs)/3});
     return {true,availableMs<=5,softMs,hardMs};
 }
 void TimeManager::start(const TimeBudget& budget,std::int64_t receivedAt) {
