@@ -286,6 +286,24 @@ std::vector<Weight> evalWeights() {
     weights.push_back(scalar("missingFianchettoPenalty", missingFianchettoPenalty));
     addTable(weights, "pawnShieldPenalty", pawnShieldPenalty, 0, 14);
     addTable(weights, "kingPressurePenalty", kingPressurePenalty, 0, 63);
+
+    // Material imbalances (minorForPawnsBonus in petir.hpp). Last, so that the
+    // weights before keep their indices. They count only when the non-pawn
+    // material differs.
+    const auto unequalPieces = [](const Position& position) {
+        return position.whiteNonPawnMaterial != position.blackNonPawnMaterial;
+    };
+    std::vector<Weight> imbalance;
+    for (int pawns = 1; pawns <= 3; ++pawns) imbalance.push_back(tied(indexed("minorForPawnsBonus", pawns), {&minorForPawnsBonus[pawns]}));
+    for (int pawns = 1; pawns <= 3; ++pawns) imbalance.push_back(tied(indexed("rookForPawnsBonus", pawns), {&rookForPawnsBonus[pawns]}));
+    for (int pawns = 0; pawns <= 2; ++pawns) imbalance.push_back(tied(indexed("exchangeBonus", pawns), {&exchangeBonus[pawns]}));
+    imbalance.push_back(scalar("minorsForRookBonus", minorsForRookBonus));
+    imbalance.push_back(scalar("queenForRooksBonus", queenForRooksBonus));
+    imbalance.push_back(scalar("queenForRookMinorBonus", queenForRookMinorBonus));
+    for (auto& weight : imbalance) {
+        weight.mayCount = unequalPieces;
+        weights.push_back(std::move(weight));
+    }
     return weights;
 }
 

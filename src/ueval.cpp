@@ -772,6 +772,28 @@ int taperedValue(std::int32_t tapered, int phase) {
     return endgame + (middlegamePart(tapered) - endgame) * phase / maximumPhase;
 }
 
+// The material imbalance bonus from White's view (see minorForPawnsBonus in
+// petir.hpp). Each imbalance is looked for from White's side, then from
+// Black's with every count difference negated.
+template<bool NativePopcount>
+std::int32_t materialImbalanceScore(const petir_header::tdata& position) {
+    const int queenLead = countBits<NativePopcount>(position.whiteQueens) - countBits<NativePopcount>(position.blackQueens);
+    const int rookLead = countBits<NativePopcount>(position.whiteRooks) - countBits<NativePopcount>(position.blackRooks);
+    const int minorLead = countBits<NativePopcount>(position.whiteKnights | position.whiteBishops)
+        - countBits<NativePopcount>(position.blackKnights | position.blackBishops);
+    const int pawnLead = countBits<NativePopcount>(position.whitePawns) - countBits<NativePopcount>(position.blackPawns);
+    for (const int sign : {1, -1}) {
+        const int queens = sign * queenLead, rooks = sign * rookLead, minors = sign * minorLead, pawns = sign * pawnLead;
+        if (queens == 0 && rooks == 0 && minors == 1 && pawns < 0) return sign * petir_ueval::minorForPawnsBonus[std::min(-pawns, 3)];
+        if (queens == 0 && rooks == 1 && minors == 0 && pawns < 0) return sign * petir_ueval::rookForPawnsBonus[std::min(-pawns, 3)];
+        if (queens == 0 && rooks == 1 && minors == -1) return sign * petir_ueval::exchangeBonus[std::clamp(-pawns, 0, 2)];
+        if (queens == 0 && rooks == -1 && minors == 2) return sign * petir_ueval::minorsForRookBonus;
+        if (queens == 1 && rooks == -2 && minors == 0) return sign * petir_ueval::queenForRooksBonus;
+        if (queens == 1 && rooks == -1 && minors == -1) return sign * petir_ueval::queenForRookMinorBonus;
+    }
+    return 0;
+}
+
 // King danger scaled by the number of attacking pieces: 1 attacker /5,
 // 3 x1.25, 4 x1.5, 5 x2.
 int scaleByAttackers(int danger, int attackers) {
@@ -905,8 +927,12 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     }
     whiteAttackerCount = 0;
     blackAttackerCount = 0;
-    // 2. Cheap terms. Start from the material balance.
+    // 2. Cheap terms. Start from the material balance, plus the imbalance
+    // bonus; every imbalance it knows leaves the non-pawn material unequal.
     score = position.materialScore;
+    if (position.whiteNonPawnMaterial != position.blackNonPawnMaterial) {
+        score += materialImbalanceScore<NativePopcount>(position);
+    }
     // Trapped bishops. A white bishop on h6 (a6) facing a black pawn on g5 (b5)
     // that is defended from f6 (c6), or that the bishop cannot take without
     // losing material (SEE < 0). The next two are the same for a black bishop on
