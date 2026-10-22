@@ -465,7 +465,7 @@ namespace petir_udata {
 }
 namespace petir_evalmask {
 inline pas::Array<std::uint8_t, 0, 63> squareWing = {0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 0, 2, 2, 1, 1, 1};
-inline pas::Array<std::uint8_t, 0, 8> badBishopPenalty = {8, 14, 23, 32, 42, 50, 52, 54, 49};
+inline pas::Array<std::uint8_t, 0, 8> badBishopPenalty = {8, 14, 23, 32, 42, 50, 52, 54, 48};
 extern pas::Array<std::uint64_t, 0, 63> whiteOutpostMask;
 extern pas::Array<std::uint64_t, 0, 63> blackOutpostMask;
 extern std::uint64_t filesABCDMask;
@@ -549,69 +549,69 @@ constexpr int endgamePart(std::int32_t tapered) {
 constexpr int middlegamePart(std::int32_t tapered) {
     return (tapered - endgamePart(tapered)) / 65536;
 }
-inline pas::Array<std::uint8_t, 0, 63> whiteBishopOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 45, 0, 0, 0, 0, 0, 0, 31, 43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::uint8_t, 0, 63> blackBishopOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 43, 0, 0, 0, 0, 0, 0, 38, 45, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::uint8_t, 0, 63> whiteKnightOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 35, 41, 0, 0, 0, 0, 0, 31, 39, 78, 53, 0, 0, 0, 0, 24, 29, 10, 27, 0, 0, 0, 0, 0, 16, 28, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::uint8_t, 0, 63> blackKnightOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 28, 0, 0, 0, 0, 0, 24, 29, 10, 27, 0, 0, 0, 0, 31, 39, 78, 53, 0, 0, 0, 0, 0, 35, 41, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::int32_t, 0, 63> whiteKnightSquareBonus = {taper(-84, -37), taper(-44, -24), taper(-43, -11), taper(-25, -4), taper(-16, -6), taper(-8, -23), taper(-39, -9), taper(-40, -25), taper(-45, -27), taper(-28, 2), taper(-22, -21), taper(-7, -12), taper(-5, -14), taper(-8, -20), taper(-13, -4), taper(-11, -5), taper(-42, -23), taper(-26, -10), taper(-18, -4), taper(12, 6), taper(15, 5), taper(-11, -16), taper(-4, -10), taper(-17, -2), taper(-19, 10), taper(8, 1), taper(10, 17), taper(4, 18), taper(14, 20), taper(17, 20), taper(32, 2), taper(5, 12), taper(1, 5), taper(-10, 11), taper(4, 22), taper(29, 25), taper(-3, 25), taper(27, 25), taper(-5, 29), taper(32, 6), taper(-21, -1), taper(5, 6), taper(18, 17), taper(25, 22), taper(80, 5), taper(57, 23), taper(33, 7), taper(-7, 18), taper(-21, 2), taper(-14, 5), taper(-1, 6), taper(45, 2), taper(34, 0), taper(41, -19), taper(-1, 6), taper(7, -10), taper(-131, 21), taper(-76, 15), taper(-58, 13), taper(-9, 7), taper(-6, 8), taper(-7, 7), taper(-12, 10), taper(-89, 5)};
-inline pas::Array<std::int32_t, 0, 63> blackKnightSquareBonus = {taper(-131, 21), taper(-76, 15), taper(-58, 13), taper(-9, 7), taper(-6, 8), taper(-7, 7), taper(-12, 10), taper(-89, 5), taper(-21, 2), taper(-14, 5), taper(-1, 6), taper(45, 2), taper(34, 0), taper(41, -19), taper(-1, 6), taper(7, -10), taper(-21, -1), taper(5, 6), taper(18, 17), taper(25, 22), taper(80, 5), taper(57, 23), taper(33, 7), taper(-7, 18), taper(1, 5), taper(-10, 11), taper(4, 22), taper(29, 25), taper(-3, 25), taper(27, 25), taper(-5, 29), taper(32, 6), taper(-19, 10), taper(8, 1), taper(10, 17), taper(4, 18), taper(14, 20), taper(17, 20), taper(32, 2), taper(5, 12), taper(-42, -23), taper(-26, -10), taper(-18, -4), taper(12, 6), taper(15, 5), taper(-11, -16), taper(-4, -10), taper(-17, -2), taper(-45, -27), taper(-28, 2), taper(-22, -21), taper(-7, -12), taper(-5, -14), taper(-8, -20), taper(-13, -4), taper(-11, -5), taper(-84, -37), taper(-44, -24), taper(-43, -11), taper(-25, -4), taper(-16, -6), taper(-8, -23), taper(-39, -9), taper(-40, -25)};
-inline pas::Array<std::int32_t, 0, 63> whiteBishopSquareBonus = {taper(-12, -9), taper(19, -18), taper(-20, -6), taper(-20, -1), taper(-11, -4), taper(-6, -1), taper(12, -12), taper(-37, -6), taper(-5, 2), taper(-16, -8), taper(17, -15), taper(-13, 1), taper(0, -3), taper(2, -8), taper(-4, -9), taper(6, -25), taper(-24, 6), taper(-2, 8), taper(-2, 12), taper(6, 6), taper(-1, 16), taper(4, 4), taper(9, -6), taper(10, -13), taper(-17, 3), taper(-8, 11), taper(-3, 23), taper(9, 24), taper(18, 16), taper(-10, 17), taper(7, 3), taper(13, -15), taper(-21, 6), taper(-1, 18), taper(3, 22), taper(15, 28), taper(5, 28), taper(31, 15), taper(-2, 20), taper(-7, 8), taper(-12, 9), taper(12, 17), taper(12, 17), taper(21, 15), taper(47, 13), taper(80, 14), taper(52, 9), taper(-3, 22), taper(-25, 16), taper(-5, 13), taper(-3, 10), taper(6, 9), taper(-9, 18), taper(-14, 16), taper(-26, 15), taper(4, 0), taper(-40, 22), taper(-29, 18), taper(-24, 10), taper(-20, 12), taper(-24, 12), taper(-28, 8), taper(18, -1), taper(-54, 10)};
-inline pas::Array<std::int32_t, 0, 63> blackBishopSquareBonus = {taper(-40, 22), taper(-29, 18), taper(-24, 10), taper(-20, 12), taper(-24, 12), taper(-28, 8), taper(18, -1), taper(-54, 10), taper(-25, 16), taper(-5, 13), taper(-3, 10), taper(6, 9), taper(-9, 18), taper(-14, 16), taper(-26, 15), taper(4, 0), taper(-12, 9), taper(12, 17), taper(12, 17), taper(21, 15), taper(47, 13), taper(80, 14), taper(52, 9), taper(-3, 22), taper(-21, 6), taper(-1, 18), taper(3, 22), taper(15, 28), taper(5, 28), taper(31, 15), taper(-2, 20), taper(-7, 8), taper(-17, 3), taper(-8, 11), taper(-3, 23), taper(9, 24), taper(18, 16), taper(-10, 17), taper(7, 3), taper(13, -15), taper(-24, 6), taper(-2, 8), taper(-2, 12), taper(6, 6), taper(-1, 16), taper(4, 4), taper(9, -6), taper(10, -13), taper(-5, 2), taper(-16, -8), taper(17, -15), taper(-13, 1), taper(0, -3), taper(2, -8), taper(-4, -9), taper(6, -25), taper(-12, -9), taper(19, -18), taper(-20, -6), taper(-20, -1), taper(-11, -4), taper(-6, -1), taper(12, -12), taper(-37, -6)};
-inline pas::Array<std::int32_t, 0, 63> rookSquareBonus = {taper(-118, 90), taper(-108, 89), taper(-104, 90), taper(-97, 82), taper(-93, 76), taper(-96, 78), taper(-95, 76), taper(-117, 78), taper(-118, 90), taper(-108, 89), taper(-104, 90), taper(-97, 82), taper(-93, 76), taper(-96, 78), taper(-95, 76), taper(-117, 78), taper(-118, 90), taper(-108, 89), taper(-104, 90), taper(-97, 82), taper(-93, 76), taper(-96, 78), taper(-95, 76), taper(-117, 78), taper(-118, 90), taper(-108, 89), taper(-104, 90), taper(-97, 82), taper(-93, 76), taper(-96, 78), taper(-95, 76), taper(-117, 78), taper(-118, 90), taper(-108, 89), taper(-104, 90), taper(-97, 82), taper(-93, 76), taper(-96, 78), taper(-95, 76), taper(-117, 78), taper(-118, 90), taper(-108, 89), taper(-104, 90), taper(-97, 82), taper(-93, 76), taper(-96, 78), taper(-95, 76), taper(-117, 78), taper(-118, 90), taper(-108, 89), taper(-104, 90), taper(-97, 82), taper(-93, 76), taper(-96, 78), taper(-95, 76), taper(-117, 78), taper(-118, 90), taper(-108, 89), taper(-104, 90), taper(-97, 82), taper(-93, 76), taper(-96, 78), taper(-95, 76), taper(-117, 78)};
-inline pas::Array<std::int16_t, 0, 63> whiteKingSquarePenalty = {45, 29, 63, 131, 106, 53, 13, 20, 11, 20, 53, 78, 74, 42, pas::negate(3), 14, 50, 32, 66, 92, 84, 68, 37, 60, 98, 69, 59, 84, 90, 86, 65, 124, 71, 59, 92, 99, 118, 87, 50, 67, 88, 55, 73, 114, 109, 41, 64, 80, 25, 55, 72, 97, 109, 64, 110, 41, 86, 92, 98, 62, 40, 38, 101, 116};
-inline pas::Array<std::int16_t, 0, 63> blackKingSquarePenalty = {86, 92, 98, 62, 40, 38, 101, 116, 25, 55, 72, 97, 109, 64, 110, 41, 88, 55, 73, 114, 109, 41, 64, 80, 71, 59, 92, 99, 118, 87, 50, 67, 98, 69, 59, 84, 90, 86, 65, 124, 50, 32, 66, 92, 84, 68, 37, 60, 11, 20, 53, 78, 74, 42, pas::negate(3), 14, 45, 29, 63, 131, 106, 53, 13, 20};
-inline pas::Array<std::int32_t, 0, 63> whitePawnSquareBonus = {taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(-37, 22), taper(-45, 30), taper(-44, 31), taper(-55, 31), taper(-42, 42), taper(-20, 29), taper(-31, 28), taper(-42, 11), taper(-38, 21), taper(-35, 25), taper(-43, 23), taper(-44, 27), taper(-32, 27), taper(-22, 22), taper(-22, 21), taper(-33, 12), taper(-30, 29), taper(-26, 32), taper(-19, 18), taper(-16, 11), taper(-13, 14), taper(-10, 19), taper(-10, 24), taper(-17, 12), taper(-16, 38), taper(-12, 32), taper(-5, 24), taper(3, 5), taper(19, 9), taper(21, 13), taper(-4, 32), taper(-10, 24), taper(25, 58), taper(33, 59), taper(54, 41), taper(61, 26), taper(86, 28), taper(81, 53), taper(62, 58), taper(28, 56), taper(102, 45), taper(98, 52), taper(142, 42), taper(126, 43), taper(102, 47), taper(53, 58), taper(-13, 75), taper(-4, 67), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0)};
-inline pas::Array<std::int32_t, 0, 63> blackPawnSquareBonus = {taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(102, 45), taper(98, 52), taper(142, 42), taper(126, 43), taper(102, 47), taper(53, 58), taper(-13, 75), taper(-4, 67), taper(25, 58), taper(33, 59), taper(54, 41), taper(61, 26), taper(86, 28), taper(81, 53), taper(62, 58), taper(28, 56), taper(-16, 38), taper(-12, 32), taper(-5, 24), taper(3, 5), taper(19, 9), taper(21, 13), taper(-4, 32), taper(-10, 24), taper(-30, 29), taper(-26, 32), taper(-19, 18), taper(-16, 11), taper(-13, 14), taper(-10, 19), taper(-10, 24), taper(-17, 12), taper(-38, 21), taper(-35, 25), taper(-43, 23), taper(-44, 27), taper(-32, 27), taper(-22, 22), taper(-22, 21), taper(-33, 12), taper(-37, 22), taper(-45, 30), taper(-44, 31), taper(-55, 31), taper(-42, 42), taper(-20, 29), taper(-31, 28), taper(-42, 11), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0)};
-inline pas::Array<std::int16_t, 0, 63> whiteKingEndgameKingsideBonus = {pas::negate(103), pas::negate(84), pas::negate(56), pas::negate(1), 8, 22, 24, 26, pas::negate(121), pas::negate(87), pas::negate(38), pas::negate(10), 8, 16, 13, 17, pas::negate(98), pas::negate(64), pas::negate(26), 1, 14, 21, 12, 14, pas::negate(68), pas::negate(46), pas::negate(17), 9, 18, 25, 14, 16, pas::negate(75), pas::negate(53), pas::negate(9), 19, 31, 41, 32, 6, pas::negate(76), pas::negate(45), pas::negate(19), 18, 36, 51, 65, 31, pas::negate(124), pas::negate(69), pas::negate(20), 8, 36, 55, 73, 12, pas::negate(78), pas::negate(75), pas::negate(61), pas::negate(18), 2, 28, 60, pas::negate(52)};
-inline pas::Array<std::int16_t, 0, 63> whiteKingEndgameQueensideBonus = {26, 24, 22, 8, pas::negate(1), pas::negate(56), pas::negate(84), pas::negate(103), 17, 13, 16, 8, pas::negate(10), pas::negate(38), pas::negate(87), pas::negate(121), 14, 12, 21, 14, 1, pas::negate(26), pas::negate(64), pas::negate(98), 16, 14, 25, 18, 9, pas::negate(17), pas::negate(46), pas::negate(68), 6, 32, 41, 31, 19, pas::negate(9), pas::negate(53), pas::negate(75), 31, 65, 51, 36, 18, pas::negate(19), pas::negate(45), pas::negate(76), 12, 73, 55, 36, 8, pas::negate(20), pas::negate(69), pas::negate(124), pas::negate(52), 60, 28, 2, pas::negate(18), pas::negate(61), pas::negate(75), pas::negate(78)};
-inline pas::Array<std::int16_t, 0, 63> blackKingEndgameQueensideBonus = {pas::negate(52), 60, 28, 2, pas::negate(18), pas::negate(61), pas::negate(75), pas::negate(78), 12, 73, 55, 36, 8, pas::negate(20), pas::negate(69), pas::negate(124), 31, 65, 51, 36, 18, pas::negate(19), pas::negate(45), pas::negate(76), 6, 32, 41, 31, 19, pas::negate(9), pas::negate(53), pas::negate(75), 16, 14, 25, 18, 9, pas::negate(17), pas::negate(46), pas::negate(68), 14, 12, 21, 14, 1, pas::negate(26), pas::negate(64), pas::negate(98), 17, 13, 16, 8, pas::negate(10), pas::negate(38), pas::negate(87), pas::negate(121), 26, 24, 22, 8, pas::negate(1), pas::negate(56), pas::negate(84), pas::negate(103)};
-inline pas::Array<std::int16_t, 0, 63> blackKingEndgameKingsideBonus = {pas::negate(78), pas::negate(75), pas::negate(61), pas::negate(18), 2, 28, 60, pas::negate(52), pas::negate(124), pas::negate(69), pas::negate(20), 8, 36, 55, 73, 12, pas::negate(76), pas::negate(45), pas::negate(19), 18, 36, 51, 65, 31, pas::negate(75), pas::negate(53), pas::negate(9), 19, 31, 41, 32, 6, pas::negate(68), pas::negate(46), pas::negate(17), 9, 18, 25, 14, 16, pas::negate(98), pas::negate(64), pas::negate(26), 1, 14, 21, 12, 14, pas::negate(121), pas::negate(87), pas::negate(38), pas::negate(10), 8, 16, 13, 17, pas::negate(103), pas::negate(84), pas::negate(56), pas::negate(1), 8, 22, 24, 26};
-inline pas::Array<std::int16_t, 0, 63> whiteKingEndgameBothWingsBonus = {pas::negate(64), pas::negate(36), pas::negate(19), pas::negate(11), pas::negate(30), pas::negate(40), pas::negate(57), pas::negate(94), pas::negate(40), pas::negate(29), pas::negate(14), pas::negate(8), pas::negate(9), pas::negate(23), pas::negate(47), pas::negate(57), pas::negate(17), pas::negate(5), 8, 15, 14, 0, pas::negate(19), pas::negate(34), 21, 27, 33, 38, 36, 29, 13, 8, 23, 49, 64, 65, 65, 59, 46, 19, 38, 58, 75, 85, 84, 74, 66, 41, pas::negate(3), 50, 68, 73, 76, 61, 66, 9, pas::negate(61), 31, 44, 36, 28, 27, 24, pas::negate(35)};
-inline pas::Array<std::int16_t, 0, 63> blackKingEndgameBothWingsBonus = {pas::negate(61), 31, 44, 36, 28, 27, 24, pas::negate(35), pas::negate(3), 50, 68, 73, 76, 61, 66, 9, 38, 58, 75, 85, 84, 74, 66, 41, 23, 49, 64, 65, 65, 59, 46, 19, 21, 27, 33, 38, 36, 29, 13, 8, pas::negate(17), pas::negate(5), 8, 15, 14, 0, pas::negate(19), pas::negate(34), pas::negate(40), pas::negate(29), pas::negate(14), pas::negate(8), pas::negate(9), pas::negate(23), pas::negate(47), pas::negate(57), pas::negate(64), pas::negate(36), pas::negate(19), pas::negate(11), pas::negate(30), pas::negate(40), pas::negate(57), pas::negate(94)};
-inline pas::Array<std::int32_t, 0, 63> whiteQueenSquareBonus = {taper(6, -51), taper(7, -61), taper(15, -66), taper(16, -55), taper(23, -87), taper(3, -93), taper(18, -128), taper(2, -53), taper(0, -45), taper(11, -49), taper(14, -60), taper(23, -66), taper(20, -63), taper(27, -103), taper(35, -134), taper(23, -87), taper(-9, -23), taper(0, -24), taper(10, -29), taper(3, -30), taper(8, -31), taper(11, -34), taper(16, -40), taper(18, -51), taper(-9, -9), taper(-12, 9), taper(-4, 0), taper(-5, 15), taper(-10, 13), taper(-6, 8), taper(5, 0), taper(5, 8), taper(-15, 18), taper(-19, 33), taper(-19, 39), taper(-13, 37), taper(2, 42), taper(-6, 51), taper(3, 50), taper(-1, 27), taper(-12, 10), taper(-21, 38), taper(-30, 58), taper(-17, 61), taper(11, 59), taper(21, 57), taper(30, 42), taper(1, 53), taper(-31, 33), taper(-57, 61), taper(-34, 66), taper(-37, 72), taper(-45, 82), taper(-26, 75), taper(-14, 65), taper(47, 25), taper(-16, 23), taper(10, 22), taper(2, 32), taper(-14, 47), taper(-19, 64), taper(34, 31), taper(72, 1), taper(42, 19)};
-inline pas::Array<std::int32_t, 0, 63> blackQueenSquareBonus = {taper(-16, 23), taper(10, 22), taper(2, 32), taper(-14, 47), taper(-19, 64), taper(34, 31), taper(72, 1), taper(42, 19), taper(-31, 33), taper(-57, 61), taper(-34, 66), taper(-37, 72), taper(-45, 82), taper(-26, 75), taper(-14, 65), taper(47, 25), taper(-12, 10), taper(-21, 38), taper(-30, 58), taper(-17, 61), taper(11, 59), taper(21, 57), taper(30, 42), taper(1, 53), taper(-15, 18), taper(-19, 33), taper(-19, 39), taper(-13, 37), taper(2, 42), taper(-6, 51), taper(3, 50), taper(-1, 27), taper(-9, -9), taper(-12, 9), taper(-4, 0), taper(-5, 15), taper(-10, 13), taper(-6, 8), taper(5, 0), taper(5, 8), taper(-9, -23), taper(0, -24), taper(10, -29), taper(3, -30), taper(8, -31), taper(11, -34), taper(16, -40), taper(18, -51), taper(0, -45), taper(11, -49), taper(14, -60), taper(23, -66), taper(20, -63), taper(27, -103), taper(35, -134), taper(23, -87), taper(6, -51), taper(7, -61), taper(15, -66), taper(16, -55), taper(23, -87), taper(3, -93), taper(18, -128), taper(2, -53)};
+inline pas::Array<std::uint8_t, 0, 63> whiteBishopOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 37, 43, 0, 0, 0, 0, 0, 0, 30, 42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::uint8_t, 0, 63> blackBishopOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 30, 42, 0, 0, 0, 0, 0, 0, 37, 43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::uint8_t, 0, 63> whiteKnightOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 35, 40, 0, 0, 0, 0, 0, 31, 38, 76, 50, 0, 0, 0, 0, 25, 32, 10, 24, 0, 0, 0, 0, 0, 15, 22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::uint8_t, 0, 63> blackKnightOutpostBonus = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 22, 0, 0, 0, 0, 0, 25, 32, 10, 24, 0, 0, 0, 0, 31, 38, 76, 50, 0, 0, 0, 0, 0, 35, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+inline pas::Array<std::int32_t, 0, 63> whiteKnightSquareBonus = {taper(-85, -33), taper(-46, -21), taper(-44, -9), taper(-26, -2), taper(-17, -4), taper(-9, -21), taper(-41, -7), taper(-40, -22), taper(-47, -25), taper(-29, 3), taper(-23, -20), taper(-8, -11), taper(-6, -12), taper(-9, -19), taper(-13, -2), taper(-12, -2), taper(-44, -20), taper(-27, -9), taper(-20, -3), taper(10, 7), taper(13, 5), taper(-13, -15), taper(-5, -9), taper(-19, 0), taper(-21, 12), taper(6, 3), taper(9, 17), taper(3, 19), taper(13, 22), taper(16, 21), taper(33, 4), taper(5, 14), taper(-1, 6), taper(-11, 12), taper(1, 23), taper(27, 26), taper(-6, 27), taper(27, 26), taper(-4, 30), taper(33, 8), taper(-23, 1), taper(0, 9), taper(10, 18), taper(17, 24), taper(72, 8), taper(58, 24), taper(29, 10), taper(-5, 21), taper(-21, 5), taper(-16, 7), taper(-11, 10), taper(36, 6), taper(34, 3), taper(36, -16), taper(-1, 8), taper(6, -7), taper(-125, 21), taper(-81, 16), taper(-64, 16), taper(-12, 10), taper(-7, 12), taper(-1, 8), taper(-5, 10), taper(-86, 6)};
+inline pas::Array<std::int32_t, 0, 63> blackKnightSquareBonus = {taper(-125, 21), taper(-81, 16), taper(-64, 16), taper(-12, 10), taper(-7, 12), taper(-1, 8), taper(-5, 10), taper(-86, 6), taper(-21, 5), taper(-16, 7), taper(-11, 10), taper(36, 6), taper(34, 3), taper(36, -16), taper(-1, 8), taper(6, -7), taper(-23, 1), taper(0, 9), taper(10, 18), taper(17, 24), taper(72, 8), taper(58, 24), taper(29, 10), taper(-5, 21), taper(-1, 6), taper(-11, 12), taper(1, 23), taper(27, 26), taper(-6, 27), taper(27, 26), taper(-4, 30), taper(33, 8), taper(-21, 12), taper(6, 3), taper(9, 17), taper(3, 19), taper(13, 22), taper(16, 21), taper(33, 4), taper(5, 14), taper(-44, -20), taper(-27, -9), taper(-20, -3), taper(10, 7), taper(13, 5), taper(-13, -15), taper(-5, -9), taper(-19, 0), taper(-47, -25), taper(-29, 3), taper(-23, -20), taper(-8, -11), taper(-6, -12), taper(-9, -19), taper(-13, -2), taper(-12, -2), taper(-85, -33), taper(-46, -21), taper(-44, -9), taper(-26, -2), taper(-17, -4), taper(-9, -21), taper(-41, -7), taper(-40, -22)};
+inline pas::Array<std::int32_t, 0, 63> whiteBishopSquareBonus = {taper(-9, -5), taper(22, -14), taper(-18, -3), taper(-17, 2), taper(-8, -1), taper(-4, 2), taper(16, -10), taper(-33, -3), taper(-2, 6), taper(-14, -6), taper(19, -13), taper(-10, 4), taper(3, -1), taper(5, -6), taper(-1, -7), taper(9, -23), taper(-22, 9), taper(0, 10), taper(1, 13), taper(9, 8), taper(3, 17), taper(8, 5), taper(12, -4), taper(13, -10), taper(-13, 7), taper(-6, 14), taper(0, 25), taper(12, 25), taper(22, 17), taper(-7, 19), taper(11, 5), taper(18, -12), taper(-19, 10), taper(4, 20), taper(5, 24), taper(18, 30), taper(8, 30), taper(36, 17), taper(4, 21), taper(-3, 11), taper(-9, 12), taper(12, 19), taper(13, 19), taper(20, 17), taper(48, 15), taper(83, 16), taper(56, 11), taper(2, 25), taper(-21, 19), taper(-1, 15), taper(-3, 12), taper(7, 12), taper(-9, 21), taper(-11, 18), taper(-21, 17), taper(10, 3), taper(-33, 25), taper(-27, 21), taper(-21, 12), taper(-14, 15), taper(-18, 14), taper(-21, 9), taper(23, 1), taper(-47, 12)};
+inline pas::Array<std::int32_t, 0, 63> blackBishopSquareBonus = {taper(-33, 25), taper(-27, 21), taper(-21, 12), taper(-14, 15), taper(-18, 14), taper(-21, 9), taper(23, 1), taper(-47, 12), taper(-21, 19), taper(-1, 15), taper(-3, 12), taper(7, 12), taper(-9, 21), taper(-11, 18), taper(-21, 17), taper(10, 3), taper(-9, 12), taper(12, 19), taper(13, 19), taper(20, 17), taper(48, 15), taper(83, 16), taper(56, 11), taper(2, 25), taper(-19, 10), taper(4, 20), taper(5, 24), taper(18, 30), taper(8, 30), taper(36, 17), taper(4, 21), taper(-3, 11), taper(-13, 7), taper(-6, 14), taper(0, 25), taper(12, 25), taper(22, 17), taper(-7, 19), taper(11, 5), taper(18, -12), taper(-22, 9), taper(0, 10), taper(1, 13), taper(9, 8), taper(3, 17), taper(8, 5), taper(12, -4), taper(13, -10), taper(-2, 6), taper(-14, -6), taper(19, -13), taper(-10, 4), taper(3, -1), taper(5, -6), taper(-1, -7), taper(9, -23), taper(-9, -5), taper(22, -14), taper(-18, -3), taper(-17, 2), taper(-8, -1), taper(-4, 2), taper(16, -10), taper(-33, -3)};
+inline pas::Array<std::int32_t, 0, 63> rookSquareBonus = {taper(-122, 89), taper(-111, 87), taper(-106, 88), taper(-99, 80), taper(-95, 74), taper(-98, 77), taper(-96, 75), taper(-121, 77), taper(-122, 89), taper(-111, 87), taper(-106, 88), taper(-99, 80), taper(-95, 74), taper(-98, 77), taper(-96, 75), taper(-121, 77), taper(-122, 89), taper(-111, 87), taper(-106, 88), taper(-99, 80), taper(-95, 74), taper(-98, 77), taper(-96, 75), taper(-121, 77), taper(-122, 89), taper(-111, 87), taper(-106, 88), taper(-99, 80), taper(-95, 74), taper(-98, 77), taper(-96, 75), taper(-121, 77), taper(-122, 89), taper(-111, 87), taper(-106, 88), taper(-99, 80), taper(-95, 74), taper(-98, 77), taper(-96, 75), taper(-121, 77), taper(-122, 89), taper(-111, 87), taper(-106, 88), taper(-99, 80), taper(-95, 74), taper(-98, 77), taper(-96, 75), taper(-121, 77), taper(-122, 89), taper(-111, 87), taper(-106, 88), taper(-99, 80), taper(-95, 74), taper(-98, 77), taper(-96, 75), taper(-121, 77), taper(-122, 89), taper(-111, 87), taper(-106, 88), taper(-99, 80), taper(-95, 74), taper(-98, 77), taper(-96, 75), taper(-121, 77)};
+inline pas::Array<std::int16_t, 0, 63> whiteKingSquarePenalty = {49, 35, 68, 137, 111, 59, 19, 25, 15, 25, 58, 84, 81, 47, 2, 19, 55, 36, 73, 97, 89, 74, 42, 66, 103, 71, 63, 88, 94, 94, 71, 129, 77, 67, 97, 104, 122, 91, 54, 73, 94, 68, 76, 119, 112, 50, 65, 86, 28, 60, 73, 100, 112, 65, 114, 50, 82, 90, 93, 66, 38, 35, 104, 117};
+inline pas::Array<std::int16_t, 0, 63> blackKingSquarePenalty = {82, 90, 93, 66, 38, 35, 104, 117, 28, 60, 73, 100, 112, 65, 114, 50, 94, 68, 76, 119, 112, 50, 65, 86, 77, 67, 97, 104, 122, 91, 54, 73, 103, 71, 63, 88, 94, 94, 71, 129, 55, 36, 73, 97, 89, 74, 42, 66, 15, 25, 58, 84, 81, 47, 2, 19, 49, 35, 68, 137, 111, 59, 19, 25};
+inline pas::Array<std::int32_t, 0, 63> whitePawnSquareBonus = {taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(-37, 22), taper(-45, 30), taper(-44, 30), taper(-54, 31), taper(-41, 42), taper(-19, 29), taper(-31, 27), taper(-42, 11), taper(-39, 21), taper(-35, 25), taper(-42, 22), taper(-44, 26), taper(-31, 27), taper(-23, 22), taper(-23, 21), taper(-34, 12), taper(-29, 29), taper(-26, 32), taper(-19, 17), taper(-16, 10), taper(-12, 14), taper(-11, 19), taper(-11, 24), taper(-16, 13), taper(-16, 39), taper(-12, 32), taper(-4, 24), taper(2, 5), taper(18, 10), taper(20, 13), taper(-5, 32), taper(-10, 25), taper(25, 58), taper(33, 60), taper(53, 42), taper(60, 27), taper(84, 28), taper(78, 54), taper(62, 58), taper(27, 57), taper(101, 45), taper(97, 53), taper(138, 43), taper(122, 43), taper(97, 48), taper(51, 59), taper(-6, 74), taper(-2, 68), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0)};
+inline pas::Array<std::int32_t, 0, 63> blackPawnSquareBonus = {taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(101, 45), taper(97, 53), taper(138, 43), taper(122, 43), taper(97, 48), taper(51, 59), taper(-6, 74), taper(-2, 68), taper(25, 58), taper(33, 60), taper(53, 42), taper(60, 27), taper(84, 28), taper(78, 54), taper(62, 58), taper(27, 57), taper(-16, 39), taper(-12, 32), taper(-4, 24), taper(2, 5), taper(18, 10), taper(20, 13), taper(-5, 32), taper(-10, 25), taper(-29, 29), taper(-26, 32), taper(-19, 17), taper(-16, 10), taper(-12, 14), taper(-11, 19), taper(-11, 24), taper(-16, 13), taper(-39, 21), taper(-35, 25), taper(-42, 22), taper(-44, 26), taper(-31, 27), taper(-23, 22), taper(-23, 21), taper(-34, 12), taper(-37, 22), taper(-45, 30), taper(-44, 30), taper(-54, 31), taper(-41, 42), taper(-19, 29), taper(-31, 27), taper(-42, 11), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0), taper(0, 0)};
+inline pas::Array<std::int16_t, 0, 63> whiteKingEndgameKingsideBonus = {pas::negate(101), pas::negate(81), pas::negate(53), 1, 10, 24, 25, 28, pas::negate(119), pas::negate(84), pas::negate(37), pas::negate(9), 10, 17, 14, 19, pas::negate(96), pas::negate(62), pas::negate(24), 2, 15, 23, 13, 16, pas::negate(66), pas::negate(45), pas::negate(16), 10, 19, 26, 15, 17, pas::negate(73), pas::negate(52), pas::negate(8), 20, 32, 42, 32, 7, pas::negate(74), pas::negate(42), pas::negate(17), 19, 37, 51, 65, 33, pas::negate(123), pas::negate(68), pas::negate(19), 10, 37, 54, 73, 13, pas::negate(78), pas::negate(75), pas::negate(63), pas::negate(16), 2, 27, 60, pas::negate(54)};
+inline pas::Array<std::int16_t, 0, 63> whiteKingEndgameQueensideBonus = {28, 25, 24, 10, 1, pas::negate(53), pas::negate(81), pas::negate(101), 19, 14, 17, 10, pas::negate(9), pas::negate(37), pas::negate(84), pas::negate(119), 16, 13, 23, 15, 2, pas::negate(24), pas::negate(62), pas::negate(96), 17, 15, 26, 19, 10, pas::negate(16), pas::negate(45), pas::negate(66), 7, 32, 42, 32, 20, pas::negate(8), pas::negate(52), pas::negate(73), 33, 65, 51, 37, 19, pas::negate(17), pas::negate(42), pas::negate(74), 13, 73, 54, 37, 10, pas::negate(19), pas::negate(68), pas::negate(123), pas::negate(54), 60, 27, 2, pas::negate(16), pas::negate(63), pas::negate(75), pas::negate(78)};
+inline pas::Array<std::int16_t, 0, 63> blackKingEndgameQueensideBonus = {pas::negate(54), 60, 27, 2, pas::negate(16), pas::negate(63), pas::negate(75), pas::negate(78), 13, 73, 54, 37, 10, pas::negate(19), pas::negate(68), pas::negate(123), 33, 65, 51, 37, 19, pas::negate(17), pas::negate(42), pas::negate(74), 7, 32, 42, 32, 20, pas::negate(8), pas::negate(52), pas::negate(73), 17, 15, 26, 19, 10, pas::negate(16), pas::negate(45), pas::negate(66), 16, 13, 23, 15, 2, pas::negate(24), pas::negate(62), pas::negate(96), 19, 14, 17, 10, pas::negate(9), pas::negate(37), pas::negate(84), pas::negate(119), 28, 25, 24, 10, 1, pas::negate(53), pas::negate(81), pas::negate(101)};
+inline pas::Array<std::int16_t, 0, 63> blackKingEndgameKingsideBonus = {pas::negate(78), pas::negate(75), pas::negate(63), pas::negate(16), 2, 27, 60, pas::negate(54), pas::negate(123), pas::negate(68), pas::negate(19), 10, 37, 54, 73, 13, pas::negate(74), pas::negate(42), pas::negate(17), 19, 37, 51, 65, 33, pas::negate(73), pas::negate(52), pas::negate(8), 20, 32, 42, 32, 7, pas::negate(66), pas::negate(45), pas::negate(16), 10, 19, 26, 15, 17, pas::negate(96), pas::negate(62), pas::negate(24), 2, 15, 23, 13, 16, pas::negate(119), pas::negate(84), pas::negate(37), pas::negate(9), 10, 17, 14, 19, pas::negate(101), pas::negate(81), pas::negate(53), 1, 10, 24, 25, 28};
+inline pas::Array<std::int16_t, 0, 63> whiteKingEndgameBothWingsBonus = {pas::negate(63), pas::negate(35), pas::negate(19), pas::negate(10), pas::negate(29), pas::negate(39), pas::negate(56), pas::negate(93), pas::negate(39), pas::negate(28), pas::negate(13), pas::negate(7), pas::negate(8), pas::negate(23), pas::negate(47), pas::negate(57), pas::negate(17), pas::negate(5), 9, 15, 15, 0, pas::negate(20), pas::negate(33), 20, 26, 32, 38, 35, 30, 13, 7, 23, 48, 64, 65, 64, 58, 44, 18, 38, 59, 74, 84, 84, 74, 64, 40, pas::negate(3), 49, 67, 73, 75, 60, 65, 11, pas::negate(65), 30, 43, 37, 27, 26, 24, pas::negate(34)};
+inline pas::Array<std::int16_t, 0, 63> blackKingEndgameBothWingsBonus = {pas::negate(65), 30, 43, 37, 27, 26, 24, pas::negate(34), pas::negate(3), 49, 67, 73, 75, 60, 65, 11, 38, 59, 74, 84, 84, 74, 64, 40, 23, 48, 64, 65, 64, 58, 44, 18, 20, 26, 32, 38, 35, 30, 13, 7, pas::negate(17), pas::negate(5), 9, 15, 15, 0, pas::negate(20), pas::negate(33), pas::negate(39), pas::negate(28), pas::negate(13), pas::negate(7), pas::negate(8), pas::negate(23), pas::negate(47), pas::negate(57), pas::negate(63), pas::negate(35), pas::negate(19), pas::negate(10), pas::negate(29), pas::negate(39), pas::negate(56), pas::negate(93)};
+inline pas::Array<std::int32_t, 0, 63> whiteQueenSquareBonus = {taper(6, -45), taper(7, -55), taper(15, -61), taper(16, -49), taper(23, -82), taper(4, -88), taper(19, -120), taper(3, -49), taper(1, -41), taper(11, -44), taper(14, -56), taper(23, -62), taper(20, -58), taper(28, -98), taper(36, -127), taper(23, -82), taper(-11, -17), taper(-1, -20), taper(11, -25), taper(3, -27), taper(8, -29), taper(12, -30), taper(17, -35), taper(18, -45), taper(-9, -6), taper(-11, 10), taper(-3, 1), taper(-4, 16), taper(-9, 14), taper(-6, 13), taper(7, 5), taper(5, 16), taper(-14, 20), taper(-17, 33), taper(-18, 40), taper(-12, 37), taper(4, 44), taper(-4, 53), taper(7, 52), taper(2, 31), taper(-10, 11), taper(-20, 38), taper(-27, 57), taper(-15, 62), taper(14, 59), taper(24, 58), taper(33, 44), taper(3, 59), taper(-27, 34), taper(-53, 60), taper(-33, 67), taper(-37, 75), taper(-41, 82), taper(-22, 74), taper(-14, 69), taper(50, 30), taper(-9, 25), taper(18, 24), taper(11, 32), taper(-8, 51), taper(-9, 65), taper(39, 36), taper(85, 1), taper(55, 17)};
+inline pas::Array<std::int32_t, 0, 63> blackQueenSquareBonus = {taper(-9, 25), taper(18, 24), taper(11, 32), taper(-8, 51), taper(-9, 65), taper(39, 36), taper(85, 1), taper(55, 17), taper(-27, 34), taper(-53, 60), taper(-33, 67), taper(-37, 75), taper(-41, 82), taper(-22, 74), taper(-14, 69), taper(50, 30), taper(-10, 11), taper(-20, 38), taper(-27, 57), taper(-15, 62), taper(14, 59), taper(24, 58), taper(33, 44), taper(3, 59), taper(-14, 20), taper(-17, 33), taper(-18, 40), taper(-12, 37), taper(4, 44), taper(-4, 53), taper(7, 52), taper(2, 31), taper(-9, -6), taper(-11, 10), taper(-3, 1), taper(-4, 16), taper(-9, 14), taper(-6, 13), taper(7, 5), taper(5, 16), taper(-11, -17), taper(-1, -20), taper(11, -25), taper(3, -27), taper(8, -29), taper(12, -30), taper(17, -35), taper(18, -45), taper(1, -41), taper(11, -44), taper(14, -56), taper(23, -62), taper(20, -58), taper(28, -98), taper(36, -127), taper(23, -82), taper(6, -45), taper(7, -55), taper(15, -61), taper(16, -49), taper(23, -82), taper(4, -88), taper(19, -120), taper(3, -49)};
 inline pas::Array<std::uint8_t, 0, 64> squareColor = {0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 2};
-PETIR_EVAL_WEIGHT auto twoBishopsKingAttackBonus = 1;
-PETIR_EVAL_WEIGHT auto lostCastlingPenalty = 43;
+PETIR_EVAL_WEIGHT auto twoBishopsKingAttackBonus = 0;
+PETIR_EVAL_WEIGHT auto lostCastlingPenalty = 41;
 PETIR_EVAL_WEIGHT auto castledBonus = 10;
 PETIR_EVAL_WEIGHT auto castledWrongSideBonus = 10;
-PETIR_EVAL_WEIGHT auto trappedBishopPenalty = 92;
+PETIR_EVAL_WEIGHT auto trappedBishopPenalty = 94;
 PETIR_EVAL_WEIGHT auto trappedBishopPenalty2 = 56;
-PETIR_EVAL_WEIGHT auto trappedKnightPenalty = 122;
+PETIR_EVAL_WEIGHT auto trappedKnightPenalty = 119;
 PETIR_EVAL_WEIGHT auto undevelopedCenterPawnPenalty = 10;
 PETIR_EVAL_WEIGHT auto blockedCenterPawnPenalty = 66;
 PETIR_EVAL_WEIGHT auto rookSemiOpenFileNearKingBonus = 8;
 PETIR_EVAL_WEIGHT auto doubledRooksSemiOpenNearKingBonus = -5;
 PETIR_EVAL_WEIGHT auto rookOpenFileNearKingBonus = 13;
-PETIR_EVAL_WEIGHT auto doubledRooksBonus = 35;
-PETIR_EVAL_WEIGHT auto doubledRooksNearKingBonus = 17;
+PETIR_EVAL_WEIGHT auto doubledRooksBonus = 36;
+PETIR_EVAL_WEIGHT auto doubledRooksNearKingBonus = 18;
 PETIR_EVAL_WEIGHT auto rookQueenOpenFileBonus = 24;
-PETIR_EVAL_WEIGHT auto rookQueenSemiOpenFileBonus = 21;
+PETIR_EVAL_WEIGHT auto rookQueenSemiOpenFileBonus = 22;
 PETIR_EVAL_WEIGHT auto rookQueenSemiOpenNearKingBonus = 2;
 PETIR_EVAL_WEIGHT auto doubledRooksOpenFileBonus = -14;
-inline pas::Array<std::int16_t, 0, 6> doubledPawnPenalty = {0, 10, 23, 45, 65, 90, 120};
+inline pas::Array<std::int16_t, 0, 6> doubledPawnPenalty = {0, 10, 22, 45, 65, 90, 120};
 PETIR_EVAL_WEIGHT auto backwardPawnPenalty = 3;
-inline pas::Array<std::uint8_t, 0, 7> isolatedPawnPenalty = {5, 6, 8, 10, 9, 7, 6, 6};
+inline pas::Array<std::uint8_t, 0, 7> isolatedPawnPenalty = {5, 6, 7, 9, 9, 7, 6, 5};
 PETIR_EVAL_WEIGHT auto missingPawnPenalty = 45;
 inline pas::Array<std::uint8_t, 0, 7> whitePotentialPasserBonus = {0, 0, 3, 4, 5, 6, 6, 6};
 inline pas::Array<std::uint8_t, 0, 7> blackPotentialPasserBonus = {6, 6, 6, 5, 4, 3, 0, 0};
-inline pas::Array<std::int16_t, 0, 8> isolatedPawnCountPenalty = {0, pas::negate(7), pas::negate(10), pas::negate(20), pas::negate(30), -42, -46, -48, -48};
-PETIR_EVAL_WEIGHT auto rookOnSeventhBonus = 27;
+inline pas::Array<std::int16_t, 0, 8> isolatedPawnCountPenalty = {0, pas::negate(7), pas::negate(10), pas::negate(19), pas::negate(30), -42, -46, -48, -48};
+PETIR_EVAL_WEIGHT auto rookOnSeventhBonus = 26;
 PETIR_EVAL_WEIGHT auto rookOnEighthBonus = 79;
 PETIR_EVAL_WEIGHT auto safeAdvanceBonus = 48;
-PETIR_EVAL_WEIGHT auto doubledRooksSeventhBonus = 27;
-PETIR_EVAL_WEIGHT auto rookQueenSeventhBonus = 24;
+PETIR_EVAL_WEIGHT auto doubledRooksSeventhBonus = 28;
+PETIR_EVAL_WEIGHT auto rookQueenSeventhBonus = 25;
 PETIR_EVAL_WEIGHT auto blockedRookPenalty = -2;
-PETIR_EVAL_WEIGHT auto passedPawnBonus = 4;
+PETIR_EVAL_WEIGHT auto passedPawnBonus = 5;
 PETIR_EVAL_WEIGHT auto mobilityBonus = 2;
 PETIR_EVAL_WEIGHT auto queenTropismBonus = 4;
 PETIR_EVAL_WEIGHT auto bishopTropismBonus = 3;
 PETIR_EVAL_WEIGHT auto knightTropismBonus = 3;
 PETIR_EVAL_WEIGHT auto blockedPawnPenalty = -23;
-PETIR_EVAL_WEIGHT auto connectedPassersBonus = 6;
+PETIR_EVAL_WEIGHT auto connectedPassersBonus = 5;
 PETIR_EVAL_WEIGHT auto connectedPassersAdvancedBonus = 61;
-PETIR_EVAL_WEIGHT auto connectedPassersFarAdvancedBonus = 110;
-inline pas::Array<std::uint8_t, 0, 8> bishopPairBonus = {0, 7, 35, 42, 41, 34, 23, 0, 0};
+PETIR_EVAL_WEIGHT auto connectedPassersFarAdvancedBonus = 109;
+inline pas::Array<std::uint8_t, 0, 8> bishopPairBonus = {0, 6, 34, 41, 40, 34, 23, 0, 0};
 PETIR_EVAL_WEIGHT auto noPawnPenalty = 32;
 // Material imbalances, a bonus for the side named first (materialImbalanceScore
 // in ueval.cpp); the piece types not named are equal on both sides:
@@ -621,59 +621,72 @@ PETIR_EVAL_WEIGHT auto noPawnPenalty = 32;
 //    extra pawns 0, 1 or 2+ (0 also when the rook side has more pawns);
 //  - two minors against a rook, a queen against two rooks, a queen against a
 //    rook and a minor piece: whatever the pawns.
-inline pas::Array<std::int16_t, 1, 3> minorForPawnsBonus = {0, 52, 66};
-inline pas::Array<std::int16_t, 1, 3> rookForPawnsBonus = {0, pas::negate(21), 75};
-inline pas::Array<std::int16_t, 0, 2> exchangeBonus = {31, 28, 23};
-PETIR_EVAL_WEIGHT auto minorsForRookBonus = 36;
-PETIR_EVAL_WEIGHT auto queenForRooksBonus = 20;
-PETIR_EVAL_WEIGHT auto queenForRookMinorBonus = 23;
+inline pas::Array<std::int16_t, 1, 3> minorForPawnsBonus = {0, 53, 67};
+inline pas::Array<std::int16_t, 1, 3> rookForPawnsBonus = {0, pas::negate(19), 76};
+inline pas::Array<std::int16_t, 0, 2> exchangeBonus = {33, 29, 23};
+PETIR_EVAL_WEIGHT auto minorsForRookBonus = 35;
+PETIR_EVAL_WEIGHT auto queenForRooksBonus = 18;
+PETIR_EVAL_WEIGHT auto queenForRookMinorBonus = 21;
+// Threats against the side to move (threatScore in ueval.cpp), a bonus for the
+// side not to move. Its own captures are left to the search; the side to move
+// cannot be sure to save everything the other side attacks. A piece counts
+// once, under its cheapest attacker type:
+//  - pawnThreatBonus: a minor piece, rook or queen (1, 2, 3) attacked by a pawn;
+//  - minorThreatBonus: a rook or queen (1, 2) attacked by a knight or bishop;
+//  - rookThreatOnQueenBonus: a queen attacked by a rook;
+// and also, when no own piece defends it:
+//  - hangingPieceBonus: an attacked pawn, minor piece, rook or queen (0..3).
+inline pas::Array<std::int16_t, 1, 3> pawnThreatBonus = {38, 40, 32};
+inline pas::Array<std::int16_t, 1, 2> minorThreatBonus = {28, 28};
+PETIR_EVAL_WEIGHT auto rookThreatOnQueenBonus = 41;
+inline pas::Array<std::int16_t, 0, 3> hangingPieceBonus = {20, 28, 14, 5};
 PETIR_EVAL_WEIGHT auto missingFianchettoPenalty = 18;
 PETIR_EVAL_WEIGHT auto blockedKingPenalty = 8;
 PETIR_EVAL_WEIGHT auto safePromotionBonus = 225;
 PETIR_EVAL_WEIGHT auto safePromotionBonus1 = 125;
 PETIR_EVAL_WEIGHT auto weakStructurePenalty = 6;
-PETIR_EVAL_WEIGHT auto bishopOverKnightEndgameBonus = 10;
+PETIR_EVAL_WEIGHT auto bishopOverKnightEndgameBonus = 9;
 inline pas::Array<std::int8_t, 0, 8> knightLowMobilityBonus = {pas::negate(25), pas::negate(5), 0, 0, 0, 0, 0, 0, 0};
-inline pas::Array<std::int32_t, 0, 8> knightMobilityBonus = {taper(-77, -96), taper(-55, -28), taper(-42, 8), taper(-32, 24), taper(-25, 35), taper(-18, 47), taper(-10, 44), taper(-4, 41), taper(6, 25)};
-inline pas::Array<std::int32_t, 0, 15> bishopMobilityBonus = {taper(-58, -43), taper(-46, -12), taper(-35, 12), taper(-28, 29), taper(-19, 40), taper(-13, 49), taper(-9, 54), taper(-5, 56), taper(-3, 57), taper(6, 53), taper(15, 48), taper(39, 37), taper(52, 41), taper(73, 22), taper(37, 37), taper(38, 38)};
-inline pas::Array<std::int32_t, 0, 15> rookMobilityBonus = {taper(-64, -5), taper(-57, 22), taper(-52, 23), taper(-48, 27), taper(-49, 40), taper(-45, 46), taper(-42, 54), taper(-38, 62), taper(-35, 75), taper(-33, 87), taper(-32, 95), taper(-30, 99), taper(-31, 103), taper(-17, 106), taper(-13, 103), taper(24, 24)};
-inline pas::Array<std::int32_t, 0, 31> queenMobilityBonus = {taper(-86, -93), taper(-75, -138), taper(-82, -125), taper(-85, -75), taper(-81, -85), taper(-80, -66), taper(-79, -53), taper(-79, -36), taper(-79, -26), taper(-77, -19), taper(-77, -9), taper(-77, 4), taper(-77, 11), taper(-76, 18), taper(-75, 25), taper(-71, 27), taper(-73, 34), taper(-74, 39), taper(-71, 38), taper(-66, 36), taper(-70, 44), taper(-59, 35), taper(-43, 23), taper(-43, 23), taper(-43, 23), taper(-43, 23), taper(-43, 23), taper(-43, 23), taper(-43, 23), taper(-43, 23), taper(-43, 23), taper(-43, 23)};
+inline pas::Array<std::int32_t, 0, 8> knightMobilityBonus = {taper(-78, -96), taper(-55, -29), taper(-41, 6), taper(-31, 22), taper(-23, 34), taper(-16, 45), taper(-8, 43), taper(-1, 39), taper(9, 24)};
+inline pas::Array<std::int32_t, 0, 15> bishopMobilityBonus = {taper(-62, -46), taper(-49, -15), taper(-38, 9), taper(-31, 26), taper(-22, 37), taper(-15, 46), taper(-12, 52), taper(-8, 54), taper(-5, 56), taper(3, 52), taper(13, 47), taper(39, 37), taper(50, 42), taper(72, 23), taper(37, 37), taper(38, 38)};
+inline pas::Array<std::int32_t, 0, 15> rookMobilityBonus = {taper(-63, -4), taper(-55, 22), taper(-50, 23), taper(-45, 27), taper(-46, 40), taper(-42, 47), taper(-39, 55), taper(-35, 63), taper(-33, 76), taper(-30, 89), taper(-29, 98), taper(-28, 102), taper(-28, 106), taper(-13, 109), taper(-8, 107), taper(24, 24)};
+inline pas::Array<std::int32_t, 0, 31> queenMobilityBonus = {taper(-87, -87), taper(-77, -129), taper(-83, -124), taper(-86, -83), taper(-82, -88), taper(-81, -71), taper(-80, -55), taper(-80, -39), taper(-80, -30), taper(-78, -23), taper(-78, -14), taper(-78, 0), taper(-78, 7), taper(-76, 14), taper(-75, 21), taper(-71, 23), taper(-73, 31), taper(-72, 36), taper(-69, 36), taper(-63, 33), taper(-66, 41), taper(-55, 33), taper(-39, 22), taper(-39, 22), taper(-39, 22), taper(-39, 22), taper(-39, 22), taper(-39, 22), taper(-39, 22), taper(-39, 22), taper(-39, 22), taper(-39, 22)};
 PETIR_EVAL_WEIGHT auto assuredPromotionBonus = 44;
-PETIR_EVAL_WEIGHT auto potentialPasserBonus = 70;
+PETIR_EVAL_WEIGHT auto potentialPasserBonus = 69;
 PETIR_EVAL_WEIGHT auto rookBlockedByKingPenalty = 42;
-inline pas::Array<std::uint8_t, 0, 7> semiOpenFileBonus = {5, 2, 6, 3, 0, 4, 13, 16};
-inline pas::Array<std::uint8_t, 0, 7> openFileBonus = {18, 20, 14, 20, 29, 16, 30, 46};
+inline pas::Array<std::uint8_t, 0, 7> semiOpenFileBonus = {5, 1, 5, 3, 0, 4, 12, 16};
+inline pas::Array<std::uint8_t, 0, 7> openFileBonus = {18, 19, 13, 19, 29, 16, 29, 47};
 inline pas::Array<std::uint8_t, 1, 7> whitePassedPawnRankBonus = {0, 0, 17, 47, 76, 122, 0};
 inline pas::Array<std::uint8_t, 0, 6> blackPassedPawnRankBonus = {0, 122, 76, 47, 17, 0, 0};
 PETIR_EVAL_WEIGHT auto rookBehindPassedPawnBonus = 18;
 PETIR_EVAL_WEIGHT auto blockedPassedPawnPenalty = 15;
-inline pas::Array<std::uint8_t, 1, 7> whiteKingSupportedPasserBonus = {12, 11, 18, 2, 0, 0, 0};
-inline pas::Array<std::uint8_t, 0, 6> blackKingSupportedPasserBonus = {0, 0, 0, 2, 18, 11, 12};
+inline pas::Array<std::uint8_t, 1, 7> whiteKingSupportedPasserBonus = {12, 10, 17, 2, 0, 0, 0};
+inline pas::Array<std::uint8_t, 0, 6> blackKingSupportedPasserBonus = {0, 0, 0, 2, 17, 10, 12};
 PETIR_EVAL_WEIGHT auto blockedBishopPenalty2 = 5;
 PETIR_EVAL_WEIGHT auto offsideBishopPenalty = 20;
 inline pas::Array<std::uint8_t, 0, 8> blockedBishopPenalty = {0, 2, 5, 12, 30, 50, 70, 100, 100};
-inline pas::Array<std::uint8_t, 0, 14> pawnShieldPenalty = {0, 20, 14, 36, 32, 40, 46, 60, 82, 103, 135, 100, 120, 180, 200};
-inline pas::Array<std::int32_t, 0, 63> kingPressurePenalty = {pas::negate(12), pas::negate(42), 0, 35, 66, 93, 126, 157, 189, 213, 249, 271, 281, 276, 313, 317, 310, 359, 385, 400, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500};
+inline pas::Array<std::uint8_t, 0, 14> pawnShieldPenalty = {0, 21, 15, 36, 32, 41, 47, 62, 84, 104, 135, 100, 120, 180, 200};
+inline pas::Array<std::int32_t, 0, 63> kingPressurePenalty = {pas::negate(11), pas::negate(37), 2, 38, 69, 96, 129, 159, 196, 217, 254, 277, 285, 282, 320, 325, 319, 369, 399, 400, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500};
 inline pas::Array<std::uint8_t, 0, 41> endgameScale = {100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 90, 80, 70, 60, 50, 40, 30, 20, 20, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 inline pas::Array<std::uint8_t, 0, 41> rookScale = {0, 0, 0, 0, 0, 0, 0, 0, 20, 20, 20, 20, 20, 20, 20, 20, 50, 60, 70, 70, 80, 90, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100};
 PETIR_EVAL_WEIGHT auto queenKnightEndgameBonus = 9;
 PETIR_EVAL_WEIGHT auto pawnEndgameBonus = 10;
 PETIR_EVAL_WEIGHT auto pawnEndgameBonus2 = 5;
 // Weights that ueval.cpp used to write as plain numbers.
-PETIR_EVAL_WEIGHT auto sideToMoveBonus = 3;
+PETIR_EVAL_WEIGHT auto sideToMoveBonus = 10;
 // Per own pawn once either side has less than 16 non-pawn material:
 // realEndgamePawnBonus when both have at most 10, else earlyEndgamePawnBonus.
-PETIR_EVAL_WEIGHT auto earlyEndgamePawnBonus = -2;
-PETIR_EVAL_WEIGHT auto realEndgamePawnBonus = 3;
+PETIR_EVAL_WEIGHT auto earlyEndgamePawnBonus = -1;
+PETIR_EVAL_WEIGHT auto realEndgamePawnBonus = 2;
 // Three points more piece material, including a queen, against two or three
 // extra enemy pawns.
-PETIR_EVAL_WEIGHT auto queenAgainstPawnsBonus = -16;
+PETIR_EVAL_WEIGHT auto queenAgainstPawnsBonus = -15;
 // Added to safeAdvanceBonus when the passer's side is to move.
-PETIR_EVAL_WEIGHT auto safeAdvanceOnMoveBonus = 79;
+PETIR_EVAL_WEIGHT auto safeAdvanceOnMoveBonus = 81;
 // Added to the connected-passer bonus when the two passers stand one rank
 // apart: the trailing one on its sixth rank or beyond, or on its fifth.
 PETIR_EVAL_WEIGHT auto staggeredFarAdvancedPassersBonus = -58;
-PETIR_EVAL_WEIGHT auto staggeredAdvancedPassersBonus = -24;
+PETIR_EVAL_WEIGHT auto staggeredAdvancedPassersBonus = -25;
 // passedPawnActivity, each times the passer's weight (1, 2 or 3 on its fifth,
 // sixth or seventh rank).
 PETIR_EVAL_WEIGHT auto passerKingDistanceBonus = 6;
@@ -683,13 +696,13 @@ PETIR_EVAL_WEIGHT auto passerSafeStopBonus = 20;
 PETIR_EVAL_WEIGHT auto passerFreePathBonus = 2;
 // endgamePieceActivityAgainst.
 PETIR_EVAL_WEIGHT auto knightBlockadeBonus = 9;
-PETIR_EVAL_WEIGHT auto rookSafeSquareBonus = -3;
-PETIR_EVAL_WEIGHT auto rookPawnTargetBonus = 37;
-PETIR_EVAL_WEIGHT auto rookTiedDefenderPenalty = 22;
+PETIR_EVAL_WEIGHT auto rookSafeSquareBonus = -4;
+PETIR_EVAL_WEIGHT auto rookPawnTargetBonus = 22;
+PETIR_EVAL_WEIGHT auto rookTiedDefenderPenalty = 24;
 // Candidate passers in pawn endings: the bonus by rank (counted from the
 // pawn's side) times candidateFileQuarters / 4, and the three-against-three
 // breakthrough.
-PETIR_EVAL_WEIGHT int candidateRankBonus[] = {0, 53, 48, 73, 78, 100, 0, 0};
+PETIR_EVAL_WEIGHT int candidateRankBonus[] = {0, 53, 48, 74, 78, 89, 0, 0};
 PETIR_EVAL_WEIGHT int candidateFileQuarters[] = {6, 5, 4, 4, 4, 4, 5, 6};
 PETIR_EVAL_WEIGHT auto breakthroughBonus = 16;
 }

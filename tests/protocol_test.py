@@ -67,8 +67,11 @@ with Engine() as e:
         assert_completed_best(e,move)
     # Every search explores root moves from depth 1, including with a retained
     # root entry. Child hash cutoffs still save work on the repeated position.
+    # ucinewgame also clears the history and killer tables, so the node counts
+    # do not depend on what the earlier searches in this test left behind.
     for mtdf,depth in ((False,7),(True,4)):
         e.send('setoption name MTDf value '+str(mtdf).lower())
+        e.send('ucinewgame')
         e.send('setoption name Clear Hash')
         searches=[]
         for run in range(2):

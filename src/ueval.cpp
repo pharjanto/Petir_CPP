@@ -794,6 +794,28 @@ std::int32_t materialImbalanceScore(const petir_header::tdata& position) {
     return 0;
 }
 
+// The threat bonus of one side against the other side's pawns, minor pieces,
+// rooks and queens (see pawnThreatBonus in petir.hpp). pawnAttacks,
+// minorAttacks and rookAttacks are the attacker's squares by piece type,
+// attacks all its attacked squares, defences all the defender's.
+template<bool NativePopcount>
+std::int32_t threatScore(std::uint64_t pawnAttacks, std::uint64_t minorAttacks, std::uint64_t rookAttacks, std::uint64_t attacks,
+                         std::uint64_t defences, std::uint64_t pawns, std::uint64_t minors, std::uint64_t rooks, std::uint64_t queens) {
+    std::int32_t bonus = petir_ueval::pawnThreatBonus[1] * countBits<NativePopcount>(pawnAttacks & minors)
+        + petir_ueval::pawnThreatBonus[2] * countBits<NativePopcount>(pawnAttacks & rooks)
+        + petir_ueval::pawnThreatBonus[3] * countBits<NativePopcount>(pawnAttacks & queens);
+    const auto notByPawn = ~pawnAttacks;
+    bonus += petir_ueval::minorThreatBonus[1] * countBits<NativePopcount>(minorAttacks & rooks & notByPawn)
+        + petir_ueval::minorThreatBonus[2] * countBits<NativePopcount>(minorAttacks & queens & notByPawn);
+    bonus += petir_ueval::rookThreatOnQueenBonus * countBits<NativePopcount>(rookAttacks & queens & notByPawn & ~minorAttacks);
+    const auto hanging = attacks & ~defences;
+    bonus += petir_ueval::hangingPieceBonus[0] * countBits<NativePopcount>(hanging & pawns)
+        + petir_ueval::hangingPieceBonus[1] * countBits<NativePopcount>(hanging & minors)
+        + petir_ueval::hangingPieceBonus[2] * countBits<NativePopcount>(hanging & rooks)
+        + petir_ueval::hangingPieceBonus[3] * countBits<NativePopcount>(hanging & queens);
+    return bonus;
+}
+
 // King danger scaled by the number of attacking pieces: 1 attacker /5,
 // 3 x1.25, 4 x1.5, 5 x2.
 int scaleByAttackers(int danger, int attackers) {
@@ -2216,6 +2238,22 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         const int pressure = std::clamp(blackKingPressure, 0, 63);
         const int danger = scaleByAttackers(petir_ueval::kingPressurePenalty[pressure], blackAttackerCount);
         taperedScore += taper(danger, 0);
+    }
+    // Threats of the side not to move against the side to move's pieces.
+    {
+        const auto whiteMinorAttacks = whiteKnightAttackMap | whiteBishopAttackMap;
+        const auto blackMinorAttacks = blackKnightAttackMap | blackBishopAttackMap;
+        const auto whiteAttacks = whitePawnAttackMap | whiteMinorAttacks | whiteRookAttackMap | whiteQueenAttackMap
+            | petir_bitboard_mask::kingAttacks[whiteKingSquare];
+        const auto blackAttacks = blackPawnAttackMap | blackMinorAttacks | blackRookAttackMap | blackQueenAttackMap
+            | petir_bitboard_mask::kingAttacks[blackKingSquare];
+        if (realSideToMove == petir_header::blackSide) {
+            score += threatScore<NativePopcount>(whitePawnAttackMap, whiteMinorAttacks, whiteRookAttackMap, whiteAttacks, blackAttacks,
+                position.blackPawns, position.blackKnights | position.blackBishops, position.blackRooks, position.blackQueens);
+        } else {
+            score -= threatScore<NativePopcount>(blackPawnAttackMap, blackMinorAttacks, blackRookAttackMap, blackAttacks, whiteAttacks,
+                position.whitePawns, position.whiteKnights | position.whiteBishops, position.whiteRooks, position.whiteQueens);
+        }
     }
     // Only in pawn endings: kings and pawns, no pieces.
     if ((position.whiteNonPawnMaterial == 0) && (position.blackNonPawnMaterial == 0)) {

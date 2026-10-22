@@ -304,6 +304,13 @@ std::vector<Weight> evalWeights() {
         weight.mayCount = unequalPieces;
         weights.push_back(std::move(weight));
     }
+
+    // Threats against the side to move (pawnThreatBonus in petir.hpp), after
+    // the imbalance weights for the same reason.
+    for (int target = 1; target <= 3; ++target) weights.push_back(tied(indexed("pawnThreatBonus", target), {&pawnThreatBonus[target]}));
+    for (int target = 1; target <= 2; ++target) weights.push_back(tied(indexed("minorThreatBonus", target), {&minorThreatBonus[target]}));
+    weights.push_back(scalar("rookThreatOnQueenBonus", rookThreatOnQueenBonus));
+    for (int target = 0; target <= 3; ++target) weights.push_back(tied(indexed("hangingPieceBonus", target), {&hangingPieceBonus[target]}));
     return weights;
 }
 
