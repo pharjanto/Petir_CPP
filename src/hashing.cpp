@@ -99,4 +99,21 @@ bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::
     return result;
 }
 
+bool readHashEntry(std::uint64_t key, std::int32_t sideToMove, std::uint8_t fiftyMoveCounter, std::int32_t& score, std::int32_t& boundType, std::int32_t& depth) {
+    if (sideToMove == petir_header::blackSide) {
+        key = ~key;
+    }
+    auto* bucketEntries = petir_hashing_header::bucket(key);
+    for (int slot = 0; slot < 2; ++slot) {
+        const auto& entry = bucketEntries[slot];
+        if (((entry.flags & petir_hashing_header::usedFlag) == 0) || (entry.key != key)) continue;
+        if (!counterCompatible(entry, fiftyMoveCounter)) return false;
+        score = entry.score;
+        boundType = entry.boundType;
+        depth = entry.depth * 2;
+        return true;
+    }
+    return false;
+}
+
 }

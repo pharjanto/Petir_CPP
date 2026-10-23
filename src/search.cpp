@@ -33,6 +33,15 @@ static const auto lateMoveReductions = [] {
     }
     return table;
 }();
+// Singular extension: a singular hash move gets one more ply, and a non-PV
+// node ends at once when the test finds another move that reaches beta
+// (multi-cut). The test runs from singularMinPlies plies left, needs a hash
+// entry at most singularEntryShortfall plies shallower than the node, and asks
+// whether every other move stays singularMarginPerPly centipawns per ply below
+// the entry's score.
+static constexpr std::int32_t singularMinPlies = 8;
+static constexpr std::int32_t singularEntryShortfall = 3;
+static constexpr std::int32_t singularMarginPerPly = 5;
 
 // search.pas:72
 // Alpha-beta search of one node; scores are from the side to move's point of view.
@@ -43,13 +52,15 @@ static const auto lateMoveReductions = [] {
 //   it is the first move searched, and cutNode otherwise.
 // - afterNullMove: the parent made a null move. inNullMoveTree: an ancestor did.
 //   reduced is not used here.
+// - excludedMove is set only for a singular extension test: the node is then
+//   searched without that move, and without the hash probe, null move or store.
 //
 // Material counts used below: whiteNonPawnMaterial and blackNonPawnMaterial
 // are in pawns (minor piece 3, rook 5, queen 9; 31 for a full set).
 // position.lastCaptureType tells what the last move captured: 0 for a quiet
 // move, whitePawn, whiteKnight (both minor pieces), whiteRook or whiteQueen,
 // and 10 or 11 for a promotion.
-std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit, bool inNullMoveTree, std::int32_t reduced, std::int32_t nodeType) {
+std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit, bool inNullMoveTree, std::int32_t reduced, std::int32_t nodeType, std::int32_t excludedMove) {
     const std::int32_t opponent = opponentOf(sideToMove);
     // Portability guards: stop safely and keep the original 64-ply arrays in bounds.
     if (petir::searchShouldStop()) return 0;
@@ -68,14 +79,21 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     // ---- Hash table ----
     // A usable entry ends the search here, except at PV nodes. The probe also
     // supplies the hash move and may advise against a null move.
+    // A singular extension test skips the probe, since the entry belongs to the
+    // node being tested. It takes the excluded move as its hash move: the move
+    // picker returns that move first and never again, and the loop skips it.
     std::int32_t score{};
     std::int32_t hashMove = petir_header::noMove;
     bool avoidNullMove = false;
-    PETIR_HASH_STAT(petir_hash_stats::Probe hashDiagnostic;)
-    const bool hashHit = petir_hashing::probeHash(position.hashKey, alpha, beta, searchDepth, sideToMove, score, hashMove, avoidNullMove, position.fiftyMoveCounter
-        PETIR_HASH_STAT(, &hashDiagnostic));
-    PETIR_HASH_STAT(petir_hash_stats::record(hashDiagnostic, searchDepth, alpha, beta, position.fiftyMoveCounter, nodeType, hashHit);)
-    if (hashHit && (nodeType != pvNode)) return score;
+    if (excludedMove == petir_header::noMove) {
+        PETIR_HASH_STAT(petir_hash_stats::Probe hashDiagnostic;)
+        const bool hashHit = petir_hashing::probeHash(position.hashKey, alpha, beta, searchDepth, sideToMove, score, hashMove, avoidNullMove, position.fiftyMoveCounter
+            PETIR_HASH_STAT(, &hashDiagnostic));
+        PETIR_HASH_STAT(petir_hash_stats::record(hashDiagnostic, searchDepth, alpha, beta, position.fiftyMoveCounter, nodeType, hashHit);)
+        if (hashHit && (nodeType != pvNode)) return score;
+    } else {
+        hashMove = excludedMove;
+    }
     const std::uint64_t savedHashKey = position.hashKey;
     const bool isNullWindow = (alpha == beta - 1);
 
@@ -109,7 +127,7 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         // Without pieces, zugzwang makes a null move unreliable.
         const bool hasPieces = (petir_tools::nonPawnMaterial(position, sideToMove) >= 3);
         const bool tryNullMove = (plies >= 2) && isNullWindow && !betaIsMateScore && !farBehind
-            && !afterNullMove && !avoidNullMove && hasPieces;
+            && !afterNullMove && !avoidNullMove && hasPieces && (excludedMove == petir_header::noMove);
         if (tryNullMove) {
             // Reduce 4 plies, and more from 6 plies left while more than 24 of
             // non-pawn material remains (not an endgame, where zugzwang and slow
@@ -171,6 +189,44 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     const std::uint64_t pinnedMask = inCheck ? 0 : petir_tools::pinnedPieces(position, sideToMove);
     // After any check or mate-threat extension.
     const std::int32_t remainingPlies = wholePlies(searchDepth);
+
+    // ---- Singular extension test ----
+    // A lower-bound or exact hash entry says the hash move scores at least
+    // entryScore. Search this node again without the hash move, at about half
+    // the depth, with a null window at singularBeta = entryScore - margin. If
+    // every other move fails low, the hash move is singular: extendMove gives
+    // it one more ply. If another move reaches singularBeta while that is at
+    // or above beta, two moves beat beta (multi-cut).
+    bool hashMoveIsSingular = false;
+    const bool trySingularTest = (excludedMove == petir_header::noMove) && (hashMove != petir_header::noMove)
+        && !inCheck && (remainingPlies >= singularMinPlies);
+    if (trySingularTest) {
+        std::int32_t entryScore = 0;
+        std::int32_t entryBound = 0;
+        std::int32_t entryDepth = 0;
+        const bool entryUsable = petir_hashing::readHashEntry(savedHashKey, sideToMove, position.fiftyMoveCounter, entryScore, entryBound, entryDepth)
+            && (entryBound != petir_header::upperBound)
+            && (entryDepth >= searchDepth - singularEntryShortfall * petir_header::plyUnits)
+            && (pas::abs(entryScore) < petir_header::kingValue - 100);
+        if (entryUsable) {
+            const std::int32_t singularBeta = entryScore - singularMarginPerPly * remainingPlies;
+            const std::int32_t singularDepth = (searchDepth - petir_header::plyUnits) / 2;
+            // A PV node expects every other move to fail low, like an all node.
+            const std::int32_t testNodeType = (nodeType == cutNode) ? cutNode : allNode;
+            const std::int32_t testScore = mainSearch(singularDepth, sideToMove, singularBeta - 1, singularBeta, position, afterNullMove, ply,
+                extensionCredit, inNullMoveTree, 0, testNodeType, hashMove);
+            if (petir::searchShouldStop()) return 0;
+            // The test used this node's stack entry; restore the flags children read.
+            frame.checkExtended = false;
+            frame.mateThreatExtended = mateThreatExtended;
+            if (testScore < singularBeta) {
+                hashMoveIsSingular = true;
+            } else if ((singularBeta >= beta) && (nodeType != pvNode)) {
+                return singularBeta;
+            }
+        }
+    }
+
     // Repetitions are recorded per side to move (table index side - 1); after
     // our move the opponent is to move.
     const std::int32_t repetitionSide = opponent - 1;
@@ -320,6 +376,14 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         const bool capturedPieceNotPromotion = (capturedType > petir_header::whitePawn) && (capturedType < 9);
         const bool sameKindAsOpponentTook = (capturedType == savedPosition.lastCaptureType);
         if (!isNullWindow && capturedPieceNotPromotion && sameKindAsOpponentTook && !inCheck && (extensionCredit > 0) && !mateThreatExtended) {
+            newDepth += 8;
+            extensionCredit -= 8;
+            return true;
+        }
+
+        // One ply for a singular hash move (see the singular extension test),
+        // when no extension above has applied.
+        if (hashMoveIsSingular && (move == hashMove) && (extensionCredit > 0)) {
             newDepth += 8;
             extensionCredit -= 8;
             return true;
@@ -515,6 +579,7 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         if (!inCheck) {
             petir_next::nextMove(sideToMove, ply, position, move, phase, hashMove, captureIndex, quietIndex, captureCount, quietMoveCount, quietList, captureList, bestCaptureGain, continuationTables);
             if (move == petir_header::noMove) break;
+            if (move == excludedMove) continue;
             toSquare = moveToSquare(move);
             if (leavesKingAttacked(sideToMove, position, move, pinnedMask)) continue;
             if (canPruneBySee()) {
@@ -666,6 +731,9 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     PETIR_ORDER_STAT(orderStats.finish(bestScore, alpha, beta, legalMoveCount);)
 
     // ---- Result ----
+    // A singular test without any other legal move: the excluded move is the
+    // only one, so report a fail low.
+    if ((legalMoveCount == 0) && (excludedMove != petir_header::noMove)) return alpha;
     if (legalMoveCount == 0) {
         // No legal move: stalemate.
         bestMove = petir_header::noMove;
@@ -677,8 +745,9 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
 
     // Store the result, unless it rests on a repetition draw, which depends on
     // the path to this position. An exact score from a quiet best move also
-    // updates the history tables.
-    if (!bestIsRepetitionDraw) {
+    // updates the history tables. A singular test stores nothing: its result
+    // leaves out a move.
+    if (!bestIsRepetitionDraw && (excludedMove == petir_header::noMove)) {
         if (bestScore <= alpha) {
             petir_hashing::storeHash(savedHashKey, sideToMove, searchDepth, bestMove, bestScore, petir_header::upperBound, position.fiftyMoveCounter);
         } else if (bestScore >= beta) {

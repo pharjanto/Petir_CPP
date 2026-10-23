@@ -899,6 +899,10 @@ bool probeHash(std::uint64_t key, std::int32_t& alpha, std::int32_t& beta, std::
     , petir_hash_stats::Probe* diagnostic = nullptr
 #endif
 );
+// Reads this position's entry without deciding a cutoff: its score, bound type
+// and depth (in eighths of a ply). False when there is none, or its halfmove
+// counter makes it unusable here (the same rule as probeHash).
+bool readHashEntry(std::uint64_t key, std::int32_t sideToMove, std::uint8_t fiftyMoveCounter, std::int32_t& score, std::int32_t& boundType, std::int32_t& depth);
 // Cache hint only: starts loading the entry probeHash will read for this key.
 inline void prefetchHash(std::uint64_t key, std::int32_t sideToMove) {
     if (sideToMove == petir_header::blackSide) key = ~key;
@@ -949,7 +953,8 @@ std::int32_t lazyMarginAdjustment(const petir_header::tdata& position);
 }
 namespace petir_search {
 void clearHistoryTables();
-std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit, bool inNullMoveTree, std::int32_t reduced, std::int32_t nodeType);
+// excludedMove: a singular-extension test searches the node without this move.
+std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit, bool inNullMoveTree, std::int32_t reduced, std::int32_t nodeType, std::int32_t excludedMove = petir_header::noMove);
 std::int32_t quiescenceSearch(std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, std::int32_t checkPlies, std::int32_t ply, std::int32_t extensionCredit, std::int32_t staticEval, std::int32_t nodeType);
 void addHistory(std::int32_t plies, std::int32_t ply, std::int32_t move, std::int32_t sideToMove, std::int32_t piece);
 void updateHistory(std::int32_t sideToMove, std::int32_t piece, std::int32_t toSquare, std::int32_t bonus);
