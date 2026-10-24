@@ -75,6 +75,9 @@ with Engine() as e:
         e.send('setoption name Clear Hash')
         searches=[]
         for run in range(2):
+            # Without the correction the first search learned, the repeat
+            # differs only by the retained hash entries.
+            e.send('setoption name Clear Eval Correction')
             e.send('position startpos moves e2e4 e7e5 g1f3');e.transcript.clear()
             e.send(f'go depth {depth}');move=best(e,5);infos=search_infos(e.transcript)
             assert infos and int(infos[0].split()[2])==1,infos
@@ -84,9 +87,7 @@ with Engine() as e:
             nodes=int(next(line.split()[2] for line in e.transcript if line.startswith('info nodes ')))
             assert nodes>0,e.transcript
             searches.append((move,infos[-1].split()[5],nodes))
-        # The second search starts from the evaluation correction the first one
-        # learned, so its score may move a few points.
-        assert abs(int(searches[0][1])-int(searches[1][1]))<=20 and searches[1][2]<searches[0][2],searches
+        assert searches[0][1]==searches[1][1] and searches[1][2]<searches[0][2],searches
         # A shallow request also searches the root despite the deeper entry.
         e.send('position startpos moves e2e4 e7e5 g1f3');e.transcript.clear()
         e.send('go depth 1');move=best(e,5);infos=search_infos(e.transcript)

@@ -282,6 +282,9 @@ class Console {
             hashTableSize=entries;petir_hashing_header::clearHashTable();
         } else if(name=="OwnBook")useBook=value=="true";
         else if(name=="Clear Hash")petir_hashing_header::clearHashTable();
+        // Not listed in the "uci" reply: lets tests repeat a search without the
+        // evaluation correction the previous search learned.
+        else if(name=="Clear Eval Correction")petir_search::clearEvalCorrection();
         else if(name=="UCI_AnalyseMode")uciAnalyzeMode=value=="true";
         else if(name=="Contempt")drawScore=std::clamp(std::stoi(value),-1000,1000);
         else if(name=="MTDf")useMtdf=value=="true";
