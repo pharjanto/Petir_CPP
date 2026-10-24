@@ -32,6 +32,35 @@ void clearHistoryTables() {
     pas::fillChar(historySucceeded, sizeof(historySucceeded), 0);
 }
 
+// Correction entries hold the error times correctionGrain, within
+// +/-correctionLimit (64 points of evaluation).
+static constexpr std::int32_t correctionIndexBits = 14;
+static constexpr std::int32_t correctionGrain = 256;
+static constexpr std::int32_t correctionLimit = 64 * correctionGrain;
+static pas::Array<pas::Array<std::int16_t, 0, (1 << correctionIndexBits) - 1>, petir_header::whiteSide, petir_header::blackSide> evalCorrectionTable{};
+
+static std::int16_t& correctionEntry(std::int32_t sideToMove, const petir_header::tdata& position) {
+    const std::uint64_t pawnKey = (position.whitePawns * UINT64_C(0x9e3779b97f4a7c15)) ^ (position.blackPawns * UINT64_C(0xc2b2ae3d27d4eb4f));
+    return evalCorrectionTable[sideToMove][static_cast<std::int32_t>(pawnKey >> (64 - correctionIndexBits))];
+}
+
+void clearEvalCorrection() {pas::fillChar(evalCorrectionTable, sizeof(evalCorrectionTable), 0);}
+
+std::int32_t evalCorrection(std::int32_t sideToMove, const petir_header::tdata& position) {return correctionEntry(sideToMove, position) / correctionGrain;}
+
+std::int32_t correctedEval(std::int32_t sideToMove, const petir_header::tdata& position, std::int32_t staticEval) {
+    if (staticEval == petir_header::drawScore) return staticEval;
+    return staticEval + evalCorrection(sideToMove, position);
+}
+
+void updateEvalCorrection(std::int32_t sideToMove, const petir_header::tdata& position, std::int32_t staticEval, std::int32_t score, std::int32_t plies) {
+    if (staticEval == petir_header::drawScore) return;
+    auto& entry = correctionEntry(sideToMove, position);
+    const std::int32_t weight = std::min(plies + 1, 16);
+    const std::int32_t target = std::clamp((score - staticEval) * correctionGrain, -correctionLimit, correctionLimit);
+    entry = static_cast<std::int16_t>((entry * (256 - weight) + target * weight) / 256);
+}
+
 // Moves the entry toward +historyLimit for a bonus and toward -historyLimit for
 // a penalty; the step shrinks as the entry nears that limit.
 void updateHistory(std::int32_t sideToMove, std::int32_t piece, std::int32_t toSquare, std::int32_t bonus) {

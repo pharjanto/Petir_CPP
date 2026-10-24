@@ -33,6 +33,7 @@ void newGame() {
     pas::fillChar(whiteHistory,sizeof(whiteHistory),0);
     pas::fillChar(blackHistory,sizeof(blackHistory),0);
     pas::fillChar(continuationHistory,sizeof(continuationHistory),0);
+    petir_search::clearEvalCorrection();
     petir_tools::clearKillers();
     petir_hashing_header::clearHashTable();
     petir_repetition::clearRepetitionTable();
@@ -44,6 +45,7 @@ void clearSearchState() {
     pas::fillChar(blackHistory,sizeof(blackHistory),0);
     pas::fillChar(continuationHistory,sizeof(continuationHistory),0);
     petir_search::clearHistoryTables();
+    petir_search::clearEvalCorrection();
     petir_tools::clearKillers();
     pas::fillChar(petir_search::currentMove,sizeof(petir_search::currentMove),0);
     pas::fillChar(petir_search::currentPiece,sizeof(petir_search::currentPiece),0);

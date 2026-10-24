@@ -955,6 +955,8 @@ std::int32_t lazyMarginAdjustment(const petir_header::tdata& position);
 }
 namespace petir_search {
 void clearHistoryTables();
+// Empties the static-evaluation correction table (see search_history.hpp).
+void clearEvalCorrection();
 // excludedMove: a singular-extension test searches the node without this move.
 std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit, bool inNullMoveTree, std::int32_t reduced, std::int32_t nodeType, std::int32_t excludedMove = petir_header::noMove);
 std::int32_t quiescenceSearch(std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, petir_header::tdata& position, std::int32_t checkPlies, std::int32_t ply, std::int32_t extensionCredit, std::int32_t staticEval, std::int32_t nodeType);

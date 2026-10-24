@@ -113,6 +113,23 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         }
     }
 
+    // ---- Static evaluation ----
+    // This node's full evaluation from its side to move (no lazy exit, no
+    // correction), made the first time nodeEval() is called; not available in
+    // check. When the parent's futility step 1b already evaluated this
+    // position, its value is reused. Call it only while position holds this
+    // node's board.
+    bool hasNodeEval = false;
+    std::int32_t nodeStaticEval = 0;
+    auto nodeEval = [&]() {
+        if (!hasNodeEval) {
+            hasNodeEval = true;
+            nodeStaticEval = parentFrame.evaluated ? parentFrame.staticEval
+                : petir_ueval::evaluate(position, sideToMove, -petir_header::infinity, petir_header::infinity);
+        }
+        return nodeStaticEval;
+    };
+
     // ---- Null move ----
     // Let the opponent move twice in a row, at reduced depth. If we still reach
     // beta, a real move very likely would too, so the node fails high.
@@ -498,11 +515,13 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
             //     move, plus the threatened piece's value and a margin, with alpha.
             if (remainingPlies <= 8) {
                 // From our side; the flag says the opponent is to move. The
-                // child's quiescence search reuses it as its static evaluation.
+                // frame keeps it uncorrected, from the child's side, and futility
+                // judges it uncorrected. The child's quiescence search reuses the
+                // corrected value as its static evaluation.
                 const std::int32_t evalAfterMove = petir_ueval::evaluate(position, sideToMove, -petir_header::infinity, petir_header::infinity, true);
-                childStaticEval = -evalAfterMove;
                 frame.evaluated = true;
-                frame.staticEval = childStaticEval;
+                frame.staticEval = -evalAfterMove;
+                childStaticEval = correctedEval(opponent, position, -evalAfterMove);
                 const std::int32_t margin = futilityMargins[remainingPlies];
                 const std::int32_t optimisticScore = evalAfterMove + threatenedValue + margin;
                 if ((optimisticScore + 30 < currentAlpha) && !petir_tools::hasFreeSixthRankPawn(sideToMove, position)) {
@@ -734,6 +753,22 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     // A singular test without any other legal move: the excluded move is the
     // only one, so report a fail low.
     if ((legalMoveCount == 0) && (excludedMove != petir_header::noMove)) return alpha;
+    // A result that can correct the static evaluation: outside check, with a
+    // quiet or no best move and a non-mate score. A bound counts only when it
+    // shows the corrected evaluation off in its own direction: a fail high
+    // above it, a fail low below it.
+    if ((excludedMove == petir_header::noMove) && !inCheck && !bestIsRepetitionDraw && (legalMoveCount > 0)
+        && (pas::abs(bestScore) < petir_header::kingValue - 100)) {
+        const std::int32_t bestTo = (bestMove == petir_header::noMove) ? -1 : moveToSquare(bestMove);
+        const bool quietOrNoBest = (bestTo < 0) || ((bestTo != petir_header::enPassantTarget) && ((bestTo > 63) || (position.board[bestTo] == 0)));
+        if (quietOrNoBest) {
+            const std::int32_t staticEval = nodeEval();
+            const std::int32_t corrected = correctedEval(sideToMove, position, staticEval);
+            const bool usable = (bestScore >= beta) ? (bestScore > corrected)
+                : (bestScore <= alpha) ? (bestScore < corrected) : true;
+            if (usable) updateEvalCorrection(sideToMove, position, staticEval, bestScore, remainingPlies);
+        }
+    }
     if (legalMoveCount == 0) {
         // No legal move: stalemate.
         bestMove = petir_header::noMove;

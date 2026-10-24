@@ -1,6 +1,7 @@
 // Quiescence search from search.pas; Delphi source is in original/.
 #include "petir.hpp"
 #include "order_stats.hpp"
+#include "search_history.hpp"
 namespace petir_search {
 namespace {
 // Called only when the side to move is not in check. Prove a legal move exists
@@ -118,7 +119,11 @@ std::int32_t quiescenceSearch(std::int32_t sideToMove, std::int32_t alpha, std::
         if(!hasLegalMoveWhenNotInCheck(position,sideToMove,moveList))return petir_header::drawScore;
         if(ply>=63)return petir_ueval::evaluate(position,sideToMove,alpha,beta);
         if ((staticEval == petir_search::noValue)) {
-            standPat = petir_ueval::evaluate(position, sideToMove, alpha, beta);
+            // Corrected evaluation; the lazy exit is judged against the window
+            // shifted by the correction. A dead draw stays uncorrected.
+            const std::int32_t correction = evalCorrection(sideToMove, position);
+            standPat = petir_ueval::evaluate(position, sideToMove, alpha - correction, beta - correction);
+            if (standPat != petir_header::drawScore) standPat += correction;
         } else {
             standPat = staticEval;
         }

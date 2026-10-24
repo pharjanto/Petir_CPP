@@ -1,6 +1,7 @@
 #include "engine.hpp"
 #include "kpk.hpp"
 #include "hash_stats.hpp"
+#include "search_history.hpp"
 #include <algorithm>
 #include <sstream>
 namespace petir {
@@ -1185,7 +1186,10 @@ int selfTest() {
     petir_search::historyTried[1][28]=petir_search::historySucceeded[1][28]=1024;
     firstKillers[0]=secondKillers[63]=1;
     petir_repetition::addRepetition(start.hashKey,1);
+    petir_search::updateEvalCorrection(petir_header::whiteSide,start,10,74,15);
+    check(petir_search::evalCorrection(petir_header::whiteSide,start)!=0,"evaluation correction learns from a search score");
     clearSearchState();prepareSearch(1,false,0);useWinboard=false;
+    check(petir_search::evalCorrection(petir_header::whiteSide,start)==0,"fresh analysis clears the evaluation correction");
     check(!cachedStart(),"fresh analysis discards previous hash results");
     check(whiteHistory[1][28]==0 && blackHistory[-1][36]==0 && continuationHistory[1][28][1][36]==0 && petir_search::historyTried[1][28]==0 && petir_search::historySucceeded[1][28]==0 && firstKillers[0]==0 && secondKillers[63]==0,"fresh analysis clears all move-ordering history and killers");
     check(petir_repetition::addRepetition(start.hashKey,1)==1,"fresh analysis preserves actual game repetition history");
