@@ -272,6 +272,63 @@ with Engine() as e:
     assert best(e,1)=='a2a3';assert search_infos(e.transcript)[-1].split()[2]=='0',e.transcript
 
 with Engine() as e:
+    e.send('uci');e.until('uciok')
+    assert 'option name UCI_AnalyseMode type check default false' in e.transcript
+    e.send('setoption name Hash value 16')
+    # Compare every completed iteration, excluding wall-clock time. Repeated
+    # analysis must match even after another search has populated the tables.
+    for mtdf in (False,True):
+        e.send('setoption name MTDf value '+str(mtdf).lower())
+        for analysis_command in ('option','infinite'):
+            e.send('setoption name UCI_AnalyseMode value '+str(analysis_command=='option').lower())
+            searches=[]
+            for run in range(2):
+                e.send('position startpos');e.transcript.clear()
+                e.send('go depth 6'+(' infinite' if analysis_command=='infinite' else ''))
+                if analysis_command=='infinite':
+                    e.until('info depth 6 ')
+                    # A root update can precede iteration completion. Compare
+                    # the deterministic prefix before the asynchronous stop.
+                    analysis_infos=search_infos(e.transcript)
+                    e.send('stop')
+                move=best(e,5)
+                if analysis_command=='option':analysis_infos=search_infos(e.transcript)
+                infos=[re.sub(r' time \d+','',line) for line in analysis_infos]
+                assert {int(line.split()[2]) for line in infos}==set(range(1,7)),infos
+                searches.append((move,infos))
+            assert searches[0]==searches[1],searches
+    # Turning analysis off restores retained search state during ordinary play.
+    e.send('setoption name OwnBook value false');e.send('setoption name MTDf value false')
+    e.send('setoption name UCI_AnalyseMode value false')
+    e.send('ucinewgame')
+    nodes=[]
+    for _ in range(2):
+        e.send('position startpos');e.transcript.clear();e.send('go depth 6');best(e,5)
+        nodes.append(int(search_infos(e.transcript)[-1].split()[9]))
+    assert nodes[1]<nodes[0],nodes
+
+with Engine() as e:
+    e.send('xboard');e.send('protover 2');assert 'analyze=1' in e.until('feature ')
+    e.send('new');e.send('force')
+    start_fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    def analysis_iterations(command):
+        e.transcript.clear();e.send(command);e.until('6 ',5)
+        infos=[tuple(line.split()[:2]+line.split()[3:]) for line in e.transcript
+               if re.match(r'^[1-6] -?\d+ \d+ \d+ ',line)]
+        e.send('ping 792');e.until('pong ')
+        assert not any(line.startswith(('move ','bestmove ')) for line in e.transcript),e.transcript
+        return infos
+    first=analysis_iterations('analyze')
+    e.send('exit');barrier(e)
+    assert analysis_iterations('analyze')==first
+    # Changing the board while analyzing starts a fresh search of that board.
+    assert analysis_iterations('setboard '+start_fen)==first
+    after_move=analysis_iterations('usermove e2e4')
+    assert analysis_iterations('undo')==first
+    assert analysis_iterations('usermove e2e4')==after_move
+    e.send('exit');barrier(e)
+
+with Engine() as e:
     e.send('xboard');e.send('protover 2');assert 'setboard=1' in e.until('feature ')
     e.send('new');e.send('force');e.send('usermove e2e4');e.send('usermove e7e5');e.send('undo')
     e.send('ping 123');assert e.until('pong ')=='pong 123'

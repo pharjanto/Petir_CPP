@@ -1179,6 +1179,17 @@ int selfTest() {
     petir_repetition::clearRepetitionTable();
     petir_hashing_header::clearHashTable();
     check(!cachedStart(),"explicit Clear Hash discards the retained result");
+    petir_hashing::storeHash(start.hashKey,1,48,parseMove("e2e4",start,1),777,exactBound,start.fiftyMoveCounter);
+    whiteHistory[1][28]=blackHistory[-1][36]=1024;
+    continuationHistory[1][28][1][36]=1024;
+    petir_search::historyTried[1][28]=petir_search::historySucceeded[1][28]=1024;
+    firstKillers[0]=secondKillers[63]=1;
+    petir_repetition::addRepetition(start.hashKey,1);
+    clearSearchState();prepareSearch(1,false,0);useWinboard=false;
+    check(!cachedStart(),"fresh analysis discards previous hash results");
+    check(whiteHistory[1][28]==0 && blackHistory[-1][36]==0 && continuationHistory[1][28][1][36]==0 && petir_search::historyTried[1][28]==0 && petir_search::historySucceeded[1][28]==0 && firstKillers[0]==0 && secondKillers[63]==0,"fresh analysis clears all move-ordering history and killers");
+    check(petir_repetition::addRepetition(start.hashKey,1)==1,"fresh analysis preserves actual game repetition history");
+    petir_repetition::clearRepetitionTable();
     // A deep exact root entry must guide ordering without replacing depth 1.
     const int rootHint=parseMove("e2e4",start,1);
     petir_hashing::storeHash(start.hashKey,1,48,rootHint,777,exactBound,start.fiftyMoveCounter);

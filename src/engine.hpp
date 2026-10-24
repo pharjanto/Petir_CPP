@@ -6,6 +6,9 @@ using Position=petir_header::tdata;
 inline constexpr const char* startFen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 void initialize(const std::filesystem::path& booksPath);
 void newGame();
+// Discard learned search state and caches after the worker has stopped.
+// The current position, game history, and engine options are preserved.
+void clearSearchState();
 Position fromFen(const std::string& fen,int& sideToMove,int* fullMoveNumber=nullptr);
 std::string toFen(const Position& position,int sideToMove,int fullMoveNumber);
 bool insufficientMaterial(const Position& position);

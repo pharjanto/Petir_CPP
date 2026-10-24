@@ -931,6 +931,7 @@ bool nextRootMove(std::int32_t sideToMove, std::int32_t& move, std::int32_t& pha
 bool nextQuiescenceMove(std::int32_t sideToMove, petir_header::tdata& position, std::int32_t& move, std::int32_t& phase, std::int32_t& currentIndex, std::int32_t& moveCount, std::int32_t& score, std::int32_t checkPlies, petir_header::tmovelist& moveList);
 }
 namespace petir_ueval {
+void clearEvaluationCaches();
 std::int32_t evaluate(const petir_header::tdata& position, std::int32_t sideToMove, std::int32_t alpha, std::int32_t beta, bool opponentPerspective = false);
 // Pawn-owner perspective; caller supplies a frontmost passed pawn.
 int passedPawnActivity(const petir_header::tdata& position, int pawnSquare, bool isWhite);

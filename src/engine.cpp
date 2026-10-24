@@ -37,6 +37,20 @@ void newGame() {
     petir_hashing_header::clearHashTable();
     petir_repetition::clearRepetitionTable();
 }
+void clearSearchState() {
+    petir_hashing_header::clearHashTable();
+    petir_hashing_header::generation=0;
+    pas::fillChar(whiteHistory,sizeof(whiteHistory),0);
+    pas::fillChar(blackHistory,sizeof(blackHistory),0);
+    pas::fillChar(continuationHistory,sizeof(continuationHistory),0);
+    petir_search::clearHistoryTables();
+    petir_tools::clearKillers();
+    pas::fillChar(petir_search::currentMove,sizeof(petir_search::currentMove),0);
+    pas::fillChar(petir_search::currentPiece,sizeof(petir_search::currentPiece),0);
+    pas::fillChar(petir_search::searchStack,sizeof(petir_search::searchStack),0);
+    petir_root::stableBestMove=0;
+    petir_ueval::clearEvaluationCaches();
+}
 Position fromFen(const std::string& fen,int& sideToMove,int* fullMoveNumber) {
     std::istringstream input(fen);
     std::string boardText,sideText,castlingText,enPassantText;

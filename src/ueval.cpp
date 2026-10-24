@@ -2728,6 +2728,11 @@ bool isTheoreticalDraw(const petir_header::tdata& position, std::uint8_t sideToM
     return result;
 }
 
+void clearEvaluationCaches() {
+    std::memset(pawnTable,0,sizeof(pawnTable));
+    std::memset(pawnPotentialTable,0,sizeof(pawnPotentialTable));
+}
+
 // ueval.pas:483
 std::uint8_t popCount(std::uint64_t bits) {
     return static_cast<std::uint8_t>(std::popcount(bits));
