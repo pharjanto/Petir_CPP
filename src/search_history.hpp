@@ -27,12 +27,13 @@ petir_header::piece_to_history* continuationTable(std::int32_t ply);
 // the king's destination for castling, the to-square otherwise.
 std::int32_t historySquare(std::int32_t side, std::int32_t toSquare);
 
-// Static-evaluation correction, keyed by the side to move and the pawn
-// structure: the average error of the static evaluation (search score minus
-// evaluation) seen at earlier nodes. correctedEval adds it to staticEval, a
-// static evaluation of position from sideToMove's side; a dead-draw score is
-// left alone. updateEvalCorrection moves the entry toward score - staticEval,
-// faster with more plies searched. evalCorrection is the correction alone.
+// Static-evaluation correction: the average error of the static evaluation
+// (search score minus evaluation) seen at earlier nodes, from two tables keyed
+// by the side to move and either the pawn structure or the material signature.
+// correctedEval adds it to staticEval, a static evaluation of position from
+// sideToMove's side; a dead-draw score is left alone. updateEvalCorrection
+// moves the entries toward score - staticEval, faster with more plies
+// searched. evalCorrection is the correction alone.
 std::int32_t evalCorrection(std::int32_t sideToMove, const petir_header::tdata& position);
 std::int32_t correctedEval(std::int32_t sideToMove, const petir_header::tdata& position, std::int32_t staticEval);
 void updateEvalCorrection(std::int32_t sideToMove, const petir_header::tdata& position, std::int32_t staticEval, std::int32_t score, std::int32_t plies);

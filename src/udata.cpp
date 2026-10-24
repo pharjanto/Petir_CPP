@@ -235,6 +235,7 @@ void setInitialPosition(petir_header::tdata& position) {
     position.whiteNonPawnMaterial = 31;
     position.blackNonPawnMaterial = 31;
     position.allPieces = (position.blackPieces | position.whitePieces);
+    position.materialSignature = petir_header::countMaterialSignature(position);
     position.hashKey = petir_hashing_header::computeHashKey(position, petir_header::whiteSide);
 }
 

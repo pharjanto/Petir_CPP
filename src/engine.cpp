@@ -212,6 +212,7 @@ bool isConsistent(const Position& position) {
     return position.hashKey==petir_hashing_header::computeHashKey(rebuilt,1)
         && position.materialScore==rebuilt.materialScore && position.whiteNonPawnMaterial==rebuilt.whiteNonPawnMaterial
         && position.blackNonPawnMaterial==rebuilt.blackNonPawnMaterial && position.whiteBishopCount==rebuilt.whiteBishopCount && position.blackBishopCount==rebuilt.blackBishopCount
+        && position.materialSignature==rebuilt.materialSignature
         && position.whitePieces==rebuilt.whitePieces && position.blackPieces==rebuilt.blackPieces && position.allPieces==rebuilt.allPieces
         && position.allPiecesRotated90==rebuilt.allPiecesRotated90 && position.allPiecesA8H1==rebuilt.allPiecesA8H1 && position.allPiecesH8A1==rebuilt.allPiecesH8A1
         && position.whitePawns==rebuilt.whitePawns && position.blackPawns==rebuilt.blackPawns && position.whiteKnights==rebuilt.whiteKnights && position.blackKnights==rebuilt.blackKnights

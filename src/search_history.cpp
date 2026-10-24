@@ -33,32 +33,52 @@ void clearHistoryTables() {
 }
 
 // Correction entries hold the error times correctionGrain, within
-// +/-correctionLimit (64 points of evaluation).
+// +/-correctionLimit (64 points of evaluation). Two tables, one keyed by the
+// pawn structure and one by the material signature (the count of each piece
+// type for each side), are read as one correction: the sum of their entries,
+// within the same limit.
 static constexpr std::int32_t correctionIndexBits = 14;
 static constexpr std::int32_t correctionGrain = 256;
 static constexpr std::int32_t correctionLimit = 64 * correctionGrain;
-static pas::Array<pas::Array<std::int16_t, 0, (1 << correctionIndexBits) - 1>, petir_header::whiteSide, petir_header::blackSide> evalCorrectionTable{};
+using CorrectionTable = pas::Array<pas::Array<std::int16_t, 0, (1 << correctionIndexBits) - 1>, petir_header::whiteSide, petir_header::blackSide>;
+static CorrectionTable evalCorrectionTable{};
+static CorrectionTable materialCorrectionTable{};
 
 static std::int16_t& correctionEntry(std::int32_t sideToMove, const petir_header::tdata& position) {
     const std::uint64_t pawnKey = (position.whitePawns * UINT64_C(0x9e3779b97f4a7c15)) ^ (position.blackPawns * UINT64_C(0xc2b2ae3d27d4eb4f));
     return evalCorrectionTable[sideToMove][static_cast<std::int32_t>(pawnKey >> (64 - correctionIndexBits))];
 }
 
-void clearEvalCorrection() {pas::fillChar(evalCorrectionTable, sizeof(evalCorrectionTable), 0);}
+static std::int16_t& materialCorrectionEntry(std::int32_t sideToMove, const petir_header::tdata& position) {
+    return materialCorrectionTable[sideToMove][static_cast<std::int32_t>((position.materialSignature * UINT64_C(0x9e3779b97f4a7c15)) >> (64 - correctionIndexBits))];
+}
 
-std::int32_t evalCorrection(std::int32_t sideToMove, const petir_header::tdata& position) {return correctionEntry(sideToMove, position) / correctionGrain;}
+void clearEvalCorrection() {
+    pas::fillChar(evalCorrectionTable, sizeof(evalCorrectionTable), 0);
+    pas::fillChar(materialCorrectionTable, sizeof(materialCorrectionTable), 0);
+}
+
+std::int32_t evalCorrection(std::int32_t sideToMove, const petir_header::tdata& position) {
+    const std::int32_t sum = correctionEntry(sideToMove, position) + materialCorrectionEntry(sideToMove, position);
+    return std::clamp(sum, -correctionLimit, correctionLimit) / correctionGrain;
+}
 
 std::int32_t correctedEval(std::int32_t sideToMove, const petir_header::tdata& position, std::int32_t staticEval) {
     if (staticEval == petir_header::drawScore) return staticEval;
     return staticEval + evalCorrection(sideToMove, position);
 }
 
+// Each table moves toward the part of the error the other one leaves.
 void updateEvalCorrection(std::int32_t sideToMove, const petir_header::tdata& position, std::int32_t staticEval, std::int32_t score, std::int32_t plies) {
     if (staticEval == petir_header::drawScore) return;
-    auto& entry = correctionEntry(sideToMove, position);
+    auto& pawnEntry = correctionEntry(sideToMove, position);
+    auto& materialEntry = materialCorrectionEntry(sideToMove, position);
     const std::int32_t weight = std::min(plies + 1, 16);
-    const std::int32_t target = std::clamp((score - staticEval) * correctionGrain, -correctionLimit, correctionLimit);
-    entry = static_cast<std::int16_t>((entry * (256 - weight) + target * weight) / 256);
+    const std::int32_t error = (score - staticEval) * correctionGrain;
+    const std::int32_t pawnTarget = std::clamp(error - materialEntry, -correctionLimit, correctionLimit);
+    const std::int32_t materialTarget = std::clamp(error - pawnEntry, -correctionLimit, correctionLimit);
+    pawnEntry = static_cast<std::int16_t>((pawnEntry * (256 - weight) + pawnTarget * weight) / 256);
+    materialEntry = static_cast<std::int16_t>((materialEntry * (256 - weight) + materialTarget * weight) / 256);
 }
 
 // Moves the entry toward +historyLimit for a bonus and toward -historyLimit for

@@ -33,6 +33,7 @@ void makeWhiteMove(std::int32_t move, petir_header::tdata& position) {
         capturedPiece = position.board[toSquare];
         if ((capturedPiece != 0)) {
             position.fiftyMoveCounter = 0;
+            position.materialSignature -= petir_header::materialSignatureUnit(capturedPiece);
             position.blackPieces = (position.blackPieces & petir_bitboard_mask::squareBitInverted(toSquare));
             if ((capturedPiece == petir_header::blackPawn)) {
                 position.blackPawns = (position.blackPawns & petir_bitboard_mask::squareBitInverted(toSquare));
@@ -223,6 +224,7 @@ void makeBlackMove(std::int32_t move, petir_header::tdata& position) {
         position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[piece][toSquare]);
         if ((capturedPiece != 0)) {
             position.fiftyMoveCounter = 0;
+            position.materialSignature -= petir_header::materialSignatureUnit(capturedPiece);
             position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[capturedPiece][toSquare]);
             position.whitePieces = (position.whitePieces & petir_bitboard_mask::squareBitInverted(toSquare));
             if ((capturedPiece == petir_header::whitePawn)) {
@@ -748,6 +750,7 @@ void castleBlackLong(petir_header::tdata& position) {
 // makemove.pas:230
 void makeBlackEnPassant(petir_header::tdata& position, std::int32_t fromSquare, std::int32_t toSquare) {
     position.fiftyMoveCounter = 0;
+    position.materialSignature -= petir_header::materialSignatureUnit(petir_header::whitePawn);
     (position.materialScore = pas::decrement(position.materialScore, petir_header::pawnValue));
     if ((position.enPassantFile > (fromSquare & 7))) {
         toSquare = pas::sub(fromSquare, 7);
@@ -786,6 +789,7 @@ void makeBlackEnPassant(petir_header::tdata& position, std::int32_t fromSquare, 
 // makemove.pas:279
 void makeWhiteEnPassant(petir_header::tdata& position, std::int32_t fromSquare, std::int32_t toSquare) {
     position.fiftyMoveCounter = 0;
+    position.materialSignature -= petir_header::materialSignatureUnit(petir_header::blackPawn);
     (position.materialScore = pas::increment(position.materialScore, petir_header::pawnValue));
     if ((position.enPassantFile > (fromSquare & 7))) {
         toSquare = pas::add(fromSquare, 9);
@@ -823,12 +827,14 @@ void makeWhiteEnPassant(petir_header::tdata& position, std::int32_t fromSquare, 
 
 // makemove.pas:326
 void promoteWhitePawn(petir_header::tdata& position, std::int32_t square, std::int32_t promotion) {
+    position.materialSignature -= petir_header::materialSignatureUnit(petir_header::whitePawn);
     position.whitePawns = (position.whitePawns & (~petir_bitboard_mask::squareBit(square)));
     (position.materialScore = pas::decrement(position.materialScore, petir_header::pawnValue));
     position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whitePawn][square]);
     if ((promotion == petir_header::queenPromotion)) {
         position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteQueen][square]);
         position.board[square] = petir_header::whiteQueen;
+        position.materialSignature += petir_header::materialSignatureUnit(petir_header::whiteQueen);
         position.whiteQueens = (position.whiteQueens | petir_bitboard_mask::squareBit(square));
         position.bishopsAndQueens = (position.bishopsAndQueens | petir_bitboard_mask::squareBit(square));
         position.rooksAndQueens = (position.rooksAndQueens | petir_bitboard_mask::squareBit(square));
@@ -838,6 +844,7 @@ void promoteWhitePawn(petir_header::tdata& position, std::int32_t square, std::i
         if ((promotion == petir_header::knightPromotion)) {
             position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteKnight][square]);
             position.board[square] = petir_header::whiteKnight;
+            position.materialSignature += petir_header::materialSignatureUnit(petir_header::whiteKnight);
             position.whiteKnights = (position.whiteKnights | petir_bitboard_mask::squareBit(square));
             (position.materialScore = pas::increment(position.materialScore, petir_header::knightValue));
             (position.whiteNonPawnMaterial = pas::increment(position.whiteNonPawnMaterial, 3));
@@ -845,6 +852,7 @@ void promoteWhitePawn(petir_header::tdata& position, std::int32_t square, std::i
             if ((promotion == petir_header::rookPromotion)) {
                 position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteRook][square]);
                 position.board[square] = petir_header::whiteRook;
+                position.materialSignature += petir_header::materialSignatureUnit(petir_header::whiteRook);
                 position.whiteRooks = (position.whiteRooks | petir_bitboard_mask::squareBit(square));
                 position.rooksAndQueens = (position.rooksAndQueens | petir_bitboard_mask::squareBit(square));
                 (position.materialScore = pas::increment(position.materialScore, petir_header::rookValue));
@@ -853,6 +861,7 @@ void promoteWhitePawn(petir_header::tdata& position, std::int32_t square, std::i
                 if ((promotion == petir_header::bishopPromotion)) {
                     position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::whiteBishop][square]);
                     position.board[square] = petir_header::whiteBishop;
+                    position.materialSignature += petir_header::materialSignatureUnit(petir_header::whiteBishop);
                     position.whiteBishops = (position.whiteBishops | petir_bitboard_mask::squareBit(square));
                     position.bishopsAndQueens = (position.bishopsAndQueens | petir_bitboard_mask::squareBit(square));
                     (position.whiteBishopCount = pas::increment(position.whiteBishopCount, 1));
@@ -866,12 +875,14 @@ void promoteWhitePawn(petir_header::tdata& position, std::int32_t square, std::i
 
 // makemove.pas:369
 void promoteBlackPawn(petir_header::tdata& position, std::int32_t square, std::int32_t promotion) {
+    position.materialSignature -= petir_header::materialSignatureUnit(petir_header::blackPawn);
     position.blackPawns = (position.blackPawns & (~petir_bitboard_mask::squareBit(square)));
     (position.materialScore = pas::increment(position.materialScore, petir_header::pawnValue));
     position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackPawn][square]);
     if ((promotion == petir_header::queenPromotion)) {
         position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackQueen][square]);
         position.board[square] = petir_header::blackQueen;
+        position.materialSignature += petir_header::materialSignatureUnit(petir_header::blackQueen);
         position.blackQueens = (position.blackQueens | petir_bitboard_mask::squareBit(square));
         position.rooksAndQueens = (position.rooksAndQueens | petir_bitboard_mask::squareBit(square));
         position.bishopsAndQueens = (position.bishopsAndQueens | petir_bitboard_mask::squareBit(square));
@@ -881,6 +892,7 @@ void promoteBlackPawn(petir_header::tdata& position, std::int32_t square, std::i
         if ((promotion == petir_header::knightPromotion)) {
             position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackKnight][square]);
             position.board[square] = petir_header::blackKnight;
+            position.materialSignature += petir_header::materialSignatureUnit(petir_header::blackKnight);
             position.blackKnights = (position.blackKnights | petir_bitboard_mask::squareBit(square));
             (position.materialScore = pas::decrement(position.materialScore, petir_header::knightValue));
             (position.blackNonPawnMaterial = pas::increment(position.blackNonPawnMaterial, 3));
@@ -888,6 +900,7 @@ void promoteBlackPawn(petir_header::tdata& position, std::int32_t square, std::i
             if ((promotion == petir_header::rookPromotion)) {
                 position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackRook][square]);
                 position.board[square] = petir_header::blackRook;
+                position.materialSignature += petir_header::materialSignatureUnit(petir_header::blackRook);
                 position.blackRooks = (position.blackRooks | petir_bitboard_mask::squareBit(square));
                 position.rooksAndQueens = (position.rooksAndQueens | petir_bitboard_mask::squareBit(square));
                 (position.materialScore = pas::decrement(position.materialScore, petir_header::rookValue));
@@ -896,6 +909,7 @@ void promoteBlackPawn(petir_header::tdata& position, std::int32_t square, std::i
                 if ((promotion == petir_header::bishopPromotion)) {
                     position.hashKey = (position.hashKey ^ petir_header::zobristPieceKeys[petir_header::blackBishop][square]);
                     position.board[square] = petir_header::blackBishop;
+                    position.materialSignature += petir_header::materialSignatureUnit(petir_header::blackBishop);
                     position.blackBishops = (position.blackBishops | petir_bitboard_mask::squareBit(square));
                     position.bishopsAndQueens = (position.bishopsAndQueens | petir_bitboard_mask::squareBit(square));
                     (position.blackBishopCount = pas::increment(position.blackBishopCount, 1));

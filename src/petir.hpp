@@ -11,6 +11,7 @@ namespace petir_hash_stats { struct Probe; }
 #include <xmmintrin.h>
 #include <new>
 #endif
+#include <bit>
 namespace petir_header {
 inline constexpr auto version = 1;
 inline constexpr auto a1 = 0;
@@ -206,6 +207,8 @@ struct tdata {
     bool pawnEnding;
     std::int32_t materialScore;
     std::uint64_t hashKey;
+    // Count of each piece type for each side, kept up to date by the moves.
+    std::uint64_t materialSignature;
     std::uint64_t whitePieces;
     std::uint64_t blackPieces;
     std::uint64_t allPieces;
@@ -227,6 +230,27 @@ struct tdata {
     std::uint64_t rooksAndQueens;
     std::uint64_t bishopsAndQueens;
 };
+// One piece in tdata::materialSignature, four bits per count: white pawns,
+// knights, bishops, rooks and queens from bit 0, black ones from bit 20.
+// Kings are not counted.
+inline constexpr std::uint64_t materialSignatureUnit(std::int32_t piece) {
+    if (piece > 0 && piece < whiteKing) return UINT64_C(1) << (4 * (piece - whitePawn));
+    if (piece < 0 && piece > blackKing) return UINT64_C(1) << (20 + 4 * (blackPawn - piece));
+    return 0;
+}
+// The material signature counted from the piece bitboards.
+inline std::uint64_t countMaterialSignature(const tdata& position) {
+    return std::popcount(position.whitePawns) * materialSignatureUnit(whitePawn)
+        + std::popcount(position.whiteKnights) * materialSignatureUnit(whiteKnight)
+        + std::popcount(position.whiteBishops) * materialSignatureUnit(whiteBishop)
+        + std::popcount(position.whiteRooks) * materialSignatureUnit(whiteRook)
+        + std::popcount(position.whiteQueens) * materialSignatureUnit(whiteQueen)
+        + std::popcount(position.blackPawns) * materialSignatureUnit(blackPawn)
+        + std::popcount(position.blackKnights) * materialSignatureUnit(blackKnight)
+        + std::popcount(position.blackBishops) * materialSignatureUnit(blackBishop)
+        + std::popcount(position.blackRooks) * materialSignatureUnit(blackRook)
+        + std::popcount(position.blackQueens) * materialSignatureUnit(blackQueen);
+}
 extern std::int32_t hashStoreCount;
 extern std::int32_t hashCollisionCount;
 extern std::int32_t futilityFailCount;

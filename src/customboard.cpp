@@ -167,6 +167,7 @@ void rebuildBitboards(petir_header::tdata& position) {
     position.fiftyMoveCounter = 0;
     position.rooksAndQueens = (((position.blackQueens | position.whiteQueens) | position.blackRooks) | position.whiteRooks);
     position.bishopsAndQueens = (((position.blackQueens | position.whiteQueens) | position.blackBishops) | position.whiteBishops);
+    position.materialSignature = petir_header::countMaterialSignature(position);
 }
 
 // customboard.pas:14
