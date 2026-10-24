@@ -15,6 +15,9 @@ std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideTo
     bool scoreDropExtended{};
     std::int32_t lastBestMove{};
     std::int32_t stableIterations{};
+    // Percent of the original soft time removed by stability cuts so far.
+    std::int32_t stabilityCutPercent = 0;
+    static constexpr std::int32_t stabilityFloorPercent = 50;
     requestedDepth=std::clamp(requestedDepth,1,49);
     currentDepth = 1;
     completedMove=completedDepth=completedScore=0;completedPv.clear();
@@ -96,7 +99,16 @@ std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideTo
         if ((((lastBestMove == petir_header::rootBestMove) && petir_root::newPvFound) && (currentDepth > 7))) {
             (stableIterations = pas::increment(stableIterations, 1));
             if ((((stableIterations >= 2) && (stableIterations <= 12)) && (iterationScore > pas::negate(20)))) {
-                petir::searchTime.adjustSoft(-static_cast<double>(petir_uiterative::timeReductionPercent[stableIterations])/100);
+                // Stability cuts stop at stabilityFloorPercent of the original
+                // soft time unless the root move is singular.
+                const std::int32_t tableCut = petir_uiterative::timeReductionPercent[stableIterations];
+                std::int32_t cut = std::clamp(100 - stabilityFloorPercent - stabilityCutPercent, 0, tableCut);
+                if ((cut < tableCut) && petir::searchTime.isTimed()) {
+                    if (petir_root::rootMoveIsSingular(sideToMove, position, petir_header::rootBestMove, iterationScore, currentDepth)) cut = tableCut;
+                    if (interrupted()) return restoreCompleted();
+                }
+                stabilityCutPercent += cut;
+                if (cut > 0) petir::searchTime.adjustSoft(-static_cast<double>(cut)/100);
             }
         } else {
             if ((stableIterations >= 4)) {

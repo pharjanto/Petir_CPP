@@ -288,4 +288,56 @@ std::int32_t searchRoot(std::int32_t searchDepth, std::int32_t sideToMove, std::
     return result;
 }
 
+// Root singularity test for time management: search every root move except
+// bestMove with a null window at bestScore - margin, at about half the
+// iteration depth, and stop at the first move that reaches it. Positions in
+// check and mate scores never count as singular.
+bool rootMoveIsSingular(std::int32_t sideToMove, petir_header::tdata position, std::int32_t bestMove, std::int32_t bestScore, std::int32_t iterationDepth) {
+    static constexpr std::int32_t marginCp = 50;
+    static constexpr std::int32_t extensionCredit = 80;
+    if (bestMove == petir_header::noMove) return false;
+    if (pas::abs(bestScore) >= petir_header::kingValue - 100) return false;
+    const bool inCheck = (sideToMove == petir_header::whiteSide) ? petir_tools::whiteInCheck(position) : petir_tools::blackInCheck(position);
+    if (inCheck) return false;
+    const std::int32_t singularBeta = bestScore - marginCp;
+    const std::int32_t testDepth = (iterationDepth * petir_header::plyUnits - petir_header::plyUnits) / 2;
+    const std::int32_t childDepth = testDepth - petir_header::plyUnits;
+    const std::int32_t opponent = pas::sub(3, sideToMove);
+    const std::int32_t repetitionSide = pas::sub(2, sideToMove);
+    const petir_header::tdata savedPosition = position;
+    std::int32_t phase = 0, move = 0, captureIndex = 0, quietIndex = 0, captureCount = 0, quietMoveCount = 0, bestCaptureGain = 0;
+    petir_header::tmovelist quietList{};
+    petir_header::tmovelist captureList{};
+    petir_search::clearHistoryTables();
+    while (true) {
+        if (petir::searchShouldStop(true)) return false;
+        pas::fillChar(petir_search::searchStack, sizeof(petir_search::searchStack), 0);
+        petir_next::nextMove(sideToMove, 0, position, move, phase, bestMove, captureIndex, quietIndex, captureCount, quietMoveCount, quietList, captureList, bestCaptureGain, nullptr);
+        if (move == petir_header::noMove) break;
+        if (move == bestMove) continue;
+        if (petir::searchLimits.restrictRootMoves &&
+            std::find(petir::searchLimits.rootMoves.begin(), petir::searchLimits.rootMoves.end(), move) == petir::searchLimits.rootMoves.end()) continue;
+        if (sideToMove == petir_header::whiteSide) {
+            petir_makemove::makeWhiteMove(move, position);
+            if (petir_tools::whiteInCheck(position)) {position = savedPosition; continue;}
+        } else {
+            petir_makemove::makeBlackMove(move, position);
+            if (petir_tools::blackInCheck(position)) {position = savedPosition; continue;}
+        }
+        petir_search::searchStack[0].phase = phase;
+        const std::uint64_t childHashKey = position.hashKey;
+        std::int32_t score = 0;
+        if (petir_repetition::addRepetition(childHashKey, repetitionSide) != 2) {
+            petir_search::currentMove[0] = move;
+            petir_search::currentPiece[0] = savedPosition.board[(move & 127)];
+            score = pas::negate(petir_search::mainSearch(childDepth, opponent, pas::negate(singularBeta), pas::add(pas::negate(singularBeta), 1), position, false, 1, extensionCredit, false, 0, petir_search::cutNode));
+        }
+        petir_repetition::removeRepetition(childHashKey, repetitionSide);
+        position = savedPosition;
+        if (petir::searchShouldStop(true)) return false;
+        if (score >= singularBeta) return false;
+    }
+    return true;
+}
+
 }

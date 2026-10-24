@@ -964,6 +964,9 @@ void penaliseQuiets(std::int32_t plies, std::int32_t sideToMove, const petir_hea
 }
 namespace petir_root {
 std::int32_t searchRoot(std::int32_t searchDepth, std::int32_t sideToMove, std::int32_t rootNodeType, std::int32_t alpha, std::int32_t beta, petir_header::tdata position, bool afterNullMove, std::int32_t ply, std::int32_t extensionCredit);
+// Whether every root move other than bestMove stays below bestScore - margin
+// at about half the iteration depth (time management only).
+bool rootMoveIsSingular(std::int32_t sideToMove, petir_header::tdata position, std::int32_t bestMove, std::int32_t bestScore, std::int32_t iterationDepth);
 }
 namespace petir_uiterative {
 std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideToMove, std::int32_t rootNodeType, petir_header::tdata position);
