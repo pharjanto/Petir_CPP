@@ -1,5 +1,5 @@
 """End-to-end move deadlines, including late clocks and long +0 games."""
-import contextlib, json, queue, re, subprocess, sys, threading, time
+import contextlib, json, os, queue, re, subprocess, sys, threading, time
 
 class Engine:
     def __init__(self, executable):
@@ -48,9 +48,10 @@ def timed_reply(engine,command,prefix,remaining,label,allow_terminal=False):
 
 with contextlib.ExitStack() as stack:
     e=Engine(executable);stack.callback(e.close)
-    # Two genuine search workers provide concurrent CPU pressure while the GUI
-    # reader threads drain their output. Timing assertions retain the real clock.
-    for _ in range(2):
+    # Default: two search workers provide concurrent CPU pressure. A run pinned
+    # to one core can disable these with PETIR_TEST_LOAD_WORKERS=0, retaining
+    # all deadline assertions without oversubscribing that core.
+    for _ in range(int(os.environ.get('PETIR_TEST_LOAD_WORKERS','2'))):
         load=Engine(executable);stack.callback(load.close)
         load.send('position startpos');load.send('go infinite')
     boards=(

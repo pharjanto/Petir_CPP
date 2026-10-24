@@ -54,6 +54,9 @@ void TimeManager::adjustSoft(double fraction) {
 }
 bool searchShouldStop(bool force) {
     if(petir_header::stopSearch.load(std::memory_order_relaxed))return true;
+    // Exhausting a node budget stops computation, but ponder/infinite must
+    // still hold their result until ponderhit/stop from the protocol thread.
+    if(searchLimits.nodes>=0 && petir_header::nodeCount>=searchLimits.nodes)return true;
     if(!searchTime.expired(force))return false;
     petir_header::stopSearch.store(true,std::memory_order_relaxed);
     return true;

@@ -21,8 +21,16 @@ std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideTo
     const auto interrupted=[] {return petir::searchShouldStop(true);};
     const auto recordCompletedIteration=[&](int depth,int score) {
         completedMove=petir_header::rootBestMove;completedDepth=depth;completedScore=score;
-        const int savedNodeCount=petir_header::nodeCount;
-        try {completedPv=petir_pv::getPv(position,sideToMove,depth+(petir_header::useMtdf?3:4)).text;}
+        const auto savedNodeCount=petir_header::nodeCount;
+        try {
+            if(petir::searchLimits.restrictRootMoves) {
+                auto child=position;
+                if(sideToMove==petir_header::whiteSide)petir_makemove::makeWhiteMove(completedMove,child);
+                else petir_makemove::makeBlackMove(completedMove,child);
+                completedPv=petir_notation::moveToNotation(completedMove,position.enPassantFile,sideToMove).text+" "+
+                    petir_pv::getPv(child,3-sideToMove,depth+3).text;
+            } else completedPv=petir_pv::getPv(position,sideToMove,depth+(petir_header::useMtdf?3:4)).text;
+        }
         catch(...) {petir_header::nodeCount=savedNodeCount;throw;}
         petir_header::nodeCount=savedNodeCount;
         const auto bestMoveText=petir_notation::moveToNotation(completedMove,position.enPassantFile,sideToMove).text;
@@ -31,6 +39,11 @@ std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideTo
         completedPv=bestMoveText+(firstSpace==std::string::npos?"":completedPv.substr(firstSpace));
     };
     const auto restoreCompleted=[] {petir_header::rootBestMove=completedMove;return completedScore;};
+    const auto requestedMateFound=[] {
+        return petir::searchLimits.mate>0 && completedScore>=petir_header::kingValue-100 &&
+            completedScore<=petir_header::kingValue &&
+            petir_header::kingValue-completedScore<=2LL*petir::searchLimits.mate-1;
+    };
     petir_root::originalTimeLimit = petir_header::timeLimit;
     petir_header::maxSearchPly = pas::round((currentDepth * 2.00));
     iterationScore = 0;
@@ -39,7 +52,7 @@ std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideTo
     petir_uiterative::extendedTimeLimit = petir_header::timeLimit;
     petir_root::earlyStopTimeLimit = (petir_header::timeLimit / 3);
     petir_header::maxExtensionFactor = 1.00;
-    if (petir_uiterative::hasForcedMove(sideToMove, position)) {
+    if (!petir::searchLimits.restrictRootMoves && !petir::searchLimits.mate && petir_uiterative::hasForcedMove(sideToMove, position)) {
         completedMove=petir_header::rootBestMove;
         return result;
     }
@@ -53,6 +66,7 @@ std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideTo
     }
     if(interrupted())return restoreCompleted();
     recordCompletedIteration(currentDepth,score);
+    if(requestedMateFound())return completedScore;
     lastIterationMs=petir::TimeManager::nowMs()-iterationStartMs;
     if (petir_header::testSolved) {
         return result;
@@ -74,6 +88,7 @@ std::int32_t iterativeDeepening(std::int32_t requestedDepth, std::int32_t sideTo
             return restoreCompleted();
         }
         recordCompletedIteration(currentDepth,iterationScore);
+        if(requestedMateFound())return completedScore;
         if ((((iterationScore < 0) && (score >= 10)) && (!scoreDropExtended))) {
             petir::searchTime.adjustSoft(0.5);
             scoreDropExtended = true;
@@ -142,7 +157,9 @@ std::int32_t mtdfSearch(petir_header::tdata position, std::uint8_t searchDepth, 
                 beta = pas::add(beta, pas::round((momentum * pas::sub(score, previousScore))));
             }
             if ((petir_header::rootBestMove != previousBestMove)) {
-                pvText = petir_pv::getPv(position, sideToMove, pas::add((searchDepth / petir_header::plyUnits), 3));
+                pvText = petir::searchLimits.restrictRootMoves?
+                    petir_notation::moveToNotation(petir_header::rootBestMove,position.enPassantFile,sideToMove):
+                    petir_pv::getPv(position, sideToMove, pas::add((searchDepth / petir_header::plyUnits), 3));
                 petir_pv::printPv(petir_header::outputLineNumber, pvText, (searchDepth / petir_header::plyUnits), pas::floor((static_cast<double>(pas::sub(pas::tickCount(), petir_header::searchStartTime)) / (1000))), score);
             }
             raisedOnce = true;

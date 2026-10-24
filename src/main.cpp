@@ -19,6 +19,11 @@ void emit(const std::string& text) {std::lock_guard lock(outputMutex);std::cout<
 std::int64_t nowMs() {return petir::TimeManager::nowMs();}
 std::vector<std::string> splitWords(const std::string& line) {std::istringstream stream(line);std::vector<std::string> tokens;for(std::string token;stream>>token;)tokens.push_back(token);return tokens;}
 std::string joinWords(const std::vector<std::string>& tokens,std::size_t first,std::size_t last) {std::string text;for(;first<last;++first) {if(!text.empty())text+=' ';text+=tokens[first];}return text;}
+std::string uciScore(int score) {
+    if(score>=kingValue-100 && score<=kingValue)return "mate "+std::to_string((kingValue-score+1)/2);
+    if(score<=-kingValue+100 && score>=-kingValue)return "mate "+std::to_string(-(kingValue+score)/2);
+    return "cp "+std::to_string(score);
+}
 class Console {
     enum class Mode { UCI, WinBoard } mode=Mode::UCI;
     petir::Position position=gamePosition;
@@ -122,11 +127,11 @@ class Console {
             // depth 0 and the legal move being returned. Do not reuse old search data.
             const auto pv=isCompleted?petir_uiterative::completedPv:petir::moveText(bestMove,rootPosition,rootSide);
             const auto depthText=std::to_string(isCompleted?petir_uiterative::completedDepth:0);
-            const auto scoreText=std::to_string(isCompleted?petir_uiterative::completedScore:petir_ueval::evaluate(rootPosition,rootSide,-20500,20500));
+            const auto score=isCompleted?petir_uiterative::completedScore:petir_ueval::evaluate(rootPosition,rootSide,-20500,20500);
             const auto elapsed=petir::searchTime.elapsedMs();
             const auto nodesText=std::to_string(wasSearched?nodeCount:0);
-            if(mode==Mode::UCI)emit("info depth "+depthText+" score cp "+scoreText+" time "+std::to_string(elapsed)+" nodes "+nodesText+" pv "+pv);
-            else emit(depthText+" "+scoreText+" "+std::to_string(elapsed/10)+" "+nodesText+" "+pv);
+            if(mode==Mode::UCI)emit("info depth "+depthText+" score "+(isCompleted?uciScore(score):"cp "+std::to_string(score))+" time "+std::to_string(elapsed)+" nodes "+nodesText+" pv "+pv);
+            else emit(depthText+" "+std::to_string(score)+" "+std::to_string(elapsed/10)+" "+nodesText+" "+pv);
         }
         if(mode==Mode::UCI) {
             if(wasSearched)emit("info nodes "+std::to_string(nodeCount)+" time "+std::to_string(petir::searchTime.elapsedMs()));
@@ -142,12 +147,13 @@ class Console {
             reportResult(petir::legalMoves(position,sideToMove));
         } else emit((rootSide==1?petir_tools::whiteInCheck(rootPosition):petir_tools::blackInCheck(rootPosition))?(rootSide==1?"0-1 {Checkmate}":"1-0 {Checkmate}"):"1/2-1/2 {Stalemate}");
     }
-    void beginSearch(int requestedDepth,const petir::ClockLimits& limits,std::int64_t receivedAt,bool ponder=false,bool infinite=false) {
+    void beginSearch(int requestedDepth,const petir::ClockLimits& limits,std::int64_t receivedAt,bool ponder=false,bool infinite=false,const petir::SearchLimits& controls={}) {
         finish();auto rootPosition=position;int rootSide=sideToMove;
         const auto budget=petir::TimeManager::allocate(limits);
         petir::searchTime.reset();
         petir::searchTime.start(ponder || infinite?petir::TimeBudget{}:budget,receivedAt);
         auto legalMoveList=petir::legalMoves(rootPosition,rootSide);
+        if(controls.restrictRootMoves)legalMoveList=controls.rootMoves;
         if(mode==Mode::WinBoard && !infinite && reportResult(legalMoveList))return;
         publishResult=true;
         const int fallback=fallbackMove(rootPosition,rootSide,legalMoveList);
@@ -156,21 +162,22 @@ class Console {
             publishMove(rootPosition,rootSide,fallback,false);return;
         }
         petir::prepareSearch(rootSide,limits.timed,INT32_MAX);
+        petir::searchLimits=controls;
         petir::searchTime.start(ponder || infinite?petir::TimeBudget{}:budget,receivedAt);
         pondering=ponder;holdResult=ponder || infinite;ponderBudget=budget;
         useWinboard=true;
         pas::output=[this](const pas::String& text) {
             if(!postThinking || petir::searchShouldStop(true))return;
             if(mode==Mode::WinBoard) {emit(text.text);return;}
-            std::istringstream stream(text.text);int depth=0,score=0,centiseconds=0,nodes=0;std::string pv;
-            if(stream>>depth>>score>>centiseconds>>nodes) {std::getline(stream,pv);emit("info depth "+std::to_string(depth)+" score cp "+std::to_string(score)+" time "+std::to_string(centiseconds*10)+" nodes "+std::to_string(nodes)+" pv"+pv);}
+            std::istringstream stream(text.text);int depth=0,score=0,centiseconds=0;std::int64_t nodes=0;std::string pv;
+            if(stream>>depth>>score>>centiseconds>>nodes) {std::getline(stream,pv);emit("info depth "+std::to_string(depth)+" score "+uciScore(score)+" time "+std::to_string(centiseconds*10)+" nodes "+std::to_string(nodes)+" pv"+pv);}
         };
         worker=std::thread([this,rootPosition,rootSide,legalMoveList,fallback,requestedDepth,ponder,infinite]() mutable {
             int bestMove=fallback;bool wasSearched=false,fromBook=false;
             try {
                 if(!legalMoveList.empty() && !petir::searchShouldStop(true)) {
                     int bookMove=0;
-                    if(useBook && !ponder && !infinite)bookMove=petir_opening_book::findBookMove(rootPosition,rootSide);
+                    if(useBook && !ponder && !infinite && !petir::searchLimits.restrictRootMoves && petir::searchLimits.nodes<0 && !petir::searchLimits.mate)bookMove=petir_opening_book::findBookMove(rootPosition,rootSide);
                     if(bookMove) {bestMove=bookMove;fromBook=true;}
                     else if(!petir::searchShouldStop(true)) {wasSearched=true;(void)petir_uiterative::iterativeDeepening(std::clamp(requestedDepth,1,49),rootSide,maxNode,rootPosition);bestMove=rootBestMove;}
                     if(std::find(legalMoveList.begin(),legalMoveList.end(),bestMove)==legalMoveList.end())bestMove=fallback;
@@ -206,10 +213,36 @@ class Console {
         gamePlyCount=(fullMoveNumber-1)*2+(sideToMove==2);rebuildRepetition();
     }
     void uciGo(const std::vector<std::string>& tokens,std::int64_t receivedAt) {
+        finish(); // Move validation uses the same board helpers as the worker.
         int depth=49,movesToGo=0;std::int64_t moveTime=0,whiteTime=0,blackTime=0,whiteIncrement=0,blackIncrement=0;
         bool ponder=false,infinite=false,depthGiven=false,clockGiven=false,moveTimeGiven=false;
+        petir::SearchLimits controls;
+        const auto isGoKeyword=[](const std::string& word) {
+            return word=="searchmoves" || word=="ponder" || word=="infinite" || word=="depth" || word=="nodes" || word=="mate" ||
+                word=="movetime" || word=="wtime" || word=="btime" || word=="winc" || word=="binc" || word=="movestogo";
+        };
         for(std::size_t index=1;index<tokens.size();++index) {
-            if(tokens[index]=="ponder")ponder=true;
+            if(tokens[index]=="searchmoves") {
+                controls.restrictRootMoves=true;
+                while(index+1<tokens.size() && !isGoKeyword(tokens[index+1])) {
+                    const auto& text=tokens[++index];
+                    if(text.size()==5 && (text.back()=='r' || text.back()=='b'))throw std::invalid_argument("searchmoves supports queen and knight promotions only");
+                    const int move=petir::parseMove(text,position,sideToMove);
+                    if(!move)throw std::invalid_argument("Illegal searchmove "+text);
+                    if(std::find(controls.rootMoves.begin(),controls.rootMoves.end(),move)==controls.rootMoves.end())controls.rootMoves.push_back(move);
+                }
+            } else if(tokens[index]=="nodes") {
+                if(index+1==tokens.size())throw std::invalid_argument("nodes needs a count");
+                std::size_t end=0;const auto& text=tokens[++index];
+                controls.nodes=std::max<std::int64_t>(0,std::stoll(text,&end));
+                if(end!=text.size())throw std::invalid_argument("Invalid node count");
+            } else if(tokens[index]=="mate") {
+                if(index+1==tokens.size())throw std::invalid_argument("mate needs a move count");
+                std::size_t end=0;const auto& text=tokens[++index];
+                const auto value=std::stoll(text,&end);
+                if(end!=text.size() || value<1)throw std::invalid_argument("mate needs a positive move count");
+                controls.mate=static_cast<int>(std::min<std::int64_t>(value,INT32_MAX));
+            } else if(tokens[index]=="ponder")ponder=true;
             else if(tokens[index]=="infinite")infinite=true;
             else if(index+1<tokens.size() && (tokens[index]=="depth" || tokens[index]=="movetime" || tokens[index]=="wtime" || tokens[index]=="btime" || tokens[index]=="winc" || tokens[index]=="binc" || tokens[index]=="movestogo")) {
                 auto value=std::clamp<std::int64_t>(std::stoll(tokens[++index]),0,INT32_MAX);const auto& key=tokens[index-1];
@@ -227,8 +260,9 @@ class Console {
         limits.remainingMs=sideToMove==1?whiteTime:blackTime;limits.incrementMs=sideToMove==1?whiteIncrement:blackIncrement;
         limits.movesToGo=movesToGo;limits.overheadMs=moveOverheadMs;
         if(moveTimeGiven)limits.moveTimeMs=clockGiven?std::min(moveTime,limits.remainingMs):moveTime;
-        if(!limits.timed && !depthGiven)infinite=true;
-        beginSearch(depth,limits,receivedAt,ponder,infinite);
+        if(controls.mate)depth=static_cast<int>(std::min<std::int64_t>(depth,2LL*controls.mate));
+        if(!limits.timed && !depthGiven && controls.nodes<0 && !controls.mate)infinite=true;
+        beginSearch(depth,limits,receivedAt,ponder,infinite,controls);
     }
     void setOption(const std::vector<std::string>& tokens) {
         finish();auto valueToken=std::find(tokens.begin(),tokens.end(),"value");std::size_t valueIndex=valueToken-tokens.begin();

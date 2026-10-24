@@ -3,6 +3,12 @@
 namespace petir_pv {
 // pv.pas:52
 pas::String getPv(petir_header::tdata position, std::int32_t sideToMove, std::int32_t maxLength) {
+    // PV reconstruction is bookkeeping, not work charged to a node budget.
+    // Keep legacy counting for searches without an explicit node limit.
+    struct RestoreNodes {
+        std::int64_t saved=petir_header::nodeCount;
+        ~RestoreNodes() {if(petir::searchLimits.nodes>=0)petir_header::nodeCount=saved;}
+    } restoreNodes;
     pas::String result{};
     std::int32_t score{};
     std::int32_t hashMove{};

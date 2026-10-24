@@ -33,7 +33,7 @@ std::int32_t hashTableSize = 4194304; // 64 MiB / 16 bytes per hash entry.
 std::int32_t resignThreshold = pas::negate(900);
 std::int32_t resignCounter{};
 std::int32_t drawCounter{};
-std::int32_t nodeCount{};
+std::int64_t nodeCount{};
 std::int32_t quiescenceNodeCount{};
 bool stalemateFound{};
 std::int32_t playerMode{};

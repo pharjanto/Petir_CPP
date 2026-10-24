@@ -5,6 +5,7 @@
 #include <sstream>
 
 namespace petir {
+SearchLimits searchLimits;
 using namespace petir_header;
 void initialize(const std::filesystem::path& booksPath) {
     static_assert(sizeof(void*)==8,"Build Petir for a 64-bit target");
@@ -161,7 +162,8 @@ std::uint64_t perft(Position position,int sideToMove,int depth) {
 void prepareSearch(int sideToMove,bool timed,int timeLimitTicks) {
     PETIR_HASH_STAT(petir_hash_stats::reset();)
     searchTime.reset();
-    evalTimeMs=hashStoreCount=hashCollisionCount=lazyMarginNodeStamp=maxDepthReached=seeTimeMs=moveGenTimeMs=etcCutoffCount=futilityFailCount=futilityTryCount=nodeCount=maxSearchPly=hashHitCount=0;
+    searchLimits={};nodeCount=0;
+    evalTimeMs=hashStoreCount=hashCollisionCount=lazyMarginNodeStamp=maxDepthReached=seeTimeMs=moveGenTimeMs=etcCutoffCount=futilityFailCount=futilityTryCount=maxSearchPly=hashHitCount=0;
     stalemateFound=false;engineSide=sideToMove;timeElapsed=0;stopSearch=false;
     adjustedLazyMargin1=lazyMargin1;adjustedLazyMargin2=lazyMargin2;adjustedLazyMargin3=lazyMargin3;
     testSolved=false;petir_tools::clearKillers();errorCount=0;

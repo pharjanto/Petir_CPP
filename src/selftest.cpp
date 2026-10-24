@@ -1203,6 +1203,23 @@ int selfTest() {
         (void)petir_uiterative::iterativeDeepening(requested,1,maxNode,start);
         check(petir_uiterative::completedDepth==requested,"honor shallow depth limit "+std::to_string(requested));
     }
+    newGame();
+    const int restrictedMove=parseMove("a2a3",start,1);
+    prepareSearch(1,false,0);useWinboard=false;
+    petir::searchLimits.restrictRootMoves=true;petir::searchLimits.rootMoves={restrictedMove};
+    (void)petir_uiterative::iterativeDeepening(3,1,maxNode,start);
+    check(rootBestMove==restrictedMove && petir_uiterative::completedDepth==3,"searchmoves restricts the root through every iteration");
+    check(!cachedStart(),"restricted root scores do not enter the unrestricted hash table");
+    auto restrictedChild=start;makeMove(restrictedChild,1,restrictedMove);
+    int childAlpha=-20500,childBeta=20500,childScore=0,childMove=0;bool childAvoidNull=false;
+    check(petir_hashing::probeHash(restrictedChild.hashKey,childAlpha,childBeta,8,2,childScore,childMove,childAvoidNull,restrictedChild.fiftyMoveCounter),"restricted root searches retain ordinary child hash entries");
+    prepareSearch(1,false,0);
+    check(!petir::searchLimits.restrictRootMoves && petir::searchLimits.nodes<0 && petir::searchLimits.mate==0,"search preparation resets all UCI search limits");
+    petir::searchLimits.nodes=std::int64_t(INT32_MAX)+5;nodeCount=INT32_MAX;
+    auto countedChild=start;makeMove(countedChild,1,restrictedMove);
+    check(nodeCount==std::int64_t(INT32_MAX)+1 && !petir::searchShouldStop(),"node counting and budgets continue past the 32-bit boundary");
+    nodeCount=petir::searchLimits.nodes;
+    check(petir::searchShouldStop() && !stopSearch.load(),"node exhaustion stops computation without releasing a held protocol result");
     newGame();prepareSearch(1,false,0);useWinboard=true;
     int previousBest=0;
     pas::output=[&](const pas::String& output) {

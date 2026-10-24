@@ -2,6 +2,7 @@
 #pragma once
 #include "pascal_runtime.hpp"
 #include "time_manager.hpp"
+#include "search_limits.hpp"
 #ifdef PETIR_HASH_STATS
 namespace petir_hash_stats { struct Probe; }
 #endif
@@ -255,7 +256,7 @@ extern std::int32_t hashTableSize;
 extern std::int32_t resignThreshold;
 extern std::int32_t resignCounter;
 extern std::int32_t drawCounter;
-extern std::int32_t nodeCount;
+extern std::int64_t nodeCount;
 extern std::int32_t quiescenceNodeCount;
 extern bool stalemateFound;
 extern std::int32_t playerMode;

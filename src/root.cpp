@@ -1,6 +1,7 @@
 // Faithful translation of root.pas; Delphi source is in original/.
 #include "petir.hpp"
 #include "order_stats.hpp"
+#include <algorithm>
 namespace petir_root {
 std::int32_t stableBestMove{};
 std::int32_t earlyStopTimeLimit{};
@@ -40,7 +41,6 @@ std::int32_t searchRoot(std::int32_t searchDepth, std::int32_t sideToMove, std::
     std::uint64_t childHashKey{};
     std::uint64_t rootHashKey{};
     std::int32_t checkerCount{};
-    std::int32_t startNodeCount{};
     std::int32_t savedExtensionCredit{};
     std::int32_t remainingPlies{};
     std::int32_t toSquare{};
@@ -50,7 +50,6 @@ std::int32_t searchRoot(std::int32_t searchDepth, std::int32_t sideToMove, std::
     remainingPlies = (searchDepth / petir_header::plyUnits);
     if(petir::searchShouldStop(true))return 0;
     pas::fillChar(petir_search::currentMove, sizeof(petir_search::currentMove), 0);
-    startNodeCount = petir_header::nodeCount;
     hashMove = petir_header::noMove;
     // Retain the hash move for ordering, but search root moves at every depth.
     // Cached score cutoffs remain available below the root.
@@ -126,6 +125,8 @@ std::int32_t searchRoot(std::int32_t searchDepth, std::int32_t sideToMove, std::
         if ((move == petir_header::noMove)) {
             break;
         }
+        if(petir::searchLimits.restrictRootMoves &&
+            std::find(petir::searchLimits.rootMoves.begin(),petir::searchLimits.rootMoves.end(),move)==petir::searchLimits.rootMoves.end())continue;
         toSquare = (pas::shiftRight(move, 7) & 127);
         if ((toSquare <= 63)) {
             capturedPiece = position.board[toSquare];
@@ -272,6 +273,9 @@ std::int32_t searchRoot(std::int32_t searchDepth, std::int32_t sideToMove, std::
     if (petir::searchShouldStop(true)) {
         return result;
     }
+    // A score over a subset of moves is not a bound for the unrestricted root.
+    // Child entries still describe ordinary positions and can be retained.
+    if(petir::searchLimits.restrictRootMoves)return result;
     if ((bestScore <= alpha)) {
         petir_hashing::storeHash(rootHashKey, sideToMove, searchDepth, petir_header::rootBestMove, bestScore, petir_header::upperBound, position.fiftyMoveCounter);
     } else {

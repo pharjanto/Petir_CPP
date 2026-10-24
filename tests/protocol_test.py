@@ -186,6 +186,92 @@ with Engine() as e:
         assert searches[1][1]>0 and searches[3][1]>0,searches
 
 with Engine() as e:
+    e.send('uci');e.until('uciok')
+    # Restricted roots bypass OwnBook and retained root moves, and preserve a
+    # matching final PV even when there is only one permitted move.
+    for mtdf in (False,True):
+        e.send('setoption name MTDf value '+str(mtdf).lower())
+        e.send('position startpos');e.send('go depth 3');best(e)
+        for command,allowed in (
+            ('go searchmoves a2a3 depth 3',{'a2a3'}),
+            ('go depth 3 searchmoves a2a3 h2h3 a2a3',{'a2a3','h2h3'}),
+            ('go searchmoves h2h3 movetime 0',{'h2h3'}),
+            ('go searchmoves a2a3 nodes 0',{'a2a3'}),
+        ):
+            e.send('position startpos');e.transcript.clear();e.send(command)
+            move=best(e,3);assert move in allowed,(command,e.transcript)
+            assert_completed_best(e,move)
+            assert all(line.split(' pv ')[1].split()[0] in allowed for line in search_infos(e.transcript)),e.transcript
+        for fen,move in (
+            ('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1','e1g1'),
+            ('7k/8/8/3pP3/8/8/8/K7 w - d6 0 1','e5d6'),
+            ('7k/7R/6K1/8/8/8/8/8 b - - 0 1','h8g8'),
+            ('7k/8/8/8/8/8/4r3/4K3 w - - 0 1','e1d1'),
+            ('7k/P7/8/8/8/8/8/7K w - - 0 1','a7a8q'),
+            ('7k/P7/8/8/8/8/8/7K w - - 0 1','a7a8n'),
+            ('7k/8/8/8/8/8/p7/7K b - - 0 1','a2a1n'),
+        ):
+            e.send('position fen '+fen);e.transcript.clear()
+            e.send('go searchmoves '+move+' depth 3');assert best(e,3)==move,e.transcript
+            assert_completed_best(e,move)
+            assert int(search_infos(e.transcript)[-1].split()[2])==3,e.transcript
+        # Node-only requests finish without stop, including budgets smaller
+        # than one iteration. Capture-rich roots also exercise quiescence.
+        for position in ('startpos','fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1'):
+            for count in (0,1,2,17,50,500,2000,10000):
+                e.send('position '+position);e.transcript.clear();e.send(f'go nodes {count}')
+                move=best(e,3);assert move!='0000';assert_completed_best(e,move)
+                for line in search_infos(e.transcript):
+                    assert 0<=int(line.split()[9])<=count,(count,e.transcript)
+                for line in e.transcript:
+                    if line.startswith('info nodes '):assert int(line.split()[2])<=count,(count,e.transcript)
+        e.send('position startpos');e.transcript.clear();e.send('go nodes 4294967296 depth 1')
+        assert best(e,3)!='0000';assert search_infos(e.transcript)[-1].split()[2]=='1',e.transcript
+        # Limits reset for subsequent searches, including after nodes 0.
+        e.send('go nodes 0');best(e)
+        e.send('setoption name OwnBook value false');e.transcript.clear();e.send('go depth 3')
+        assert best(e,3)!='0000';assert search_infos(e.transcript)[-1].split()[2]=='3',e.transcript
+        for position in ('startpos','fen 7k/6Q1/6K1/8/8/8/8/8 b - - 0 1'):
+            e.send('position '+position);e.send('go searchmoves depth 2');assert best(e,3)=='0000'
+    # Explicit infinite/ponder requests hold results even after their node
+    # budget is exhausted; the GUI remains responsive while they wait.
+    for mode,release in (('infinite','stop'),('ponder','ponderhit')):
+        e.send('position startpos');e.transcript.clear();e.send(f'go {mode} nodes 50 searchmoves a2a3')
+        time.sleep(.05);e.send('isready');e.until('readyok')
+        assert not any(line.startswith('bestmove ') for line in e.transcript),e.transcript
+        e.send(release);assert best(e,3)=='a2a3'
+    # Reject unsupported promotions/illegal moves without changing the board.
+    for move in ('a7a8r','a7a8b','a7a6'):
+        e.send('position fen 7k/P7/8/8/8/8/8/7K w - - 0 1')
+        e.send('go depth 2 searchmoves '+move);e.until('info string ',allow_error=True)
+        e.send('go depth 2 searchmoves a7a8q');assert best(e,3)=='a7a8q'
+    # Mate uses full moves, reports UCI mate scores, and obeys other limits.
+    for mtdf in (False,True):
+        e.send('setoption name MTDf value '+str(mtdf).lower())
+        for fen,move in (('7k/8/5KQ1/8/8/8/8/8 w - - 0 1','g6g7'),
+                         ('8/8/8/8/8/5kq1/8/7K b - - 0 1','g3g2')):
+            e.send('setoption name Clear Hash');e.send('position fen '+fen);e.transcript.clear()
+            e.send('go mate 1 searchmoves '+move);assert best(e,3)==move,e.transcript
+            assert search_infos(e.transcript)[-1].split()[3:6]==['score','mate','1'],e.transcript
+        for fen in ('k7/8/8/1QK5/8/8/8/8 w - - 0 1','8/8/8/8/1qk5/8/8/K7 b - - 0 1'):
+            e.send('setoption name Clear Hash');e.send('position fen '+fen);e.transcript.clear()
+            e.send('go mate 2');assert best(e,3)!='0000'
+            assert search_infos(e.transcript)[-1].split()[3:6]==['score','mate','2'],e.transcript
+            assert int(search_infos(e.transcript)[-1].split()[2])<=4,e.transcript
+        e.send('setoption name Clear Hash')
+        e.send('position fen 7k/8/5K2/6Q1/8/8/8/8 b - - 0 1');e.transcript.clear()
+        e.send('go mate 1');assert best(e,3)=='h8h7'
+        assert search_infos(e.transcript)[-1].split()[3:6]==['score','mate','-1'],e.transcript
+        for command,depth in (('go mate 1',2),('go mate 3 depth 1',1),('go depth 1 mate 3',1)):
+            e.send('position startpos');e.transcript.clear();e.send(command)
+            assert best(e,3)!='0000';assert int(search_infos(e.transcript)[-1].split()[2])==depth,e.transcript
+        e.send('position startpos');e.transcript.clear();e.send('go mate 10 nodes 50')
+        assert best(e,3)!='0000'
+        assert all(int(line.split()[9])<=50 for line in search_infos(e.transcript)),e.transcript
+    e.send('position startpos');e.transcript.clear();e.send('go nodes 1000000000 movetime 0 searchmoves a2a3')
+    assert best(e,1)=='a2a3';assert search_infos(e.transcript)[-1].split()[2]=='0',e.transcript
+
+with Engine() as e:
     e.send('xboard');e.send('protover 2');assert 'setboard=1' in e.until('feature ')
     e.send('new');e.send('force');e.send('usermove e2e4');e.send('usermove e7e5');e.send('undo')
     e.send('ping 123');assert e.until('pong ')=='pong 123'
