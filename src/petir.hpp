@@ -741,6 +741,8 @@ struct anonymous_record_1 {
     std::int32_t legalMoveCount;
     bool mateThreatExtended;
     bool checkExtended;
+    // The move searched from this node gives check and has SEE < 0.
+    bool checkLosesMaterial;
     bool evaluated;
     std::int32_t staticEval;
 };
@@ -755,6 +757,8 @@ inline constexpr auto cutNode = 1;
 extern pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> historyTried;
 extern pas::Array<pas::Array<std::int32_t, 0, 63>, pas::negate(6), 6> historySucceeded;
 extern pas::Array<petir_search::anonymous_record_1, 0, 63> searchStack;
+// After move from before gives after: true when it gives check and has SEE < 0.
+bool checkLosesMaterial(std::int32_t sideToMove, const petir_header::tdata& before, petir_header::tdata& after, std::int32_t move);
 extern std::int32_t researchCount;
 inline pas::Array<std::int32_t, 2, 8> futilityMargins = {16, 22, 30, 37, 55, 92, 142};
 inline constexpr auto noValue = pas::negate(200000);

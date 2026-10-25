@@ -12,6 +12,14 @@ pas::Array<std::int32_t, 0, 63> currentMove{};
 pas::Array<std::int32_t, 0, 63> currentPiece{};
 pas::Array<petir_search::anonymous_record_1, 0, 63> searchStack{};
 std::int32_t researchCount{};
+
+bool checkLosesMaterial(std::int32_t sideToMove, const petir_header::tdata& before, petir_header::tdata& after, std::int32_t move) {
+    const std::int32_t toSquare = moveToSquare(move);
+    // Castling and en passant have no SEE.
+    if (toSquare > 63) return false;
+    if (!isInCheck(opponentOf(sideToMove), after)) return false;
+    return petir_usee::staticExchange(sideToMove, before, moveFromSquare(move), toSquare) < 0;
+}
 // SEE pruning of quiet moves: up to this many plies left, a quiet move whose SEE
 // (in pawns) is below the margin is skipped. The margin grows with the square of
 // the plies left: 0 up to 2 plies (any loss), -1 at 3, -2 at 4, -3 at 5, -4 at 6.
@@ -39,9 +47,9 @@ static const auto lateMoveReductions = [] {
 // entry at most singularEntryShortfall plies shallower than the node, and asks
 // whether every other move stays singularMarginPerPly centipawns per ply below
 // the entry's score.
-static constexpr std::int32_t singularMinPlies = 8;
+static constexpr std::int32_t singularMinPlies = 6;
 static constexpr std::int32_t singularEntryShortfall = 3;
-static constexpr std::int32_t singularMarginPerPly = 5;
+static constexpr std::int32_t singularMarginPerPly = 4;
 
 // search.pas:72
 // Alpha-beta search of one node; scores are from the side to move's point of view.
@@ -98,18 +106,16 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     const bool isNullWindow = (alpha == beta - 1);
 
     // ---- Check extension ----
-    // 3/4 of a ply while plenty of pieces remain or the window is open,
-    // otherwise 1/4 of a ply.
+    // Only at a PV node, and only when the checking move has SEE >= 0: 3/4 of
+    // a ply, or 1/2 of a ply when non-pawn material (both sides) is 12 or
+    // less. The first evasion charges the credit what was extended.
     const bool inCheck = isInCheck(sideToMove, position);
+    std::int32_t checkExtensionCost = 0;
     if (inCheck) {
         frame.checkExtended = true;
-        if (extensionCredit > 0) {
-            const bool manyPieces = (position.whiteNonPawnMaterial + position.blackNonPawnMaterial > 24);
-            if (manyPieces || !isNullWindow) {
-                searchDepth += 6;
-            } else {
-                searchDepth += 2;
-            }
+        if ((extensionCredit > 0) && !isNullWindow && !parentFrame.checkLosesMaterial) {
+            checkExtensionCost = (position.whiteNonPawnMaterial + position.blackNonPawnMaterial > 12) ? 6 : 4;
+            searchDepth += checkExtensionCost;
         }
     }
 
@@ -630,8 +636,8 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
                     nodeExtensionCredit -= petir_header::doubleCheckExtension;
                 }
                 // Pays for the check extension made on entry.
-                extensionCredit -= petir_header::checkExtension;
-                nodeExtensionCredit -= petir_header::checkExtension;
+                extensionCredit -= checkExtensionCost;
+                nodeExtensionCredit -= checkExtensionCost;
             }
         }
 
@@ -686,6 +692,7 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
                     newDepth = 8;
                     extensionCredit = 0;
                 }
+                frame.checkLosesMaterial = checkLosesMaterial(sideToMove, savedPosition, position, move);
                 // Principal variation search: the first move gets the full
                 // window and later moves a null window.
                 const std::int32_t childNodeType = (legalMoveCount == 1) ? -nodeType : cutNode;

@@ -158,6 +158,7 @@ std::int32_t searchRoot(std::int32_t searchDepth, std::int32_t sideToMove, std::
         petir_search::searchStack[ply].phase = phase;
         petir_search::searchStack[ply].legalMoveCount = legalMoveCount;
         petir_search::searchStack[ply].mateThreatExtended = false;
+        petir_search::searchStack[ply].checkLosesMaterial = petir_search::checkLosesMaterial(sideToMove, savedPosition, position, move);
         childHashKey = position.hashKey;
         if ((petir_repetition::addRepetition(position.hashKey, pas::sub(2, sideToMove)) == 2)) {
             score = 0;
@@ -325,6 +326,7 @@ bool rootMoveIsSingular(std::int32_t sideToMove, petir_header::tdata position, s
             if (petir_tools::blackInCheck(position)) {position = savedPosition; continue;}
         }
         petir_search::searchStack[0].phase = phase;
+        petir_search::searchStack[0].checkLosesMaterial = petir_search::checkLosesMaterial(sideToMove, savedPosition, position, move);
         const std::uint64_t childHashKey = position.hashKey;
         std::int32_t score = 0;
         if (petir_repetition::addRepetition(childHashKey, repetitionSide) != 2) {
