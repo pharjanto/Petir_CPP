@@ -826,6 +826,40 @@ int scaleByAttackers(int danger, int attackers) {
     return danger;
 }
 
+// King-pressure points for the attacker's safe checks on the king at
+// kingSquare (safeCheckPressure, by piece type, for one or more than one
+// checking square). A checking square is one from which an attacking knight,
+// bishop, rook or queen that reaches it would give check; it is safe when no
+// attacking piece stands on it and the defender does not attack it. A queen
+// check next to the king also counts when another attacking piece covers the
+// square and the king is its only defender. Squares counted for the rooks are
+// not counted again for the queen, nor the queen's for the bishops.
+// rookMoves: the attacker's rook attacks without the lines added for a rook
+// lined up with the queen. attackerSupport: everything the attacker attacks
+// except with the queen. defenderAttacks: everything the defender attacks
+// except with the king and queen.
+int safeCheckPoints(const petir_header::tdata& position, int kingSquare, std::uint64_t attackerPieces,
+                    std::uint64_t knightAttackMap, std::uint64_t bishopAttackMap, std::uint64_t rookMoves,
+                    std::uint64_t queenAttackMap, std::uint64_t attackerSupport,
+                    std::uint64_t defenderAttacks, std::uint64_t defenderQueenAttacks) {
+    const auto rookRays = petir_bitboard_mask::horizontalAttacks[kingSquare][(position.allPieces >> ((kingSquare & 56) + 1)) & 63]
+        | petir_bitboard_mask::verticalAttacks[kingSquare][(position.allPiecesRotated90 >> petir_bitboard_mask::verticalShift[kingSquare]) & 63];
+    const auto bishopRays = petir_bitboard_mask::diagonalA8H1Attacks[kingSquare][(position.allPiecesA8H1 >> petir_bitboard_mask::diagonalA8H1Shift[kingSquare]) & 255]
+        | petir_bitboard_mask::diagonalH8A1Attacks[kingSquare][(position.allPiecesH8A1 >> petir_bitboard_mask::diagonalH8A1Shift[kingSquare]) & 255];
+    const auto kingDefence = petir_bitboard_mask::kingAttacks[kingSquare];
+    const auto safe = ~attackerPieces & ~defenderAttacks & ~defenderQueenAttacks & ~kingDefence;
+    const auto queenSafe = ~attackerPieces & ~defenderAttacks & ~defenderQueenAttacks & (~kingDefence | attackerSupport);
+    const auto rookChecks = rookRays & rookMoves & safe;
+    const auto queenChecks = (rookRays | bishopRays) & queenAttackMap & queenSafe & ~rookChecks;
+    const auto bishopChecks = bishopRays & bishopAttackMap & safe & ~queenChecks;
+    const auto knightChecks = petir_bitboard_mask::knightAttacks[kingSquare] & knightAttackMap & safe;
+    int points = 0;
+    const std::uint64_t checks[4] = {knightChecks, bishopChecks, rookChecks, queenChecks};
+    for (int piece = 0; piece < 4; ++piece)
+        if (checks[piece] != 0) points += petir_ueval::safeCheckPressure[piece][(checks[piece] & (checks[piece] - 1)) != 0];
+    return points;
+}
+
 // The main evaluation. Returns the score from sideToMove's point of view.
 // opponentPerspective: the caller wants sideToMove's score although the other
 // side is to move in `position`; realSideToMove below is the side actually to
@@ -2087,6 +2121,9 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
     if ((weightedTerm == 2)) {
         (score = pas::decrement(score, petir_ueval::twoBishopsKingAttackBonus));
     }
+    // The squares the rooks themselves reach, before the queens add their lines.
+    const auto whiteRookMoves = whiteRookAttackMap;
+    const auto blackRookMoves = blackRookAttackMap;
     // White queens: piece-square value, mobility, attacks on Black's king zone
     // (always counted, unlike the other pieces), and outside an early endgame
     // closeness to Black's king. A rook lined up with the queen on a
@@ -2208,7 +2245,11 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         (whiteKingPressure = pas::increment(whiteKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
         attacks = ((whiteKingZone & blackRookAttackMap) & blackBishopAttackMap);
         (whiteKingPressure = pas::increment(whiteKingPressure, countBits<NativePopcount>(attacks)));
-        const int pressure = std::clamp(whiteKingPressure, 0, 63);
+        whiteKingPressure += safeCheckPoints(position, whiteKingSquare, position.blackPieces,
+            blackKnightAttackMap, blackBishopAttackMap, blackRookMoves, blackQueenAttackMap,
+            blackPawnAttackMap | blackKnightAttackMap | blackBishopAttackMap | blackRookAttackMap | petir_bitboard_mask::kingAttacks[blackKingSquare],
+            whitePawnAttackMap | whiteKnightAttackMap | whiteBishopAttackMap | whiteRookAttackMap, whiteQueenAttackMap);
+        const int pressure = std::clamp(whiteKingPressure, 0, 95);
         const int danger = scaleByAttackers(petir_ueval::kingPressurePenalty[pressure], whiteAttackerCount);
         taperedScore -= taper(danger, 0);
     }
@@ -2235,7 +2276,11 @@ std::int32_t evaluateImpl(const petir_header::tdata& position, std::int32_t side
         (blackKingPressure = pas::increment(blackKingPressure, pas::mul(countBits<NativePopcount>(attacks), 2)));
         attacks = ((blackKingZone & whiteRookAttackMap) & whiteBishopAttackMap);
         (blackKingPressure = pas::increment(blackKingPressure, countBits<NativePopcount>(attacks)));
-        const int pressure = std::clamp(blackKingPressure, 0, 63);
+        blackKingPressure += safeCheckPoints(position, blackKingSquare, position.whitePieces,
+            whiteKnightAttackMap, whiteBishopAttackMap, whiteRookMoves, whiteQueenAttackMap,
+            whitePawnAttackMap | whiteKnightAttackMap | whiteBishopAttackMap | whiteRookAttackMap | petir_bitboard_mask::kingAttacks[whiteKingSquare],
+            blackPawnAttackMap | blackKnightAttackMap | blackBishopAttackMap | blackRookAttackMap, blackQueenAttackMap);
+        const int pressure = std::clamp(blackKingPressure, 0, 95);
         const int danger = scaleByAttackers(petir_ueval::kingPressurePenalty[pressure], blackAttackerCount);
         taperedScore += taper(danger, 0);
     }

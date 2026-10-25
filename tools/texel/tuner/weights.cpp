@@ -285,7 +285,7 @@ std::vector<Weight> evalWeights() {
     weights.push_back(scalar("castledWrongSideBonus", castledWrongSideBonus));
     weights.push_back(scalar("missingFianchettoPenalty", missingFianchettoPenalty));
     addTable(weights, "pawnShieldPenalty", pawnShieldPenalty, 0, 14);
-    addTable(weights, "kingPressurePenalty", kingPressurePenalty, 0, 63);
+    addTable(weights, "kingPressurePenalty", kingPressurePenalty, 0, 95);
 
     // Material imbalances (minorForPawnsBonus in petir.hpp). Last, so that the
     // weights before keep their indices. They count only when the non-pawn
