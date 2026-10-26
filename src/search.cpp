@@ -46,10 +46,12 @@ static const auto lateMoveReductions = [] {
 // (multi-cut). The test runs from singularMinPlies plies left, needs a hash
 // entry at most singularEntryShortfall plies shallower than the node, and asks
 // whether every other move stays singularMarginPerPly centipawns per ply below
-// the entry's score.
+// the entry's score. A multi-cut also needs the entry's score to stay at or
+// above beta after multiCutMarginPerPly centipawns per ply.
 static constexpr std::int32_t singularMinPlies = 6;
 static constexpr std::int32_t singularEntryShortfall = 3;
-static constexpr std::int32_t singularMarginPerPly = 4;
+static constexpr std::int32_t singularMarginPerPly = 3;
+static constexpr std::int32_t multiCutMarginPerPly = 4;
 
 // search.pas:72
 // Alpha-beta search of one node; scores are from the side to move's point of view.
@@ -218,8 +220,9 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     // entryScore. Search this node again without the hash move, at about half
     // the depth, with a null window at singularBeta = entryScore - margin. If
     // every other move fails low, the hash move is singular: extendMove gives
-    // it one more ply. If another move reaches singularBeta while that is at
-    // or above beta, two moves beat beta (multi-cut).
+    // it one more ply. If another move reaches singularBeta while the entry's
+    // score less the multi-cut margin is at or above beta, two moves beat beta
+    // (multi-cut).
     bool hashMoveIsSingular = false;
     const bool trySingularTest = (excludedMove == petir_header::noMove) && (hashMove != petir_header::noMove)
         && !inCheck && (remainingPlies >= singularMinPlies);
@@ -244,7 +247,7 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
             frame.mateThreatExtended = mateThreatExtended;
             if (testScore < singularBeta) {
                 hashMoveIsSingular = true;
-            } else if ((singularBeta >= beta) && (nodeType != pvNode)) {
+            } else if ((entryScore - multiCutMarginPerPly * remainingPlies >= beta) && (nodeType != pvNode)) {
                 return singularBeta;
             }
         }
