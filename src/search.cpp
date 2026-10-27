@@ -52,6 +52,51 @@ static constexpr std::int32_t singularMinPlies = 6;
 static constexpr std::int32_t singularEntryShortfall = 3;
 static constexpr std::int32_t singularMarginPerPly = 3;
 static constexpr std::int32_t multiCutMarginPerPly = 4;
+// ProbCut: at a non-PV node with probCutMinPlies or more plies left, a capture
+// that reaches probCutBeta = beta + probCutMargin in a search probCutReduction
+// plies shallower makes the node fail high. probCutMargin 0 turns it off.
+#ifndef PETIR_PROBCUT_MARGIN
+#define PETIR_PROBCUT_MARGIN 150
+#endif
+#ifndef PETIR_PROBCUT_MIN_PLIES
+#define PETIR_PROBCUT_MIN_PLIES 5
+#endif
+static constexpr std::int32_t probCutMargin = PETIR_PROBCUT_MARGIN;
+static constexpr std::int32_t probCutMinPlies = PETIR_PROBCUT_MIN_PLIES;
+static constexpr std::int32_t probCutReduction = 4;
+// ProbCut is skipped in endgames: non-PV nodes need at least probCutMinMaterial
+// of non-pawn material, both sides together. 0 tries it everywhere.
+#ifndef PETIR_PROBCUT_MIN_MATERIAL
+#define PETIR_PROBCUT_MIN_MATERIAL 13
+#endif
+static constexpr std::int32_t probCutMinMaterial = PETIR_PROBCUT_MIN_MATERIAL;
+// Futility pruning: up to futilityMaxPlies plies left, late quiet moves are
+// skipped when the corrected static evaluation plus futilityBase +
+// futilityPerPly * plies is at or below alpha. futilityMaxPlies 0 turns it off.
+#ifndef PETIR_FUTILITY_MAX_PLIES
+#define PETIR_FUTILITY_MAX_PLIES 4
+#endif
+#ifndef PETIR_FUTILITY_BASE
+#define PETIR_FUTILITY_BASE 90
+#endif
+#ifndef PETIR_FUTILITY_PER_PLY
+#define PETIR_FUTILITY_PER_PLY 60
+#endif
+static constexpr std::int32_t futilityMaxPlies = PETIR_FUTILITY_MAX_PLIES;
+static constexpr std::int32_t futilityBase = PETIR_FUTILITY_BASE;
+static constexpr std::int32_t futilityPerPly = PETIR_FUTILITY_PER_PLY;
+// SEE pruning of losing captures: up to seeCaptureMaxPlies plies left, a capture
+// whose SEE (in pawns) is below -plies is skipped. 0 turns it off.
+#ifndef PETIR_SEE_CAPTURE_MAX_PLIES
+#define PETIR_SEE_CAPTURE_MAX_PLIES 4
+#endif
+static constexpr std::int32_t seeCaptureMaxPlies = PETIR_SEE_CAPTURE_MAX_PLIES;
+// Corrected evaluation in reduction decisions: futility step 1b and doNotReduce
+// judge the evaluation with the correction history added. 0 keeps them raw.
+#ifndef PETIR_CORRECT_REDUCTIONS
+#define PETIR_CORRECT_REDUCTIONS 1
+#endif
+static constexpr bool correctReductions = (PETIR_CORRECT_REDUCTIONS != 0);
 
 // search.pas:72
 // Alpha-beta search of one node; scores are from the side to move's point of view.
@@ -201,11 +246,12 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     }
 
     // The parent evaluated this position for futility (parentFrame.staticEval,
-    // from our side). Don't reduce our moves when that evaluation was 90 or
-    // more above our material balance, or already at or above beta.
+    // from our side, corrected when correctReductions is set). Don't reduce our
+    // moves when that evaluation was 90 or more above our material balance, or
+    // already at or above beta.
     bool doNotReduce = false;
     if (parentFrame.evaluated) {
-        const std::int32_t parentEval = parentFrame.staticEval;
+        const std::int32_t parentEval = correctReductions ? correctedEval(sideToMove, position, parentFrame.staticEval) : parentFrame.staticEval;
         const std::int32_t ownMaterial = petir_ueval::materialForSide(sideToMove, position.materialScore);
         doNotReduce = (parentEval - ownMaterial >= 90) || (parentEval >= beta);
     }
@@ -214,6 +260,86 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
     const std::uint64_t pinnedMask = inCheck ? 0 : petir_tools::pinnedPieces(position, sideToMove);
     // After any check or mate-threat extension.
     const std::int32_t remainingPlies = wholePlies(searchDepth);
+
+    // Repetitions are recorded per side to move (table index side - 1); after
+    // our move the opponent is to move.
+    const std::int32_t repetitionSide = opponent - 1;
+
+    // ---- ProbCut ----
+    // A capture whose SEE is enough to lift the corrected static evaluation to
+    // probCutBeta is tried: first a quiescence search, then a search
+    // probCutReduction plies shallower, both with a null window at probCutBeta.
+    // If it holds, the full-depth search would very likely fail high too.
+    // Skipped when the hash entry is deep enough and scores below probCutBeta,
+    // and in endgames.
+    const std::int32_t probCutBeta = beta + probCutMargin;
+    const bool tryProbCut = (probCutMargin > 0) && (nodeType != pvNode) && isNullWindow && !inCheck
+        && (remainingPlies >= probCutMinPlies) && (excludedMove == petir_header::noMove) && !mateThreatExtended
+        && (pas::abs(beta) < petir_header::kingValue - 100)
+        && (position.whiteNonPawnMaterial + position.blackNonPawnMaterial >= probCutMinMaterial);
+    if (tryProbCut) {
+        const std::int32_t probCutDepth = searchDepth - probCutReduction * petir_header::plyUnits;
+        std::int32_t entryScore = 0;
+        std::int32_t entryBound = 0;
+        std::int32_t entryDepth = 0;
+        const bool entrySaysNo = petir_hashing::readHashEntry(savedHashKey, sideToMove, position.fiftyMoveCounter, entryScore, entryBound, entryDepth)
+            && (entryDepth >= probCutDepth) && (entryScore < probCutBeta);
+        if (!entrySaysNo) {
+            const std::int32_t corrected = correctedEval(sideToMove, position, nodeEval());
+            petir_header::tmovelist probCutList;
+            std::int32_t probCutCount = 0;
+            if (sideToMove == petir_header::whiteSide) {
+                petir_movgen::generateWhiteCaptures(position, probCutList, probCutCount);
+            } else {
+                petir_movgen::generateBlackCaptures(position, probCutList, probCutCount);
+            }
+            // Keep captures (not en passant or promotion pushes) whose SEE, in
+            // pawns, covers the gap, best SEE first.
+            std::int32_t keptCount = 0;
+            for (std::int32_t index = 1; index <= probCutCount; ++index) {
+                const std::int32_t candidate = probCutList[index].move;
+                const std::int32_t candidateTo = moveToSquare(candidate);
+                if ((candidateTo > 63) || (position.board[candidateTo] == 0)) continue;
+                if (((candidate >> 14) & 7) == petir_header::knightPromotion) continue;
+                const std::int32_t see = petir_usee::staticExchange(sideToMove, position, moveFromSquare(candidate), candidateTo);
+                if ((see <= 0) || (corrected + see * petir_header::pawnValue < probCutBeta)) continue;
+                ++keptCount;
+                probCutList[keptCount].move = candidate;
+                probCutList[keptCount].score = see;
+            }
+            std::int32_t triedCount = 0;
+            for (std::int32_t index = 1; index <= keptCount; ++index) {
+                petir_next::selectBestMove(probCutList, index, keptCount);
+                const std::int32_t capture = probCutList[index].move;
+                if (leavesKingAttacked(sideToMove, position, capture, pinnedMask)) continue;
+                const std::int32_t capturingPiece = position.board[moveFromSquare(capture)];
+                makeSideMove(sideToMove, capture, position);
+                if (petir_repetition::addRepetition(position.hashKey, repetitionSide) == 1) {
+                    petir_repetition::removeRepetition(position.hashKey, repetitionSide);
+                    position = savedPosition;
+                    continue;
+                }
+                ++triedCount;
+                frame.evaluated = false;
+                frame.phase = petir_header::goodCapturesPhase;
+                frame.legalMoveCount = triedCount;
+                frame.checkLosesMaterial = checkLosesMaterial(sideToMove, savedPosition, position, capture);
+                currentMove[ply] = capture;
+                currentPiece[ply] = capturingPiece;
+                score = -quiescenceSearch(opponent, -probCutBeta, -(probCutBeta - 1), position, 1, ply + 1, extensionCredit, noValue, allNode);
+                if ((score >= probCutBeta) && (probCutDepth >= petir_header::plyUnits)) {
+                    score = -mainSearch(probCutDepth, opponent, -probCutBeta, -(probCutBeta - 1), position, false, ply + 1, extensionCredit, inNullMoveTree, 0, allNode);
+                }
+                petir_repetition::removeRepetition(position.hashKey, repetitionSide);
+                position = savedPosition;
+                if (petir::searchShouldStop()) return 0;
+                if (score >= probCutBeta) {
+                    petir_hashing::storeHash(savedHashKey, sideToMove, probCutDepth + petir_header::plyUnits, capture, score, petir_header::lowerBound, position.fiftyMoveCounter);
+                    return score;
+                }
+            }
+        }
+    }
 
     // ---- Singular extension test ----
     // A lower-bound or exact hash entry says the hash move scores at least
@@ -252,10 +378,6 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
             }
         }
     }
-
-    // Repetitions are recorded per side to move (table index side - 1); after
-    // our move the opponent is to move.
-    const std::int32_t repetitionSide = opponent - 1;
 
     // ---- Move loop state ----
     // Move-picker state. Generators write both fields in entries 1..count
@@ -321,6 +443,56 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         const std::int32_t see = petir_usee::staticExchange(sideToMove, position, moveFromSquare(move), toSquare);
         if (see >= seeQuietMargin(remainingPlies)) return false;
         return !petir_tools::moveGivesCheck(position, sideToMove, move);
+    };
+
+    // SEE pruning of losing captures: at non-PV nodes with few plies left, skip
+    // a capture from the bad-captures phase whose SEE is below -plies pawns,
+    // unless it gives check. Promotions and en passant are left alone, and at
+    // least one move must already have a non-mated score. Called before the
+    // move is made.
+    auto canPruneCaptureBySee = [&]() -> bool {
+        if (phase != petir_header::badCapturesPhase) return false;
+        if ((seeCaptureMaxPlies == 0) || (remainingPlies > seeCaptureMaxPlies)) return false;
+        if ((nodeType == pvNode) || (beta - alpha != 1)) return false;
+        if ((legalMoveCount == 0) || mateThreatExtended) return false;
+        const bool hasNonMatedScore = (bestScore > -petir_header::kingValue + 100);
+        if (!hasNonMatedScore) return false;
+        if ((toSquare > 63) || (position.board[toSquare] == 0)) return false;
+        if (((move >> 14) & 7) != 0) return false;
+        const std::int32_t see = petir_usee::staticExchange(sideToMove, position, moveFromSquare(move), toSquare);
+        if (see >= -remainingPlies) return false;
+        return !petir_tools::moveGivesCheck(position, sideToMove, move);
+    };
+
+    // Futility pruning, node part: at a null-window non-PV node with few plies
+    // left, not after a mate threat and away from mate scores, the corrected
+    // static evaluation plus the margin stays at or below alpha. Decided once,
+    // at the first late quiet move, while position holds this node's board.
+    std::int32_t futileNode = -1;
+    auto nodeIsFutile = [&]() -> bool {
+        if (futileNode < 0) {
+            futileNode = 0;
+            const bool shallow = (remainingPlies >= 1) && (remainingPlies <= futilityMaxPlies);
+            if (shallow && (nodeType != pvNode) && (beta - alpha == 1) && !mateThreatExtended
+                && (pas::abs(alpha) < petir_header::kingValue - 100)) {
+                const std::int32_t corrected = correctedEval(sideToMove, position, nodeEval());
+                futileNode = (corrected + futilityBase + futilityPerPly * remainingPlies <= alpha) ? 1 : 0;
+            }
+        }
+        return futileNode == 1;
+    };
+
+    // Futility pruning, move part: skip a late quiet move at a futile node,
+    // with the same exceptions as late-move pruning below. Called after the
+    // move is made.
+    auto canPruneFutileMove = [&]() -> bool {
+        const bool hasNonMatedScore = (bestScore > -petir_header::kingValue + 100);
+        if ((legalMoveCount == 0) || !hasNonMatedScore) return false;
+        if (toSquare > 63) return false;
+        if (petir_tools::nonPawnMaterial(savedPosition, sideToMove) < 3) return false;
+        if (petir_tools::hasPawnOnSeventh(sideToMove, position)) return false;
+        if (petir_tools::isGoodMove(position, toSquare, sideToMove)) return false;
+        return !petir_tools::moveGivesCheck(savedPosition, sideToMove, move);
     };
 
     // Late-move pruning: at a null-window non-PV node with few plies left, skip
@@ -525,12 +697,14 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
             if (remainingPlies <= 8) {
                 // From our side; the flag says the opponent is to move. The
                 // frame keeps it uncorrected, from the child's side, and futility
-                // judges it uncorrected. The child's quiescence search reuses the
-                // corrected value as its static evaluation.
-                const std::int32_t evalAfterMove = petir_ueval::evaluate(position, sideToMove, -petir_header::infinity, petir_header::infinity, true);
+                // judges it uncorrected unless correctReductions is set. The
+                // child's quiescence search reuses the corrected value as its
+                // static evaluation.
+                const std::int32_t rawEvalAfterMove = petir_ueval::evaluate(position, sideToMove, -petir_header::infinity, petir_header::infinity, true);
                 frame.evaluated = true;
-                frame.staticEval = -evalAfterMove;
-                childStaticEval = correctedEval(opponent, position, -evalAfterMove);
+                frame.staticEval = -rawEvalAfterMove;
+                childStaticEval = correctedEval(opponent, position, -rawEvalAfterMove);
+                const std::int32_t evalAfterMove = correctReductions ? -childStaticEval : rawEvalAfterMove;
                 const std::int32_t margin = futilityMargins[remainingPlies];
                 const std::int32_t optimisticScore = evalAfterMove + threatenedValue + margin;
                 if ((optimisticScore + 30 < currentAlpha) && !petir_tools::hasFreeSixthRankPawn(sideToMove, position)) {
@@ -598,6 +772,7 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
         if (petir::searchShouldStop()) return 0;
         frame.evaluated = false;
         bool isRepetitionDraw = false;
+        bool futileQuiet = false;
         childStaticEval = noValue;
         extensionCredit = nodeExtensionCredit;
         newDepth = nextDepth;
@@ -610,10 +785,11 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
             if (move == excludedMove) continue;
             toSquare = moveToSquare(move);
             if (leavesKingAttacked(sideToMove, position, move, pinnedMask)) continue;
-            if (canPruneBySee()) {
+            if (canPruneBySee() || canPruneCaptureBySee()) {
                 legalMoveCount++;
                 continue;
             }
+            futileQuiet = (phase == petir_header::otherMovesPhase) && nodeIsFutile();
         } else {
             // In check the picker generates evasions only, and reports
             // checkmate when there are none.
@@ -654,7 +830,7 @@ std::int32_t mainSearch(std::int32_t searchDepth, std::int32_t sideToMove, std::
             position = savedPosition;
             continue;
         }
-        if (canPruneLateMove()) {
+        if (canPruneLateMove() || (futileQuiet && canPruneFutileMove())) {
             position = savedPosition;
             legalMoveCount++;
             continue;
