@@ -92,44 +92,6 @@ position startpos moves e2e4 e7e5
 go depth 6
 ```
 
-Wait for `bestmove`. Send `stop` to interrupt search and `quit` to exit. Options include `Hash`, `OwnBook`, `Contempt`, `MTDf`, `Move Overhead`, and `Clear Hash`.
-
-Supported UCI search controls: `searchmoves`, `depth`, `nodes`, `mate`, `movetime`, `wtime`, `btime`, `winc`, `binc`, `movestogo`, `infinite`, `ponder`, `ponderhit`, and `stop`. Each new search starts iterative deepening at depth 1 and searches root moves at every depth, using the cached root move for ordering. Hash score cutoffs remain enabled below the root. Hash entries are retained between moves and aged for replacement using a generation tag, while move-ordering history uses the original decay and killers reset. Use `Clear Hash` for a search without prior hash entries; a new game also resets move-ordering history. Game history is retained for repetition detection; opening-book replies still bypass ordinary searches. Depth limits are respected, including requests combined with clocks. Interrupted searches retain the last completed iteration's move and report its score and PV before `bestmove`. Replacing a position, starting a new game, or quitting discards the pending result.
-
-`go searchmoves e2e4 d2d4 depth 8` searches only those legal root moves; the list can appear before or after other controls. Castling, en passant, and queen/knight promotions are supported. Rook/bishop promotions and illegal moves in the list are rejected. An empty list returns `bestmove 0000`. Restricted searches also restrict emergency fallback replies and do not store their root score in the hash table. `go nodes 10000` caps the engine's node counter (including quiescence); counts use 64-bit integers, and `nodes 0` returns a legal fallback without searching. PV reconstruction is not charged to an explicit node budget. `go mate 3` searches for a winning mate within three full moves, stopping after a completed iteration finds one or at depth 6. The engine's existing maximum depth of 49 still applies. Mate searches use the normal selective search, not an exhaustive mate solver, and report found mates with UCI `score mate`. These controls bypass OwnBook, reset for each search, and can be combined with depth and clock limits; the first limit reached stops computation. Explicit `infinite` and `ponder` searches hold their result until `stop` or `ponderhit`, respectively, even after computation reaches a node or mate limit.
-
-The default build handles clocks and increments in 64-bit monotonic milliseconds. `Move Overhead` reserves **50 ms by default** (range 0–5000), including for fixed `movetime`. Search preparation counts against the deadline. A soft target and iteration-duration estimate control whether to deepen; direct deadline checks in search enforce a hard ceiling that score drops and move changes cannot extend. When the clock is too low for useful search, the engine immediately returns a validated legal root move. If no iteration completes, the final report supplies a depth-0 static evaluation of the current position and a one-move PV matching the returned move; WinBoard respects `post`/`nopost`. The allocator also banks overhead for future moves in games without increment. Configure the reserve through `setoption name Move Overhead value 100` in UCI or `option Move Overhead=100` in WinBoard if your GUI needs a larger margin. `go ponder` starts its timed budget on `ponderhit`, which continues the existing search at its current depth; depth-only and infinite searches have no clock deadline.
-
-Analysis starts with an empty transposition table, move-ordering and continuation history, killers, search stack, and pawn evaluation caches. This applies to UCI `go infinite` (or an unrestricted bare `go`), searches with `setoption name UCI_AnalyseMode value true`, and WinBoard `analyze`, including restarts after a board change or undo. Search tables work normally within each analysis. The current position, engine options, and actual game history for repetition detection are preserved. UCI analysis bypasses the opening book; set `UCI_AnalyseMode` back to `false` to restore ordinary play with retained tables. Pondering retains its normal behavior.
-
-For **WinBoard**, send `xboard` and `protover 2`. Supported commands include `new`, `force`, `go`, coordinate `usermove`, `setboard`, `time`, `otim`, `level`, `st`, `sd`, `ping`, `post`, `nopost`, `undo`, `remove`, `analyze`, `exit`, `?`, and `quit`. Analysis searches without a clock or playing a move until `exit`; board changes restart analysis. WinBoard `hard`/`easy` are accepted, but automatic WinBoard pondering is not implemented; UCI pondering is available. SAN is not advertised.
-
-Clock updates, posting controls, and unsupported WinBoard commands leave the search running. A late `time` update can tighten the active clock deadline while retaining the overhead reserve. `?` returns a move; `force`, `new`, `setboard`, `result`, undo, and replacement moves discard an active search. WinBoard reports checkmate, stalemate, insufficient mating material, threefold repetition, and the 50-move rule. Period timing wraps the move count for each new period without losing the game's fullmove number. Hash resizing retains the previous usable table if allocation fails. The diagnostic `d` command prints all six FEN fields.
-
-
-
-The optional `windows-x64-stage1` preset builds the same evaluation under the separately named **Petir Stage1** executable:
-
-```powershell
-cmake --preset windows-x64-stage1
-cmake --build --preset windows-x64-stage1
-ctest --preset windows-x64-stage1
-```
-
-The executable is `build/windows-x64-stage1/Release/petir-stage1.exe`, with its opening books in the adjacent `books` directory.
-
-Command-line utilities:
-
-```text
-petir --selftest
-petir --perft 5
-petir --perft 3 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
-petir --eval "7k/8/8/8/8/8/8/K7 w - - 0 1"
-petir --book-dir path/to/books
-```
-
-The legacy PGN learner is retained as `--learn-pgn FILE`. It keeps the original simple PGN assumptions and writes `white.book` and `black.book` in the selected book directory. Use copies of your books in a separate directory when learning, e.g. `petir --learn-pgn games.pgn --book-dir copied-books`.
-
 ## Source layout
 
 | Location | Purpose |
