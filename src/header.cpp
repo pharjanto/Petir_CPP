@@ -88,7 +88,7 @@ std::int32_t outputLineNumber{};
 double maxExtensionFactor = 0.5;
 std::int32_t gamePlyCount{};
 bool computerThinking = false;
-bool useBook = true;
+bool useBook = false;
 std::uint8_t ponderMode = 0;
 std::int32_t plyUnits = 8;
 std::int32_t checkExtension = 6;

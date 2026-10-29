@@ -12,7 +12,7 @@ using namespace petir_header;
 #ifdef PETIR_ENGINE_NAME
 constexpr const char* engineName=PETIR_ENGINE_NAME;
 #else
-constexpr const char* engineName="Petir 1 C++ faithful port";
+constexpr const char* engineName="Petir 7";
 #endif
 std::mutex outputMutex;
 void emit(const std::string& text) {std::lock_guard lock(outputMutex);std::cout<<text<<std::endl;}
@@ -369,7 +369,7 @@ public:
                 const auto& command=tokens[0];
                 if(command=="quit") {finish();break;}
                 if(command=="xboard") {finish();mode=Mode::WinBoard;continue;}
-                if(command=="uci") {finish();mode=Mode::UCI;emit(std::string("id name ")+engineName);emit("id author Original Petir author; C++ port");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name OwnBook type check default true");emit("option name UCI_AnalyseMode type check default false");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Move Overhead type spin default 15 min 0 max 5000");emit("option name Clear Hash type button");emit("uciok");}
+                if(command=="uci") {finish();mode=Mode::UCI;emit(std::string("id name ")+engineName);emit("id author Peter A Harjanto");emit("option name Hash type spin default 64 min 1 max 1024");emit("option name UCI_AnalyseMode type check default false");emit("option name Contempt type spin default 0 min -1000 max 1000");emit("option name MTDf type check default false");emit("option name Move Overhead type spin default 15 min 0 max 5000");emit("option name Clear Hash type button");emit("uciok");}
                 else if(mode==Mode::WinBoard)winboardCommand(line,tokens,receivedAt);
                 else if(command=="isready")emit("readyok");
                 else if(command=="setoption")setOption(tokens);
