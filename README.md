@@ -45,7 +45,7 @@ Every single change is being made one at a time, tested using CuteChess SPRT sta
 - History heuristic and continuation history (previous one and two moves)
 
 ### Evaluation
-- Hand-crafted evaluation, Texel-tuned on CCRL games and Petir's own gauntlet games
+- Hand-crafted evaluation, Texel-tuned on CCRL games and Petir's own gauntlet games. Stockfish 14 score and match results is used for labelling. Match result get more weight for engines > 3000 and less weight for weaker engines. Petir's own game is 50:50 between match result vs Stockfish 14 score.
 - Static-evaluation correction history (pawn-structure and material tables)
 - Tapered middlegame/endgame scoring with material imbalance terms
 - Pawn structure: passed, candidate, connected, doubled, isolated and backward pawns, cached in a pawn hash table
