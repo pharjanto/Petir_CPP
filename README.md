@@ -60,37 +60,14 @@ Every single change is being made one at a time, tested using CuteChess SPRT sta
 - Single-threaded
 - Windows builds: generic x64 and AVX2 (CPUs from about 2013 on: Intel Haswell or AMD Zen and newer)
 
-## Included executables
+## Download
 
-- `bin/windows-x64/petir.exe`: Windows x64 console executable, cross-compiled with Clang/Zig. **Compilation was verified; execution on Windows was not available here.** It uses the Windows Universal CRT.
-- `bin/linux-x64/petir`: Linux x86-64 executable, built and tested with GCC 13.3 on Ubuntu 24.04. Rebuild on another Linux distribution if its system libraries differ.
+Get the latest Windows build from the [Releases page](https://github.com/pharjanto/Petir_CPP/releases/latest).
 
-Each executable has its opening books in an adjacent `books` folder. The engine is a console program: double-clicking it does not open a chessboard. Add it to a chess GUI as a **UCI engine**, or run it in a terminal.
+The zip contains two executables:
 
-## Build on Linux
-
-Use a 64-bit C++20 compiler and CMake 3.21 or later for the presets:
-
-```sh
-cmake --preset linux-release
-cmake --build --preset linux-release
-ctest --preset linux-release
-./build/linux-release/petir --selftest
-```
-
-A conventional `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` build also works with CMake 3.20 or later. Only the C++ standard library and system threading library are required.
-
-## Use the engine
-
-The default protocol is **UCI**. For example, run the executable and enter:
-
-```text
-uci
-isready
-setoption name OwnBook value false
-position startpos moves e2e4 e7e5
-go depth 6
-```
+- `petir7_avx2.exe`: for CPUs with AVX2 (Intel Haswell 2013 or newer, AMD Zen or newer); slightly faster.
+- `petir7.exe`: runs on any 64-bit x86 CPU.
 
 ## Source layout
 
