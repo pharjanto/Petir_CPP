@@ -1,8 +1,8 @@
-# Petir 64 — faithful C++20 engine port
+# Petir 64 — C++20 engine port
 
 Petir was first written using Delphi/pascal programming language in around 2022-2003 for my university final project. First public release was in September 2004. Petir has competed in several CCT tournaments between 2004-2007, with best result came in 2006 CCT8 5/9 and beat Deep Junior in round 2. Last work/release on Petir was in 2007.
 
-This project is to port legacy codes from delphi/pascal to C++ 64 bit and to bring improvements using modern chess programming techniques. 
+This project is to port legacy codes from delphi/pascal to C++ 64 bit and to bring improvements using modern chess programming techniques in the past 20 years since I have been inactive.
 
 Majority of legacy Pascal code and structure is still retained. Old Delphi code has windows GUI on it, this port does not have. Instead, now it support UCI and xBoard protocol whereby previously only xBoard was supported.
 
@@ -20,28 +20,45 @@ Every changes is directed and supervised by me. The goal is to increase playing 
 
 Every single change is being made one at a time, tested using CuteChess SPRT statistic or as long as I confident it at least does not regress. 
 
-## Open and build in VS Code on Windows
+## Features
 
-1. Extract the archive and open the `Petir_CPP` folder in VS Code.
-2. Install the **C/C++** and **CMake Tools** extensions. The project recommends both.
-3. Install **Visual Studio 2022 Build Tools** with **Desktop development with C++**, the x64 compiler, Windows SDK, and CMake tools. The supplied Windows preset targets that toolchain. If you use another compiler version, create/select its x64 CMake preset instead.
-4. Run **CMake: Select Configure Preset**, select `windows-x64`, then **CMake: Configure** and **CMake: Build**.
-5. The native build is `build/windows-x64/Release/petir64.exe`. Run `--selftest`, or load that executable in a chess GUI as a UCI engine.
+### Search
+- Principal variation search (PVS) with iterative deepening and aspiration windows
+- Transposition table, 1–1024 MB (UCI option `Hash`)
+- Quiescence search with SEE-based capture filtering and futility pruning
+- Check, mate-threat and recapture extensions
+- Singular extension with multi-cut
+- Repetition and fifty-move rule detection
 
-You can also build from a terminal in the project folder:
+### Pruning and reductions
+- Null-move pruning
+- Late move reductions
+- Late move pruning
+- Futility pruning
+- ProbCut
+- SEE pruning of losing captures and bad quiet moves
 
-```powershell
-cmake --preset windows-x64
-cmake --build --preset windows-x64
-ctest --preset windows-x64
-.\build\windows-x64\Release\petir64.exe --selftest
-```
+### Move ordering
+- Hash move first, then captures ordered by static exchange evaluation (SEE)
+- Staged move generation
+- Killer moves
+- History heuristic and continuation history (previous one and two moves)
 
-Builds disable Pascal array bounds checks by default for performance. To enable them for troubleshooting, configure with `cmake --preset windows-x64 -DPETIR_CHECK_BOUNDS=ON` (or use the equivalent option with your Linux preset). Reconfiguring with the standard preset restores the performance default.
+### Evaluation
+- Hand-crafted evaluation, Texel-tuned on CCRL games and Petir's own gauntlet games
+- Static-evaluation correction history (pawn-structure and material tables)
+- Tapered middlegame/endgame scoring with material imbalance terms
+- Pawn structure: passed, candidate, connected, doubled, isolated and backward pawns, cached in a pawn hash table
+- Piece activity: safe mobility, outposts, bishop pair, rooks on open files, trapped pieces
+- King safety: pawn shelter and storm, attack-based king danger with safe checks
+- Threat detection
+- KPK bitbase and scaling for drawish endings
 
-The included debugger configurations run the self-test. Choose a Debug build configuration to step through the engine with useful symbols. You can change the launch arguments to `--perft` or `--eval`.
-
-Official setup references: [VS Code CMake](https://code.visualstudio.com/docs/cpp/cmake-quickstart) and [Microsoft C++ in VS Code](https://code.visualstudio.com/docs/cpp/config-msvc).
+### Protocols and options
+- UCI and xboard/WinBoard
+- Options: `Hash`, `Contempt`, `Move Overhead`, `MTDf`, `UCI_AnalyseMode`, `Clear Hash`
+- Single-threaded
+- Windows builds: generic x64 and AVX2 (CPUs from about 2013 on: Intel Haswell or AMD Zen and newer)
 
 ## Included executables
 
